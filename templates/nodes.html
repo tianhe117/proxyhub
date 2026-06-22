@@ -10,45 +10,61 @@
 {% block content %}
 <div id="nodesContainer"></div>
 <div class="empty-state" id="nodesEmpty" style="display:none;">No nodes. Add a subscription or create custom nodes.</div>
+{% endblock %}
 
+{% block modals %}
 <!-- Node Modal -->
 <div class="modal-overlay" id="nodeModal">
-    <div class="modal" style="min-width:420px;">
-        <div class="modal-title" id="nodeModalTitle">New Node</div>
-        <div class="field"><label>Import URL</label><input class="input" id="nodeImportUrl" placeholder="vmess://... or ss://..."><button class="btn btn-sm" onclick="parseImportUrl()" style="margin-top:4px;">Parse</button></div>
-        <div class="field-row">
+    <div class="modal" style="min-width:480px;">
+        <div class="modal-header">
+            <span class="modal-title" id="nodeModalTitle">New Node</span>
+            <button class="modal-close" onclick="closeModal('nodeModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Import URL</label><input class="input" id="nodeImportUrl" placeholder="vmess://... or ss://..."><button class="btn btn-sm" onclick="parseImportUrl()" style="margin-top:4px;">Parse</button></div>
             <div class="field"><label>Name</label><input class="input" id="nodeName"></div>
-        </div>
-        <div class="field-row">
-            <div class="field"><label>Protocol</label><select class="input" id="nodeProtocol" onchange="onProtoChange()"><option value="vmess">VMess</option><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="ss">SS</option><option value="hysteria2">Hysteria2</option><option value="tuic">TUIC</option></select></div>
-            <div class="field"><label>bin_type</label><select class="input" id="nodeBinType"></select></div>
-        </div>
-        <div class="field-row">
-            <div class="field"><label>Address</label><input class="input" id="nodeAddr"></div>
-            <div class="field"><label>Port</label><input class="input" type="number" id="nodePort"></div>
-        </div>
-        <div id="nodeProtoFields"></div>
-        <div class="field"><label>Transport</label><select class="input" id="nodeNetwork" onchange="onNetChange()"><option value="tcp">TCP</option><option value="ws">WebSocket</option><option value="h2">HTTP/2</option><option value="grpc">gRPC</option></select></div>
-        <div id="nodeNetFields"></div>
-        <div class="field"><label><input type="checkbox" id="nodeTls" onchange="onTlsChange()"> TLS</label></div>
-        <div id="nodeTlsFields" style="display:none;">
             <div class="field-row">
-                <div class="field"><label>SNI</label><input class="input" id="nodeSni"></div>
-                <div class="field"><label>ALPN</label><input class="input" id="nodeAlpn" placeholder="h3,http/1.1"></div>
+                <div class="field"><label>Protocol</label><select class="input" id="nodeProtocol" onchange="onProtoChange()"><option value="vmess">VMess</option><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="ss">SS</option><option value="hysteria2">Hysteria2</option><option value="tuic">TUIC</option></select></div>
+                <div class="field"><label>bin_type</label><select class="input" id="nodeBinType"></select></div>
             </div>
-            <div class="field"><label><input type="checkbox" id="nodeAllowInsecure"> Allow Insecure</label></div>
-            <div class="field"><label>Fingerprint</label><input class="input" id="nodeFingerprint"></div>
+            <div class="field-row">
+                <div class="field"><label>Address</label><input class="input" id="nodeAddr"></div>
+                <div class="field"><label>Port</label><input class="input" type="number" id="nodePort"></div>
+            </div>
+            <div id="nodeProtoFields"></div>
+            <div class="field"><label>Transport</label><select class="input" id="nodeNetwork" onchange="onNetChange()"><option value="tcp">TCP</option><option value="ws">WebSocket</option><option value="h2">HTTP/2</option><option value="grpc">gRPC</option></select></div>
+            <div id="nodeNetFields"></div>
+            <div class="field"><label><input type="checkbox" id="nodeTls" onchange="onTlsChange()"> TLS</label></div>
+            <div id="nodeTlsFields" style="display:none;">
+                <div class="field-row">
+                    <div class="field"><label>SNI</label><input class="input" id="nodeSni"></div>
+                    <div class="field"><label>ALPN</label><input class="input" id="nodeAlpn" placeholder="h3,http/1.1"></div>
+                </div>
+                <div class="field"><label><input type="checkbox" id="nodeAllowInsecure"> Allow Insecure</label></div>
+                <div class="field"><label>Fingerprint</label><input class="input" id="nodeFingerprint"></div>
+            </div>
+            <input type="hidden" id="nodeEditId">
         </div>
-        <input type="hidden" id="nodeEditId">
-        <div class="modal-actions">
-            <button class="btn" onclick="closeNodeModal()">Cancel</button>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('nodeModal')">Cancel</button>
             <button class="btn btn-primary" onclick="saveNode()">Save</button>
         </div>
     </div>
 </div>
 
+<!-- Delete Modal -->
 <div class="modal-overlay" id="deleteModal">
-    <div class="modal"><div class="modal-title">Confirm Delete</div><p id="deleteMessage"></p><div class="modal-actions"><button class="btn" onclick="closeDeleteModal()">Cancel</button><button class="btn btn-danger" id="deleteConfirmBtn">Delete</button></div></div>
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body"><p id="deleteMessage"></p></div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -59,9 +75,6 @@ var VALID_BIN_TYPES = {
     vmess: ['xray'], vless: ['xray'], trojan: ['xray'],
     ss: ['xray', 'sslocal'], hysteria2: ['sing-box'], tuic: ['sing-box']
 };
-
-function closeNodeModal() { document.getElementById('nodeModal').classList.remove('show'); }
-function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('show'); }
 
 async function loadNodes() {
     try {
@@ -230,7 +243,7 @@ async function saveNode() {
     try {
         var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         var data = await resp.json();
-        closeNodeModal();
+        closeModal('nodeModal');
         addLog(data.success ? 'ok' : 'error', data.message || '');
         loadNodes();
     } catch(e) { addLog('error', 'Save failed: ' + e); }
@@ -262,10 +275,7 @@ async function checkSingle(id) {
     try {
         var resp = await fetch('/api/nodes/check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({node_ids:[id], check_type:'both'}) });
         var data = await resp.json();
-        if (data.task_id) {
-            addLog('info', 'Check started for node #' + id);
-            pollCheck(data.task_id);
-        }
+        if (data.task_id) { addLog('info', 'Check started for node #' + id); pollCheck(data.task_id); }
     } catch(e) {}
 }
 
@@ -312,7 +322,7 @@ function confirmDelete(id) {
     document.getElementById('deleteConfirmBtn').onclick = async function() {
         try {
             await fetch('/api/nodes/' + id, { method: 'DELETE' });
-            closeDeleteModal();
+            closeModal('deleteModal');
             loadNodes();
             addLog('ok', 'Node deleted');
         } catch(e) {}

@@ -8,16 +8,23 @@
 {% block content %}
 <div id="subsList"></div>
 <div class="empty-state" id="subsEmpty" style="display:none;">No subscriptions. Add one to import nodes.</div>
+{% endblock %}
 
+{% block modals %}
 <!-- Subscription Modal -->
 <div class="modal-overlay" id="subModal">
     <div class="modal">
-        <div class="modal-title" id="subModalTitle">New Subscription</div>
-        <div class="field"><label>Name</label><input class="input" id="subName"></div>
-        <div class="field"><label>URL</label><input class="input" id="subUrl"></div>
-        <input type="hidden" id="subEditId">
-        <div class="modal-actions">
-            <button class="btn" onclick="closeSubModal()">Cancel</button>
+        <div class="modal-header">
+            <span class="modal-title" id="subModalTitle">New Subscription</span>
+            <button class="modal-close" onclick="closeModal('subModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="subName"></div>
+            <div class="field"><label>URL</label><input class="input" id="subUrl"></div>
+            <input type="hidden" id="subEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('subModal')">Cancel</button>
             <button class="btn btn-primary" onclick="saveSub()">Save</button>
         </div>
     </div>
@@ -26,29 +33,41 @@
 <!-- Keywords Modal -->
 <div class="modal-overlay" id="kwModal">
     <div class="modal">
-        <div class="modal-title">Edit Keywords</div>
-        <div class="field"><label>Filter (include — one per line)</label><textarea class="input" id="kwFilter" rows="4"></textarea></div>
-        <div class="field"><label>Exclude (one per line)</label><textarea class="input" id="kwExclude" rows="4"></textarea></div>
-        <input type="hidden" id="kwSubId">
-        <div class="modal-actions">
-            <button class="btn" onclick="closeKwModal()">Cancel</button>
+        <div class="modal-header">
+            <span class="modal-title">Edit Keywords</span>
+            <button class="modal-close" onclick="closeModal('kwModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Filter (include — one per line)</label><textarea class="input" id="kwFilter" rows="4"></textarea></div>
+            <div class="field"><label>Exclude (one per line)</label><textarea class="input" id="kwExclude" rows="4"></textarea></div>
+            <input type="hidden" id="kwSubId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('kwModal')">Cancel</button>
             <button class="btn btn-primary" onclick="saveKw()">Save</button>
         </div>
     </div>
 </div>
 
+<!-- Delete Modal -->
 <div class="modal-overlay" id="deleteModal">
-    <div class="modal"><div class="modal-title">Confirm Delete</div><p id="deleteMessage"></p><div class="modal-actions"><button class="btn" onclick="closeDeleteModal()">Cancel</button><button class="btn btn-danger" id="deleteConfirmBtn">Delete</button></div></div>
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body"><p id="deleteMessage"></p></div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 var subs = [];
-
-function closeSubModal() { document.getElementById('subModal').classList.remove('show'); }
-function closeKwModal() { document.getElementById('kwModal').classList.remove('show'); }
-function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('show'); }
 
 function formatBytes(b) {
     if (!b || b <= 0) return '0 B';
@@ -61,16 +80,11 @@ function formatBytes(b) {
 
 function daysUntil(ts) {
     if (!ts || ts <= 0) return null;
-    var now = Date.now() / 1000;
-    return Math.ceil((ts - now) / 86400);
+    return Math.ceil((ts - Date.now() / 1000) / 86400);
 }
 
 async function loadData() {
-    try {
-        var resp = await fetch('/api/subscriptions');
-        subs = await resp.json();
-        renderSubs();
-    } catch(e) {}
+    try { var resp = await fetch('/api/subscriptions'); subs = await resp.json(); renderSubs(); } catch(e) {}
 }
 
 function renderSubs() {
@@ -82,15 +96,14 @@ function renderSubs() {
         var traffic = '';
         if (s.total_bytes > 0) {
             var used = (s.upload_bytes || 0) + (s.download_bytes || 0);
-            var rem = s.total_bytes - used;
-            traffic = '<div style="font-size:12px;color:#888;">Traffic: ' + formatBytes(used) + ' / ' + formatBytes(s.total_bytes) + ' — ' + formatBytes(Math.max(0,rem)) + ' remaining</div>';
+            traffic = '<div style="font-size:12px;color:#888;">Traffic: ' + formatBytes(used) + ' / ' + formatBytes(s.total_bytes) + ' — ' + formatBytes(Math.max(0, s.total_bytes - used)) + ' remaining</div>';
         }
         var expiry = '';
         if (s.expire_at && s.expire_at > 0) {
             var days = daysUntil(s.expire_at);
             expiry = '<div style="font-size:12px;color:#888;">Expires: ' + new Date(s.expire_at * 1000).toISOString().slice(0,10) + (days !== null ? ' (' + days + ' days)' : '') + '</div>';
         }
-        return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;"><span><strong>' + escapeHtml(s.name) + '</strong> &middot; <span style="color:#888;">' + (s.node_count||0) + ' nodes</span> <span style="font-size:11px;color:#bbb;">[updated: ' + updated + ']</span></span><span style="display:flex;gap:4px;"><button class="btn btn-sm btn-ok" onclick="refreshSub(' + s.id + ')">&#8635; Refresh</button><button class="btn btn-sm" onclick="openSubModal(' + s.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDelete(' + s.id + ')">&#10005;</button></span></div>' + traffic + expiry + '<div style="margin-top:6px;display:flex;gap:12px;"><span style="font-size:12px;cursor:pointer;color:#1976d2;" onclick="openKw(' + s.id + ', \'' + (s.filter_keywords||'').replace(/'/g,"\\'") + '\', \'' + (s.exclude_keywords||'').replace(/'/g,"\\'") + '\')">filter: ' + (s.filter_keywords || '(none)') + '</span><span style="font-size:12px;cursor:pointer;color:#1976d2;" onclick="openKw(' + s.id + ', \'' + (s.filter_keywords||'').replace(/'/g,"\\'") + '\', \'' + (s.exclude_keywords||'').replace(/'/g,"\\'") + '\')">exclude: ' + (s.exclude_keywords || '(none)') + '</span></div></div></div>';
+        return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><span><strong>' + escapeHtml(s.name) + '</strong> &middot; <span style="color:#888;">' + (s.node_count||0) + ' nodes</span> <span style="font-size:11px;color:#bbb;">[updated: ' + updated + ']</span></span><span style="display:flex;gap:4px;"><button class="btn btn-sm btn-ok" onclick="refreshSub(' + s.id + ')">&#8635; Refresh</button><button class="btn btn-sm" onclick="openSubModal(' + s.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDelete(' + s.id + ')">&#10005;</button></span></div>' + traffic + expiry + '<div style="margin-top:6px;display:flex;gap:12px;"><span style="font-size:12px;cursor:pointer;color:#1976d2;" onclick="openKw(' + s.id + ', \'' + (s.filter_keywords||'').replace(/'/g,"\\'") + '\', \'' + (s.exclude_keywords||'').replace(/'/g,"\\'") + '\')">filter: ' + (s.filter_keywords || '(none)') + '</span><span style="font-size:12px;cursor:pointer;color:#1976d2;" onclick="openKw(' + s.id + ', \'' + (s.filter_keywords||'').replace(/'/g,"\\'") + '\', \'' + (s.exclude_keywords||'').replace(/'/g,"\\'") + '\')">exclude: ' + (s.exclude_keywords || '(none)') + '</span></div></div></div>';
     }).join('');
 }
 
@@ -114,7 +127,7 @@ async function saveSub() {
     try {
         var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         var data = await resp.json();
-        closeSubModal();
+        closeModal('subModal');
         addLog(data.success ? 'ok' : 'error', data.message || '');
         loadData();
     } catch(e) { addLog('error', 'Save failed: ' + e); }
@@ -131,9 +144,8 @@ async function saveKw() {
     var id = document.getElementById('kwSubId').value;
     var payload = { filter_keywords: document.getElementById('kwFilter').value, exclude_keywords: document.getElementById('kwExclude').value };
     try {
-        var resp = await fetch('/api/subscriptions/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-        await resp.json();
-        closeKwModal();
+        await fetch('/api/subscriptions/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        closeModal('kwModal');
         addLog('ok', 'Keywords updated. Refresh subscription to apply filters.');
         loadData();
     } catch(e) {}
@@ -152,12 +164,7 @@ async function refreshSub(id) {
 function confirmDelete(id) {
     document.getElementById('deleteMessage').textContent = 'Delete subscription #' + id + ' and all its nodes?';
     document.getElementById('deleteConfirmBtn').onclick = async function() {
-        try {
-            await fetch('/api/subscriptions/' + id, { method: 'DELETE' });
-            closeDeleteModal();
-            loadData();
-            addLog('ok', 'Subscription deleted');
-        } catch(e) {}
+        try { await fetch('/api/subscriptions/' + id, { method: 'DELETE' }); closeModal('deleteModal'); loadData(); addLog('ok', 'Subscription deleted'); } catch(e) {}
     };
     document.getElementById('deleteModal').classList.add('show');
 }

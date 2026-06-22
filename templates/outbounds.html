@@ -8,21 +8,28 @@
 {% block content %}
 <div id="outboundsList"></div>
 <div class="empty-state" id="outboundsEmpty" style="display:none;">No outbounds. Create one to proxy traffic.</div>
+{% endblock %}
 
+{% block modals %}
 <!-- Outbound Modal -->
 <div class="modal-overlay" id="obModal">
     <div class="modal">
-        <div class="modal-title" id="obModalTitle">New Outbound</div>
-        <div class="field"><label>Name</label><input class="input" id="obName"></div>
-        <div class="field"><label>Type</label><select class="input" id="obType" onchange="onObTypeChange()"><option value="single">Single Node</option><option value="auto">Auto Failover Pool</option></select></div>
-        <div id="obSingleFields"><div class="field"><label>Node</label><select class="input" id="obSingleNode"></select></div></div>
-        <div id="obAutoFields" style="display:none;">
-            <div class="field"><label>Check Interval (s)</label><input class="input" type="number" id="obCheckInterval" value="240"></div>
-            <div class="field"><label>Test URL</label><input class="input" id="obTestUrl" value="http://www.gstatic.com/generate_204"></div>
+        <div class="modal-header">
+            <span class="modal-title" id="obModalTitle">New Outbound</span>
+            <button class="modal-close" onclick="closeModal('obModal')">&times;</button>
         </div>
-        <input type="hidden" id="obEditId">
-        <div class="modal-actions">
-            <button class="btn" onclick="closeObModal()">Cancel</button>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="obName"></div>
+            <div class="field"><label>Type</label><select class="input" id="obType" onchange="onObTypeChange()"><option value="single">Single Node</option><option value="auto">Auto Failover Pool</option></select></div>
+            <div id="obSingleFields"><div class="field"><label>Node</label><select class="input" id="obSingleNode"></select></div></div>
+            <div id="obAutoFields" style="display:none;">
+                <div class="field"><label>Check Interval (s)</label><input class="input" type="number" id="obCheckInterval" value="240"></div>
+                <div class="field"><label>Test URL</label><input class="input" id="obTestUrl" value="http://www.gstatic.com/generate_204"></div>
+            </div>
+            <input type="hidden" id="obEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('obModal')">Cancel</button>
             <button class="btn btn-primary" onclick="saveOb()">Save</button>
         </div>
     </div>
@@ -31,18 +38,34 @@
 <!-- Add Node to Pool Modal -->
 <div class="modal-overlay" id="poolAddModal">
     <div class="modal">
-        <div class="modal-title">Add Node to Pool</div>
-        <div class="field"><label>Node</label><select class="input" id="poolNodeSelect"></select></div>
-        <input type="hidden" id="poolObId">
-        <div class="modal-actions">
-            <button class="btn" onclick="closePoolAddModal()">Cancel</button>
+        <div class="modal-header">
+            <span class="modal-title">Add Node to Pool</span>
+            <button class="modal-close" onclick="closeModal('poolAddModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Node</label><select class="input" id="poolNodeSelect"></select></div>
+            <input type="hidden" id="poolObId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('poolAddModal')">Cancel</button>
             <button class="btn btn-primary" onclick="addToPool()">Add</button>
         </div>
     </div>
 </div>
 
+<!-- Delete Modal -->
 <div class="modal-overlay" id="deleteModal">
-    <div class="modal"><div class="modal-title">Confirm Delete</div><p id="deleteMessage"></p><div class="modal-actions"><button class="btn" onclick="closeDeleteModal()">Cancel</button><button class="btn btn-danger" id="deleteConfirmBtn">Delete</button></div></div>
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body"><p id="deleteMessage"></p></div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -50,20 +73,9 @@
 <script>
 var outbounds = [], allNodes = [];
 
-function closeObModal() { document.getElementById('obModal').classList.remove('show'); }
-function closePoolAddModal() { document.getElementById('poolAddModal').classList.remove('show'); }
-function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('show'); }
-
 async function loadData() {
-    try {
-        var nr = await fetch('/api/nodes/');
-        allNodes = await nr.json();
-    } catch(e) {}
-    try {
-        var resp = await fetch('/api/outbounds');
-        outbounds = await resp.json();
-        renderOutbounds();
-    } catch(e) {}
+    try { var nr = await fetch('/api/nodes/'); allNodes = await nr.json(); } catch(e) {}
+    try { var resp = await fetch('/api/outbounds'); outbounds = await resp.json(); renderOutbounds(); } catch(e) {}
 }
 
 function renderOutbounds() {
@@ -73,12 +85,12 @@ function renderOutbounds() {
     list.innerHTML = outbounds.map(function(o) {
         if (o.type === 'single') {
             var cfg = typeof o.config_json === 'string' ? JSON.parse(o.config_json) : o.config_json;
-            return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;"><span><span class="tag">single</span> <strong>' + escapeHtml(o.name) + '</strong></span><span style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button></span></div><p style="font-size:12px;color:#888;margin-top:4px;">Fixed proxy through node_id=' + (cfg.node_id || '?') + '</p></div></div>';
+            return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><span><span class="tag">single</span> <strong>' + escapeHtml(o.name) + '</strong></span><span style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button></span></div><p style="font-size:12px;color:#888;margin-top:4px;">Fixed proxy through node_id=' + (cfg.node_id || '?') + '</p></div></div>';
         } else {
             var poolRows = (o.pool || []).map(function(p, i) {
                 return '<div class="row-flex"><span class="' + (i === 0 ? 'pool-cur' : '') + '">#' + (i+1) + '</span><span class="tag">' + escapeHtml(p.protocol) + '</span><span style="flex:2">' + escapeHtml(p.name) + '</span><span style="flex:2">' + escapeHtml(p.address) + ':' + p.port + '</span><span>' + (p.tcp_latency !== null ? p.tcp_latency + 'ms' : '—') + '</span><button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',-1)" ' + (i===0?'disabled':'') + '>&#9650;</button><button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',1)">&#9660;</button><button class="btn btn-sm btn-ghost btn-danger" onclick="removePoolNode(' + o.id + ',' + p.pool_id + ')">&#10005;</button></div>';
             }).join('');
-            return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;"><span><span class="tag">auto</span> <strong>' + escapeHtml(o.name) + '</strong> &middot; ' + (o.pool||[]).length + ' nodes</span><span style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button></span></div><div style="margin-top:6px;">' + poolRows + '<div style="padding:4px 0;"><button class="btn btn-sm" onclick="openPoolAdd(' + o.id + ')">+ add node</button></div></div></div></div>';
+            return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><span><span class="tag">auto</span> <strong>' + escapeHtml(o.name) + '</strong> &middot; ' + (o.pool||[]).length + ' nodes</span><span style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button></span></div><div style="margin-top:6px;">' + poolRows + '<div style="padding:4px 0;"><button class="btn btn-sm" onclick="openPoolAdd(' + o.id + ')">+ add node</button></div></div></div></div>';
         }
     }).join('');
 }
@@ -118,19 +130,15 @@ async function saveOb() {
     var editId = document.getElementById('obEditId').value;
     var obType = document.getElementById('obType').value;
     var config = {};
-    if (obType === 'single') {
-        config.node_id = parseInt(document.getElementById('obSingleNode').value);
-    } else {
-        config.check_interval = parseInt(document.getElementById('obCheckInterval').value) || 240;
-        config.test_url = document.getElementById('obTestUrl').value;
-    }
+    if (obType === 'single') { config.node_id = parseInt(document.getElementById('obSingleNode').value); }
+    else { config.check_interval = parseInt(document.getElementById('obCheckInterval').value) || 240; config.test_url = document.getElementById('obTestUrl').value; }
     var payload = { name: document.getElementById('obName').value, type: obType, config_json: JSON.stringify(config) };
     var url = '/api/outbounds' + (editId ? '/' + editId : '');
     var method = editId ? 'PUT' : 'POST';
     try {
         var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         var data = await resp.json();
-        closeObModal();
+        closeModal('obModal');
         addLog(data.success ? 'ok' : 'error', data.message || '');
         loadData();
     } catch(e) { addLog('error', 'Save failed: ' + e); }
@@ -153,18 +161,14 @@ async function addToPool() {
     try {
         var resp = await fetch('/api/outbounds/' + obId + '/nodes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({node_id: nodeId}) });
         var data = await resp.json();
-        closePoolAddModal();
+        closeModal('poolAddModal');
         addLog(data.success ? 'ok' : 'error', data.message || '');
         loadData();
     } catch(e) {}
 }
 
 async function removePoolNode(obId, poolId) {
-    try {
-        await fetch('/api/outbounds/' + obId + '/nodes/' + poolId, { method: 'DELETE' });
-        addLog('ok', 'Node removed from pool');
-        loadData();
-    } catch(e) {}
+    try { await fetch('/api/outbounds/' + obId + '/nodes/' + poolId, { method: 'DELETE' }); addLog('ok', 'Node removed from pool'); loadData(); } catch(e) {}
 }
 
 async function movePoolNode(obId, poolId, dir) {
@@ -175,24 +179,14 @@ async function movePoolNode(obId, poolId, dir) {
     if (idx < 0) return;
     var newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= order.length) return;
-    order.splice(idx, 1);
-    order.splice(newIdx, 0, poolId);
-    try {
-        await fetch('/api/outbounds/' + obId + '/nodes/reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({order: order}) });
-        addLog('ok', 'Pool reordered');
-        loadData();
-    } catch(e) {}
+    order.splice(idx, 1); order.splice(newIdx, 0, poolId);
+    try { await fetch('/api/outbounds/' + obId + '/nodes/reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({order: order}) }); addLog('ok', 'Pool reordered'); loadData(); } catch(e) {}
 }
 
 function confirmDeleteOb(id) {
     document.getElementById('deleteMessage').textContent = 'Delete outbound #' + id + '?';
     document.getElementById('deleteConfirmBtn').onclick = async function() {
-        try {
-            await fetch('/api/outbounds/' + id, { method: 'DELETE' });
-            closeDeleteModal();
-            loadData();
-            addLog('ok', 'Outbound deleted');
-        } catch(e) {}
+        try { await fetch('/api/outbounds/' + id, { method: 'DELETE' }); closeModal('deleteModal'); loadData(); addLog('ok', 'Outbound deleted'); } catch(e) {}
     };
     document.getElementById('deleteModal').classList.add('show');
 }

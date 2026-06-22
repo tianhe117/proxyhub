@@ -8,28 +8,46 @@
 {% block content %}
 <div id="inboundsList"></div>
 <div class="empty-state" id="inboundsEmpty" style="display:none;">No inbounds. Create a local listener to accept connections.</div>
+{% endblock %}
 
+{% block modals %}
 <!-- Inbound Modal -->
 <div class="modal-overlay" id="inModal">
     <div class="modal">
-        <div class="modal-title" id="inModalTitle">New Inbound</div>
-        <div class="field"><label>Name</label><input class="input" id="inName"></div>
-        <div class="field-row">
-            <div class="field"><label>Protocol</label><select class="input" id="inProtocol" onchange="onInProtoChange()"><option value="http">HTTP</option><option value="socks">SOCKS</option><option value="ss">Shadowsocks</option><option value="vmess">VMess</option></select></div>
-            <div class="field"><label>Port</label><input class="input" type="number" id="inPort"></div>
+        <div class="modal-header">
+            <span class="modal-title" id="inModalTitle">New Inbound</span>
+            <button class="modal-close" onclick="closeModal('inModal')">&times;</button>
         </div>
-        <div class="field"><label>Listen Address</label><input class="input" id="inListen" value="0.0.0.0"></div>
-        <div id="inProtoFields"></div>
-        <input type="hidden" id="inEditId">
-        <div class="modal-actions">
-            <button class="btn" onclick="closeInModal()">Cancel</button>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="inName"></div>
+            <div class="field-row">
+                <div class="field"><label>Protocol</label><select class="input" id="inProtocol" onchange="onInProtoChange()"><option value="http">HTTP</option><option value="socks">SOCKS</option><option value="ss">Shadowsocks</option><option value="vmess">VMess</option></select></div>
+                <div class="field"><label>Port</label><input class="input" type="number" id="inPort"></div>
+            </div>
+            <div class="field"><label>Listen Address</label><input class="input" id="inListen" value="0.0.0.0"></div>
+            <div id="inProtoFields"></div>
+            <input type="hidden" id="inEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('inModal')">Cancel</button>
             <button class="btn btn-primary" onclick="saveIn()">Save</button>
         </div>
     </div>
 </div>
 
+<!-- Delete Modal -->
 <div class="modal-overlay" id="deleteModal">
-    <div class="modal"><div class="modal-title">Confirm Delete</div><p id="deleteMessage"></p><div class="modal-actions"><button class="btn" onclick="closeDeleteModal()">Cancel</button><button class="btn btn-danger" id="deleteConfirmBtn">Delete</button></div></div>
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body"><p id="deleteMessage"></p></div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -37,15 +55,8 @@
 <script>
 var inbounds = [];
 
-function closeInModal() { document.getElementById('inModal').classList.remove('show'); }
-function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('show'); }
-
 async function loadData() {
-    try {
-        var resp = await fetch('/api/inbounds');
-        inbounds = await resp.json();
-        renderInbounds();
-    } catch(e) {}
+    try { var resp = await fetch('/api/inbounds'); inbounds = await resp.json(); renderInbounds(); } catch(e) {}
 }
 
 function renderInbounds() {
@@ -153,7 +164,7 @@ async function saveIn() {
     try {
         var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         var data = await resp.json();
-        closeInModal();
+        closeModal('inModal');
         addLog(data.success ? 'ok' : 'error', data.message || '');
         loadData();
     } catch(e) { addLog('error', 'Save failed: ' + e); }
@@ -162,7 +173,7 @@ async function saveIn() {
 function confirmDelete(id) {
     document.getElementById('deleteMessage').textContent = 'Delete inbound #' + id + '?';
     document.getElementById('deleteConfirmBtn').onclick = async function() {
-        try { await fetch('/api/inbounds/' + id, { method: 'DELETE' }); closeDeleteModal(); loadData(); addLog('ok', 'Inbound deleted'); } catch(e) {}
+        try { await fetch('/api/inbounds/' + id, { method: 'DELETE' }); closeModal('deleteModal'); loadData(); addLog('ok', 'Inbound deleted'); } catch(e) {}
     };
     document.getElementById('deleteModal').classList.add('show');
 }

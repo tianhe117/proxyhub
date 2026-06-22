@@ -36,19 +36,26 @@
 <!-- Services -->
 <div id="servicesList"></div>
 <div class="empty-state" id="servicesEmpty" style="display:none;">No services. Create one to get started.</div>
+{% endblock %}
 
+{% block modals %}
 <!-- Service Modal -->
 <div class="modal-overlay" id="serviceModal">
     <div class="modal">
-        <div class="modal-title" id="svcModalTitle">New Service</div>
-        <div class="field"><label>Name</label><input class="input" id="svcName"></div>
-        <div class="field"><label>Inbound</label><select class="input" id="svcInbound"></select></div>
-        <div class="field"><label>Outbound</label><select class="input" id="svcOutbound"></select></div>
-        <div class="field"><label><input type="checkbox" id="svcAutoStart"> Auto-start on boot</label></div>
-        <input type="hidden" id="svcEditId">
-        <div class="modal-actions">
+        <div class="modal-header">
+            <span class="modal-title" id="svcModalTitle">New Service</span>
+            <button class="modal-close" onclick="closeModal('serviceModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="svcName"></div>
+            <div class="field"><label>Inbound</label><select class="input" id="svcInbound"></select></div>
+            <div class="field"><label>Outbound</label><select class="input" id="svcOutbound"></select></div>
+            <div class="field"><label><input type="checkbox" id="svcAutoStart"> Auto-start on boot</label></div>
+            <input type="hidden" id="svcEditId">
+        </div>
+        <div class="modal-footer">
             <button class="btn" onclick="closeModal('serviceModal')">Cancel</button>
-            <button class="btn btn-primary" id="svcSaveBtn" onclick="saveService()">Save</button>
+            <button class="btn btn-primary" onclick="saveService()">Save</button>
         </div>
     </div>
 </div>
@@ -56,22 +63,16 @@
 <!-- Delete Modal -->
 <div class="modal-overlay" id="deleteModal">
     <div class="modal">
-        <div class="modal-title">Confirm Delete</div>
-        <p id="deleteMessage" style="margin-bottom:12px;"></p>
-        <div class="modal-actions">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="deleteMessage"></p>
+        </div>
+        <div class="modal-footer">
             <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
             <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
-        </div>
-    </div>
-</div>
-
-<!-- Message Modal -->
-<div class="modal-overlay" id="messageModal">
-    <div class="modal">
-        <div class="modal-title">Notice</div>
-        <p id="messageText"></p>
-        <div class="modal-actions">
-            <button class="btn btn-primary" onclick="closeModal('messageModal')">OK</button>
         </div>
     </div>
 </div>
@@ -84,12 +85,6 @@
 {% block extra_js %}
 <script>
 var services = [], inbounds = [], outbounds = [];
-
-function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-function showMessage(msg) {
-    document.getElementById('messageText').textContent = msg;
-    document.getElementById('messageModal').classList.add('show');
-}
 
 async function loadData() {
     try {
@@ -137,9 +132,9 @@ function renderServices() {
         var dot = s.status === 'running' ? 'ok' : (s.status === 'error' ? 'error' : 'idle');
         return '<div class="section">' +
             '<div class="section-body">' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
             '<span><span class="status-dot ' + dot + '"></span> <strong>' + escapeHtml(s.name) + '</strong></span>' +
-            '<span style="display:flex;gap:4px;">' +
+            '<span style="display:flex;gap:4px;flex-wrap:wrap;">' +
             '<label style="font-size:11px;"><input type="checkbox" ' + (s.auto_start ? 'checked' : '') + ' onchange="toggleAutoStart(' + s.id + ', this.checked)"> auto</label>' +
             '<button class="btn btn-sm btn-ok" onclick="controlService(' + s.id + ', \'start\')" ' + (s.status === 'running' ? 'disabled' : '') + '>&#9654;</button>' +
             '<button class="btn btn-sm btn-danger" onclick="controlService(' + s.id + ', \'stop\')" ' + (s.status !== 'running' ? 'disabled' : '') + '>&#9632;</button>' +
@@ -230,7 +225,6 @@ function confirmDeleteService(id) {
     document.getElementById('deleteModal').classList.add('show');
 }
 
-// Initial load + polling
 loadData();
 setInterval(loadData, 10000);
 </script>

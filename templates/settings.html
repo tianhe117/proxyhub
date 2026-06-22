@@ -60,7 +60,7 @@
 <div class="section">
     <div class="section-title">Danger Zone</div>
     <div class="section-body">
-        <div style="display:flex;gap:4px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn btn-danger" onclick="dangerAction('nodes', 'Clear all nodes')">Clear All Nodes</button>
             <button class="btn btn-danger" onclick="dangerAction('settings', 'Reset all settings')">Reset Settings</button>
             <button class="btn btn-danger" onclick="dangerAction('db', 'Delete database')">Clear Database</button>
@@ -71,17 +71,27 @@
 <div style="text-align:right;padding:12px 0;">
     <button class="btn btn-primary" onclick="saveSettings()">Save Changes</button>
 </div>
+{% endblock %}
 
+{% block modals %}
 <!-- Danger Confirm Modal -->
 <div class="modal-overlay" id="dangerModal">
     <div class="modal">
-        <div class="modal-title">Confirm</div>
-        <p id="dangerMsg"></p>
-        <div class="field"><label>Type <strong id="dangerKeyword"></strong> to confirm:</label><input class="input" id="dangerConfirmInput"></div>
-        <input type="hidden" id="dangerAction">
-        <div class="modal-actions">
-            <button class="btn" onclick="closeDangerModal()">Cancel</button>
-            <button class="btn btn-danger" id="dangerConfirmBtn" onclick="execDanger()">Confirm</button>
+        <div class="modal-header">
+            <span class="modal-title">Danger Zone</span>
+            <button class="modal-close" onclick="closeModal('dangerModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="dangerMsg" style="margin-bottom:12px;"></p>
+            <div class="field">
+                <label>Type <strong id="dangerKeyword"></strong> to confirm:</label>
+                <input class="input" id="dangerConfirmInput">
+            </div>
+            <input type="hidden" id="dangerAction">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('dangerModal')">Cancel</button>
+            <button class="btn btn-danger" onclick="execDanger()">Confirm</button>
         </div>
     </div>
 </div>
@@ -89,21 +99,17 @@
 <!-- Settings Diff Modal -->
 <div class="modal-overlay" id="diffModal">
     <div class="modal">
-        <div class="modal-title">Confirm Changes</div>
-        <pre id="diffContent" style="font-size:11px;background:#fafafa;padding:8px;max-height:200px;overflow:auto;"></pre>
-        <div class="modal-actions">
-            <button class="btn" onclick="closeDiffModal()">Cancel</button>
+        <div class="modal-header">
+            <span class="modal-title">Confirm Changes</span>
+            <button class="modal-close" onclick="closeModal('diffModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <pre id="diffContent" style="font-size:12px;background:var(--bg-page);padding:12px;border-radius:4px;max-height:240px;overflow:auto;margin:0;"></pre>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('diffModal')">Cancel</button>
             <button class="btn btn-primary" onclick="confirmSaveSettings()">Apply</button>
         </div>
-    </div>
-</div>
-
-<!-- Message Modal -->
-<div class="modal-overlay" id="messageModal">
-    <div class="modal">
-        <div class="modal-title">Notice</div>
-        <p id="messageText"></p>
-        <div class="modal-actions"><button class="btn btn-primary" onclick="closeMsgModal()">OK</button></div>
     </div>
 </div>
 {% endblock %}
@@ -113,23 +119,17 @@
 var originalSettings = {};
 var changes = {};
 
-function closeMsgModal() { document.getElementById('messageModal').classList.remove('show'); }
-function closeDiffModal() { document.getElementById('diffModal').classList.remove('show'); }
-function closeDangerModal() { document.getElementById('dangerModal').classList.remove('show'); }
-
 async function loadSettings() {
     try {
         var resp = await fetch('/api/settings');
         var data = await resp.json();
         originalSettings = data;
-        // Populate form fields
         ['bin_path_xray','bin_path_sslocal','bin_path_singbox','config_dir',
          'check_interval_normal','check_interval_failover','tcp_timeout','curl_timeout',
          'test_url','web_port','web_username'].forEach(function(k) {
             var e = document.getElementById('set_' + k);
             if (e) e.value = data[k] || '';
         });
-        // Password fields stay empty
     } catch(e) {}
 }
 
@@ -167,12 +167,17 @@ async function checkUpgrade(binName) {
         var data = await resp.json();
         if (data.is_update) {
             addLog('ok', binName + ': new version ' + data.latest_version + ' available (current: ' + data.current_version + ')');
-            if (confirm('Download ' + binName + ' ' + data.latest_version + '?')) {
-                var dr = await fetch('/api/upgrade/download/' + binName, { method: 'POST' });
-                var dd = await dr.json();
-                addLog(dd.success ? 'ok' : 'error', dd.message || '');
-                loadBinStatus();
-            }
+            showConfirm(
+                'Download Update',
+                'Download ' + binName + ' ' + data.latest_version + '?',
+                async function() {
+                    var dr = await fetch('/api/upgrade/download/' + binName, { method: 'POST' });
+                    var dd = await dr.json();
+                    addLog(dd.success ? 'ok' : 'error', dd.message || '');
+                    loadBinStatus();
+                },
+                'Download'
+            );
         } else {
             addLog('ok', binName + ' is up to date (' + data.current_version + ')');
         }
@@ -190,14 +195,14 @@ function collectFormData() {
     });
     var pw = document.getElementById('set_web_password').value;
     if (pw && pw !== '******') {
-        var confirm = document.getElementById('set_web_password_confirm').value;
-        if (pw !== confirm) {
+        var cfm = document.getElementById('set_web_password_confirm').value;
+        if (pw !== cfm) {
             showMessage('Passwords do not match');
             return null;
         }
         data['web_password'] = pw;
     } else {
-        data['web_password'] = '******'; // signal "don't change"
+        data['web_password'] = '******';
     }
     return data;
 }
@@ -223,7 +228,7 @@ function saveSettings() {
 }
 
 async function confirmSaveSettings() {
-    closeDiffModal();
+    closeModal('diffModal');
     var data = collectFormData();
     if (!data) return;
     try {
@@ -253,7 +258,7 @@ async function execDanger() {
         showMessage('Confirmation text does not match.');
         return;
     }
-    closeDangerModal();
+    closeModal('dangerModal');
     try {
         if (action === 'nodes') {
             await fetch('/api/nodes/clear', { method: 'POST' });
@@ -266,11 +271,6 @@ async function execDanger() {
             showMessage('Database clearing is not implemented via API. Delete data/proxyhub.db manually.');
         }
     } catch(e) { addLog('error', 'Action failed: ' + e); }
-}
-
-function showMessage(msg) {
-    document.getElementById('messageText').textContent = msg;
-    document.getElementById('messageModal').classList.add('show');
 }
 
 loadSettings();

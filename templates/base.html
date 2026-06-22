@@ -215,25 +215,67 @@
             font-size: 11px;
         }
 
-        /* ---- Modal ---- */
+        /* ---- Modal (横版统一风格) ---- */
         .modal-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.2);
+            background: rgba(0,0,0,0.3);
             display: none; align-items: center; justify-content: center;
             z-index: 1000;
         }
         .modal-overlay.show { display: flex; }
         .modal {
             background: var(--bg-card);
-            border-radius: var(--radius);
-            padding: 20px;
-            min-width: 380px;
-            max-width: 480px;
-            max-height: 90vh;
-            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            min-width: 440px;
+            max-width: 600px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
-        .modal-title { font-size: 14px; font-weight: bold; margin-bottom: 12px; }
-        .modal-actions { display: flex; justify-content: flex-end; gap: 16px; margin-top: 8px; }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-page);
+            flex-shrink: 0;
+        }
+        .modal-header .modal-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--text);
+        }
+        .modal-close {
+            cursor: pointer;
+            font-size: 16px;
+            color: var(--text-secondary);
+            background: none;
+            border: none;
+            padding: 0 4px;
+            line-height: 1;
+        }
+        .modal-close:hover { color: var(--text); }
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-body .field { margin: 10px 0; }
+        .modal-body .field:first-child { margin-top: 0; }
+        .modal-body .field:last-child { margin-bottom: 0; }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+            background: var(--bg-page);
+            flex-shrink: 0;
+        }
+        .modal-footer .btn { min-width: 72px; }
 
         /* ---- Collapse ---- */
         .collapse-header { cursor: pointer; user-select: none; }
@@ -311,7 +353,41 @@
         </div>
     </div>
 
-    <!-- Modals container -->
+    <!-- Global Modals -->
+    <!-- Confirm Modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title" id="confirmTitle">Confirm</span>
+                <button class="modal-close" onclick="closeModal('confirmModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage" style="line-height:1.6;"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('confirmModal')">Cancel</button>
+                <button class="btn btn-primary" id="confirmOkBtn">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal -->
+    <div class="modal-overlay" id="messageModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Notice</span>
+                <button class="modal-close" onclick="closeModal('messageModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="messageText" style="line-height:1.6;"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('messageModal')">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page-specific modals -->
     {% block modals %}{% endblock %}
 
     <!-- Global JavaScript -->
@@ -345,6 +421,27 @@
             logVisible = !logVisible;
             body.classList.toggle('collapsed', !logVisible);
             arrow.classList.toggle('collapsed', !logVisible);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+
+        function showMessage(msg) {
+            document.getElementById('messageText').textContent = msg;
+            document.getElementById('messageModal').classList.add('show');
+        }
+
+        function showConfirm(title, msg, onConfirm, confirmLabel) {
+            document.getElementById('confirmTitle').textContent = title || 'Confirm';
+            document.getElementById('confirmMessage').textContent = msg;
+            var btn = document.getElementById('confirmOkBtn');
+            btn.textContent = confirmLabel || 'OK';
+            btn.onclick = function() {
+                closeModal('confirmModal');
+                if (onConfirm) onConfirm();
+            };
+            document.getElementById('confirmModal').classList.add('show');
         }
 
         async function fetchLogs() {
