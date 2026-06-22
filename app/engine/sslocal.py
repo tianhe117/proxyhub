@@ -19,18 +19,18 @@ def generate_sslocal_config(node, local_port):
     Raises:
         ValueError: node.protocol is not 'ss'
     """
-    protocol = node['protocol'] if isinstance(node, dict) else node.protocol
+    protocol = node['protocol'] 
     if protocol != 'ss':
         raise ValueError(f'sslocal only supports ss protocol, got: {protocol}')
 
-    cfg = node['config_json'] if isinstance(node, dict) else node.config_json
+    cfg = node['config_json'] 
     if isinstance(cfg, str):
         cfg = json.loads(cfg)
     elif cfg is None:
         cfg = {}
 
-    address = node['address'] if isinstance(node, dict) else node.address
-    port = int(node['port']) if isinstance(node, dict) else int(node.port)
+    address = node['address'] 
+    port = int(node['port'])
 
     config = {
         'server':        address,

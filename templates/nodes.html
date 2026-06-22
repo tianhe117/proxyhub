@@ -171,7 +171,7 @@ function renderProtoFields() {
     } else if (proto === 'trojan') {
         html = '<div class="field"><label>Password</label><input class="input" id="nf_password"></div>';
     } else if (proto === 'ss') {
-        html = '<div class="field"><label>Method</label><select class="input" id="nf_method"><option value="aes-256-gcm">aes-256-gcm</option><option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</option></select></div><div class="field"><label>Password</label><input class="input" id="nf_password"></div><div class="field"><label>Plugin</label><input class="input" id="nf_plugin" placeholder="obfs-local"></div><div class="field"><label>Plugin Opts</label><input class="input" id="nf_plugin_opts" placeholder="obfs=http;obfs-host=..."></div>';
+        html = '<div class="field"><label>Method</label><select class="input" id="nf_method"><option value="aes-256-gcm">aes-256-gcm</option><option value="aes-128-gcm">aes-128-gcm</option><option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</option><option value="xchacha20-ietf-poly1305">xchacha20-ietf-poly1305</option><option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</option><option value="2022-blake3-aes-256-gcm">2022-blake3-aes-256-gcm</option><option value="2022-blake3-chacha20-poly1305">2022-blake3-chacha20-poly1305</option></select></div><div class="field"><label>Password</label><input class="input" id="nf_password"></div><div class="field"><label>Plugin</label><input class="input" id="nf_plugin" placeholder="obfs-local"></div><div class="field"><label>Plugin Opts</label><input class="input" id="nf_plugin_opts" placeholder="obfs=http;obfs-host=..."></div>';
     } else if (proto === 'hysteria2') {
         html = '<div class="field"><label>Password</label><input class="input" id="nf_password"></div><div class="field"><label>Up Mbps</label><input class="input" type="number" id="nf_up_mbps"></div><div class="field"><label>Down Mbps</label><input class="input" type="number" id="nf_down_mbps"></div><div class="field"><label>Obfs Password</label><input class="input" id="nf_obfs_password"></div>';
     } else if (proto === 'tuic') {
@@ -238,16 +238,17 @@ function openNodeModal(editId) {
                 document.getElementById('nodeNetwork').value = cfg.network || 'tcp';
                 if (cfg.tls) { document.getElementById('nodeTls').checked = true; onTlsChange(); document.getElementById('nodeSni').value = cfg.sni || ''; document.getElementById('nodeAlpn').value = cfg.alpn || ''; document.getElementById('nodeAllowInsecure').checked = cfg.allowInsecure || false; document.getElementById('nodeFingerprint').value = cfg.fingerprint || ''; }
                 renderNetFields();
-                setTimeout(function() {
-                    if (cfg.uuid) gelSet('nf_uuid', cfg.uuid);
-                    if (cfg.password) gelSet('nf_password', cfg.password);
-                    if (cfg.method) gelSet('nf_method', cfg.method);
-                    if (cfg.ws_host) gelSet('nf_ws_host', cfg.ws_host);
-                    if (cfg.ws_path) gelSet('nf_ws_path', cfg.ws_path);
-                    if (cfg.h2_host) gelSet('nf_h2_host', cfg.h2_host);
-                    if (cfg.h2_path) gelSet('nf_h2_path', cfg.h2_path);
-                    if (cfg.grpc_service_name) gelSet('nf_grpc_svc', cfg.grpc_service_name);
-                }, 50);
+                if (cfg.uuid) gelSet('nf_uuid', cfg.uuid);
+                if (cfg.password) gelSet('nf_password', cfg.password);
+                if (cfg.method) gelSet('nf_method', cfg.method);
+                if (cfg.ws_host) gelSet('nf_ws_host', cfg.ws_host);
+                if (cfg.ws_path) gelSet('nf_ws_path', cfg.ws_path);
+                if (cfg.h2_host) gelSet('nf_h2_host', cfg.h2_host);
+                if (cfg.h2_path) gelSet('nf_h2_path', cfg.h2_path);
+                if (cfg.grpc_service_name) gelSet('nf_grpc_svc', cfg.grpc_service_name);
+                if (cfg.plugin) gelSet('nf_plugin', cfg.plugin);
+                if (cfg.plugin_opts) gelSet('nf_plugin_opts', cfg.plugin_opts);
+                document.getElementById('nodeBinType').value = node.bin_type || 'xray';
             } catch(e) {}
         }
     }
@@ -308,14 +309,12 @@ function parseVmess(url) {
         document.getElementById('nodeFingerprint').value = d.fp || '';
     }
     onProtoChange();
-    setTimeout(function() {
-        gelSet('nf_uuid', d.id || '');
-        gelSet('nf_security', d.scy || 'auto');
-        gelSet('nf_alterId', d.aid || '0');
-        if (net === 'ws') { gelSet('nf_ws_host', d.host || ''); gelSet('nf_ws_path', d.path || '/'); }
-        else if (net === 'h2') { gelSet('nf_h2_host', d.host || ''); gelSet('nf_h2_path', d.path || '/'); }
-        else if (net === 'grpc') { gelSet('nf_grpc_svc', d.path || d.serviceName || ''); }
-    }, 50);
+    gelSet('nf_uuid', d.id || '');
+    gelSet('nf_security', d.scy || 'auto');
+    gelSet('nf_alterId', d.aid || '0');
+    if (net === 'ws') { gelSet('nf_ws_host', d.host || ''); gelSet('nf_ws_path', d.path || '/'); }
+    else if (net === 'h2') { gelSet('nf_h2_host', d.host || ''); gelSet('nf_h2_path', d.path || '/'); }
+    else if (net === 'grpc') { gelSet('nf_grpc_svc', d.path || d.serviceName || ''); }
 }
 
 function parseVless(url) {
@@ -358,14 +357,12 @@ function parseVless(url) {
         document.getElementById('nodeFingerprint').value = params.fp || '';
     }
     onProtoChange();
-    setTimeout(function() {
-        gelSet('nf_uuid', uuid);
-        gelSet('nf_flow', params.flow || '');
-        gelSet('nf_encryption', 'none');
-        if (net === 'ws') { gelSet('nf_ws_host', params.host || ''); gelSet('nf_ws_path', params.path || '/'); }
-        else if (net === 'h2') { gelSet('nf_h2_host', params.host || ''); gelSet('nf_h2_path', params.path || '/'); }
-        else if (net === 'grpc') { gelSet('nf_grpc_svc', params.serviceName || params.path || ''); }
-    }, 50);
+    gelSet('nf_uuid', uuid);
+    gelSet('nf_flow', params.flow || '');
+    gelSet('nf_encryption', 'none');
+    if (net === 'ws') { gelSet('nf_ws_host', params.host || ''); gelSet('nf_ws_path', params.path || '/'); }
+    else if (net === 'h2') { gelSet('nf_h2_host', params.host || ''); gelSet('nf_h2_path', params.path || '/'); }
+    else if (net === 'grpc') { gelSet('nf_grpc_svc', params.serviceName || params.path || ''); }
 }
 
 function parseSs(url) {
@@ -413,11 +410,9 @@ function parseSs(url) {
         document.getElementById('nodePort').value = port;
         onProtoChange();
         if (plugin) document.getElementById('nodeBinType').value = 'sslocal';
-        setTimeout(function() {
-            gelSet('nf_method', method);
-            gelSet('nf_password', password);
-            if (plugin) { gelSet('nf_plugin', plugin); gelSet('nf_plugin_opts', pluginOpts); }
-        }, 50);
+        gelSet('nf_method', method);
+        gelSet('nf_password', password);
+        if (plugin) { gelSet('nf_plugin', plugin); gelSet('nf_plugin_opts', pluginOpts); }
     }
 }
 
@@ -456,11 +451,9 @@ function parseTrojan(url) {
     document.getElementById('nodeTls').checked = true; onTlsChange();
     document.getElementById('nodeSni').value = params.sni || params.peer || '';
     onProtoChange();
-    setTimeout(function() {
-        gelSet('nf_password', password);
-        if (net === 'ws') { gelSet('nf_ws_host', params.host || ''); gelSet('nf_ws_path', params.path || '/'); }
-        else if (net === 'grpc') { gelSet('nf_grpc_svc', params.serviceName || ''); }
-    }, 50);
+    gelSet('nf_password', password);
+    if (net === 'ws') { gelSet('nf_ws_host', params.host || ''); gelSet('nf_ws_path', params.path || '/'); }
+    else if (net === 'grpc') { gelSet('nf_grpc_svc', params.serviceName || ''); }
 }
 
 function parseHy2(url) {
@@ -493,12 +486,10 @@ function parseHy2(url) {
     document.getElementById('nodeAddr').value = address;
     document.getElementById('nodePort').value = port;
     onProtoChange();
-    setTimeout(function() {
-        gelSet('nf_password', password);
-        gelSet('nf_up_mbps', params.upmbps || '');
-        gelSet('nf_down_mbps', params.downmbps || '');
-        if (params.obfs) { gelSet('nf_obfs_password', params['obfs-password'] || ''); }
-    }, 50);
+    gelSet('nf_password', password);
+    gelSet('nf_up_mbps', params.upmbps || '');
+    gelSet('nf_down_mbps', params.downmbps || '');
+    if (params.obfs) { gelSet('nf_obfs_password', params['obfs-password'] || ''); }
 }
 
 async function checkSingle(id) {

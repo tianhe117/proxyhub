@@ -18,9 +18,9 @@ def build_xray_outbound(node, local_port):
         JSON-serialisable dict
     """
     cfg = _get_config(node)
-    protocol = node['protocol'] if isinstance(node, dict) else node.protocol
-    address = node['address'] if isinstance(node, dict) else node.address
-    port = int(node['port']) if isinstance(node, dict) else int(node.port)
+    protocol = node['protocol'] 
+    address = node['address'] 
+    port = int(node['port'])
 
     outbound = _build_outbound(protocol, address, port, cfg)
     stream = build_stream_settings(cfg)
@@ -38,8 +38,8 @@ def build_xray_outbound(node, local_port):
 
 
 def _get_config(node):
-    """Normalise node.config_json to a dict."""
-    cfg = node['config_json'] if isinstance(node, dict) else node.config_json
+    """Normalise node config_json to a dict."""
+    cfg = node['config_json'] 
     if isinstance(cfg, str):
         return json.loads(cfg)
     return cfg or {}
@@ -179,15 +179,15 @@ def build_xray_inbound(inbound, socks_port):
     Returns:
         JSON-serialisable dict
     """
-    protocol = inbound['protocol'] if isinstance(inbound, dict) else inbound.protocol
-    port = int(inbound['port']) if isinstance(inbound, dict) else int(inbound.port)
+    protocol = inbound['protocol']
+    port = int(inbound['port'])
     listen = '0.0.0.0'
     try:
-        listen = inbound['listen_addr'] if isinstance(inbound, dict) else inbound.listen_addr
+        listen = inbound['listen_addr']
     except (KeyError, AttributeError):
         pass
 
-    params = inbound['params_json'] if isinstance(inbound, dict) else inbound.params_json
+    params = inbound['params_json']
     if isinstance(params, str):
         params = json.loads(params)
     elif params is None:

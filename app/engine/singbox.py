@@ -21,7 +21,7 @@ def generate_singbox_config(node, local_port):
     Returns:
         JSON-serialisable dict
     """
-    protocol = node['protocol'] if isinstance(node, dict) else node.protocol
+    protocol = node['protocol'] 
     # Protocol aliases: hysteria2 / hy2 / hysteria all map to hysteria2
     if protocol in ('hysteria2', 'hy2', 'hysteria'):
         sing_type = 'hysteria2'
@@ -30,10 +30,10 @@ def generate_singbox_config(node, local_port):
     else:
         raise ValueError(f'sing-box does not support protocol: {protocol}')
 
-    address = node['address'] if isinstance(node, dict) else node.address
-    port = int(node['port']) if isinstance(node, dict) else int(node.port)
+    address = node['address'] 
+    port = int(node['port'])
 
-    cfg = node['config_json'] if isinstance(node, dict) else node.config_json
+    cfg = node['config_json'] 
     if isinstance(cfg, str):
         cfg = json.loads(cfg)
     elif cfg is None:

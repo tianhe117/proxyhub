@@ -18,7 +18,7 @@ def build_outbound_config(node, local_port):
     Returns:
         (config_dict, config_filename_suffix)
     """
-    bin_type = node['bin_type'] if isinstance(node, dict) else node.bin_type
+    bin_type = node['bin_type']
 
     if bin_type == 'xray':
         from .xray import build_xray_outbound

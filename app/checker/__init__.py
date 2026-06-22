@@ -102,7 +102,8 @@ def _run_checks(task_id, nodes, results, check_type):
             if check_type == 'url' or (check_type == 'both' and results[node['id']]['tcp'] and results[node['id']]['tcp'].get('success')):
                 # Generate temp config
                 try:
-                    config_path = _generate_temp_config(node)
+                    local_port = _find_temp_port()
+                    config_path = _generate_temp_config(node, local_port)
                     bin_type = node['bin_type']
                     bin_key = f'bin_path_{bin_type if bin_type != "sing-box" else "singbox"}'
                     bin_path = get_setting(bin_key) or ''
@@ -111,7 +112,6 @@ def _run_checks(task_id, nodes, results, check_type):
                             os.path.dirname(os.path.dirname(os.path.dirname(
                                 os.path.abspath(__file__)))), bin_path
                         )
-                    local_port = _find_temp_port()
 
                     res = url_test(config_path, bin_type, bin_path,
                                    local_port, test_url, curl_timeout, tag)
@@ -145,13 +145,13 @@ def _run_checks(task_id, nodes, results, check_type):
         log('ok', 'checker', f'Check task {task_id} completed')
 
 
-def _generate_temp_config(node):
-    """Generate a minimal temp config file for URL testing."""
+def _generate_temp_config(node, local_port):
+    """Generate a minimal temp config file for URL testing.
+
+    Returns the absolute path to the config file.
+    """
     import json as _json
     from app.engine import build_outbound_config
-
-    # Allocate a temp port
-    local_port = _find_temp_port()
 
     config, _ = build_outbound_config(node, local_port)
 
