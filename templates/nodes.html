@@ -3,7 +3,6 @@
 
 {% block navbar_actions %}
 <button class="btn btn-sm btn-primary" onclick="openNodeModal()">+ New Node</button>
-<button class="btn btn-sm" onclick="checkSelected()">Check Selected</button>
 <button class="btn btn-sm" onclick="checkAll()">Check All</button>
 {% endblock %}
 
@@ -97,19 +96,28 @@ function renderNodes() {
             var tcp = n.tcp_latency !== null ? (n.tcp_latency < 0 ? '<span class="lat-bad">fail</span>' : '<span class="' + latClass(n.tcp_latency, 150, 300) + '">' + n.tcp_latency + 'ms</span>') : '<span class="lat-pending">—</span>';
             var curl = n.curl_latency !== null ? (n.curl_latency < 0 ? '<span class="lat-bad">fail</span>' : '<span class="' + latClass(n.curl_latency, 1000, 2000) + '">' + n.curl_latency + 'ms</span>') : '<span class="lat-pending">—</span>';
             return '<div class="row-flex">' +
-                '<input type="checkbox" class="nodeCheck" value="' + n.id + '">' +
-                '<span style="flex:2">' + escapeHtml(n.name) + '</span>' +
-                '<span class="tag" style="flex:1">' + escapeHtml(n.protocol) + '</span>' +
-                '<span class="tag" style="flex:1">' + escapeHtml(n.bin_type) + '</span>' +
+                '<span style="flex:2;padding-left:8px;">' + escapeHtml(n.name) + '</span>' +
+                '<span style="flex:1">' + escapeHtml(n.protocol) + '</span>' +
+                '<span style="flex:1">' + escapeHtml(n.bin_type) + '</span>' +
                 '<span style="flex:2">' + escapeHtml(n.address) + ':' + n.port + '</span>' +
                 '<span style="flex:1">' + tcp + '</span>' +
                 '<span style="flex:1">' + curl + '</span>' +
                 '<button class="btn btn-sm" onclick="openNodeModal(' + n.id + ')">&#9998;</button>' +
-                '<button class="btn btn-sm btn-ghost" onclick="checkSingle(' + n.id + ')">&#9678;</button>' +
-                '<button class="btn btn-sm btn-ghost btn-danger" onclick="confirmDelete(' + n.id + ')">&#10005;</button>' +
+                '<button class="btn btn-sm btn-ok" onclick="checkSingle(' + n.id + ')">&#8635;</button>' +
+                '<button class="btn btn-sm btn-danger" onclick="confirmDelete(' + n.id + ')">&#10005;</button>' +
                 '</div>';
         }).join('');
-        return '<div class="section"><div class="collapse-header section-title" onclick="toggleCollapse(this)">&#9660; ' + subName + ' &middot; ' + g.count + ' nodes <button class="btn btn-sm" style="float:right;" onclick="event.stopPropagation();checkGroup(' + gi + ')">check all</button></div><div class="collapse-body show">' + rows + '</div></div>';
+        return '<div class="section"><div class="collapse-header section-title" onclick="toggleCollapse(this)">&#9660; ' + subName + ' &middot; ' + g.count + ' nodes <button class="btn btn-sm" style="float:right;" onclick="event.stopPropagation();checkGroup(' + gi + ')">check all</button></div>' +
+            '<div class="row-flex" style="font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;">' +
+                '<span style="flex:2;padding-left:8px;">Name</span>' +
+                '<span style="flex:1">Protocol</span>' +
+                '<span style="flex:1">Bin</span>' +
+                '<span style="flex:2">Address</span>' +
+                '<span style="flex:1">TCP</span>' +
+                '<span style="flex:1">Curl</span>' +
+                '<span style="width:84px;"></span>' +
+            '</div>' +
+            '<div class="collapse-body show">' + rows + '</div></div>';
     }).join('');
 }
 
@@ -281,17 +289,6 @@ async function checkSingle(id) {
 
 async function checkGroup(gi) {
     var ids = groups[gi].nodes.map(function(n) { return n.id; });
-    try {
-        var resp = await fetch('/api/nodes/check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({node_ids:ids, check_type:'both'}) });
-        var data = await resp.json();
-        if (data.task_id) { addLog('info', 'Bulk check started'); pollCheck(data.task_id); }
-    } catch(e) {}
-}
-
-async function checkSelected() {
-    var ids = [];
-    document.querySelectorAll('.nodeCheck:checked').forEach(function(cb) { ids.push(parseInt(cb.value)); });
-    if (!ids.length) return addLog('warn', 'No nodes selected');
     try {
         var resp = await fetch('/api/nodes/check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({node_ids:ids, check_type:'both'}) });
         var data = await resp.json();
