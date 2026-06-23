@@ -19,18 +19,6 @@
             <div style="font-size:16px;font-weight:bold;" id="statSubs">0</div>
             <div style="font-size:12px;color:#888;">Subscriptions</div>
         </div>
-        <div class="stat-item" style="flex:1;text-align:center;">
-            <div style="font-size:16px;font-weight:bold;" id="statXray">—</div>
-            <div style="font-size:12px;color:#888;">xray</div>
-        </div>
-        <div class="stat-item" style="flex:1;text-align:center;">
-            <div style="font-size:16px;font-weight:bold;" id="statSS">—</div>
-            <div style="font-size:12px;color:#888;">sslocal</div>
-        </div>
-        <div class="stat-item" style="flex:1;text-align:center;">
-            <div style="font-size:16px;font-weight:bold;" id="statSB">—</div>
-            <div style="font-size:12px;color:#888;">sing-box</div>
-        </div>
     </div>
 </div>
 
@@ -130,14 +118,6 @@ async function loadData() {
         document.getElementById('statNodes').textContent = totalNodes;
         document.getElementById('statSubs').textContent = subCount;
         document.getElementById('nodeCount').textContent = totalNodes + ' nodes';
-    } catch(e) {}
-
-    try {
-        var br = await fetch('/api/bins/status');
-        var bins = await br.json();
-        document.getElementById('statXray').textContent = bins.xray ? (bins.xray.version !== 'N/A' ? 'ok' : '—') : '—';
-        document.getElementById('statSS').textContent = bins.sslocal ? (bins.sslocal.version !== 'N/A' ? 'ok' : '—') : '—';
-        document.getElementById('statSB').textContent = bins['sing-box'] ? (bins['sing-box'].version !== 'N/A' ? 'ok' : '—') : '—';
     } catch(e) {}
 
     try {

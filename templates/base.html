@@ -345,11 +345,7 @@
 
     <!-- Status Bar -->
     <div class="status-bar">
-        <div class="status-left" id="statusBins">
-            <span><span class="status-dot idle" id="binDot_xray"></span> xray</span>
-            <span><span class="status-dot idle" id="binDot_sslocal"></span> sslocal</span>
-            <span><span class="status-dot idle" id="binDot_singbox"></span> sing-box</span>
-        </div>
+        <div class="status-left"></div>
         <div class="status-right">
             {% block statusbar_right %}{% endblock %}
             <span id="nodeCount"></span>
@@ -461,25 +457,9 @@
             } catch(e) {}
         }
 
-        async function checkBinsStatus() {
-            try {
-                var resp = await fetch('/api/bins/status');
-                var data = await resp.json();
-                for (var k in data) {
-                    var dot = document.getElementById('binDot_' + k);
-                    if (!dot) dot = document.getElementById('binDot_' + k.replace(/-/g,''));
-                    if (dot) {
-                        dot.className = 'status-dot ' + (data[k].version !== 'N/A' ? 'ok' : 'idle');
-                    }
-                }
-            } catch(e) {}
-        }
-
         // Initial fetch & polling
         fetchLogs();
-        checkBinsStatus();
         setInterval(fetchLogs, 2000);
-        setInterval(checkBinsStatus, 10000);
     </script>
     {% block extra_js %}{% endblock %}
 </body>
