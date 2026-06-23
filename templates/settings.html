@@ -50,10 +50,11 @@
             <div class="field"><label>Username</label><input class="input" id="set_web_username"></div>
         </div>
         <div class="field-row">
-            <div class="field"><label>Password (leave blank to disable auth)</label><input class="input" type="password" id="set_web_password" placeholder="******"></div>
-            <div class="field"><label>Confirm Password</label><input class="input" type="password" id="set_web_password_confirm" placeholder="******" oninput="checkPwMatch()"></div>
+            <div class="field"><label>Password</label><input class="input" type="password" id="set_web_password" oninput="checkPwMatch()"></div>
+            <div class="field"><label>Confirm Password</label><input class="input" type="password" id="set_web_password_confirm" oninput="checkPwMatch()"></div>
         </div>
         <span id="pwMismatch" class="error-msg" style="display:none;">Passwords do not match</span>
+        <div style="margin-top:4px;"><button class="btn btn-sm btn-danger" onclick="clearPassword()">Clear Password</button></div>
     </div>
 </div>
 
@@ -128,6 +129,7 @@
 <script>
 var originalSettings = {};
 var changes = {};
+var clearPwFlag = false;
 
 async function loadSettings() {
     try {
@@ -140,6 +142,10 @@ async function loadSettings() {
             var e = document.getElementById('set_' + k);
             if (e) e.value = data[k] || '';
         });
+        // Password: leave blank to keep unchanged
+        document.getElementById('set_web_password').value = '';
+        document.getElementById('set_web_password_confirm').value = '';
+        clearPwFlag = false;
     } catch(e) {}
 }
 
@@ -209,6 +215,14 @@ function checkPwMatch() {
     }
 }
 
+function clearPassword() {
+    if (!confirm('Clear password? This will disable authentication.')) return;
+    clearPwFlag = true;
+    document.getElementById('set_web_password').value = '';
+    document.getElementById('set_web_password_confirm').value = '';
+    saveSettings();
+}
+
 function collectFormData() {
     var keys = ['bin_path_xray','bin_path_sslocal','bin_path_singbox','config_dir',
                 'check_interval_normal','check_interval_failover','tcp_timeout','curl_timeout',
@@ -219,16 +233,17 @@ function collectFormData() {
         if (e) data[k] = e.value;
     });
     var pw = document.getElementById('set_web_password').value;
-    if (pw && pw !== '******') {
+    if (clearPwFlag) {
+        data['web_password'] = '';
+    } else if (pw) {
         var cfm = document.getElementById('set_web_password_confirm').value;
         if (pw !== cfm) {
             document.getElementById('pwMismatch').style.display = 'block';
             return null;
         }
         data['web_password'] = pw;
-    } else {
-        data['web_password'] = '******';
     }
+    // else: leave blank = don't change password
     return data;
 }
 
@@ -237,7 +252,6 @@ function saveSettings() {
     if (!data) return;
     changes = {};
     for (var k in data) {
-        if (k === 'web_password' && data[k] === '******') continue;
         if (data[k] != originalSettings[k]) {
             changes[k] = { old: originalSettings[k], new: data[k] };
         }
@@ -247,6 +261,9 @@ function saveSettings() {
         return;
     }
     var diffText = Object.keys(changes).map(function(k) {
+        if (k === 'web_password') {
+            return 'web_password: ' + (changes[k].new === '' ? 'Clear password' : 'Change password');
+        }
         return k + ': ' + (changes[k].old || '') + ' → ' + changes[k].new;
     }).join('\n');
     document.getElementById('diffContent').textContent = diffText;
