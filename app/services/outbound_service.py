@@ -5,7 +5,7 @@ import json
 from app.models.outbound import (
     create as create_ob, update as update_ob, delete as delete_ob,
     get_by_id as get_ob, add_pool_node, remove_pool_node, reorder_pool_nodes,
-    get_pool_nodes,
+    get_pool_nodes, sync_pool_nodes,
 )
 from app.models.node import get_by_id as get_node
 
@@ -76,3 +76,12 @@ def reorder_pool(outbound_id, node_order):
     """Reorder pool nodes. *node_order* is a list of pool entry IDs."""
     reorder_pool_nodes(outbound_id, node_order)
     return {'success': True, 'message': 'Pool reordered'}
+
+
+def sync_pool(outbound_id, node_ids):
+    """Replace all pool nodes with the given node_ids list."""
+    ob = get_ob(outbound_id)
+    if not ob:
+        return {'success': False, 'message': 'Outbound not found'}
+    sync_pool_nodes(outbound_id, node_ids)
+    return {'success': True, 'message': 'Pool synced'}

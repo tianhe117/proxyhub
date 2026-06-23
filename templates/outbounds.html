@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<div id="outboundsList"></div>
+<div id="outboundsList" style="max-width:720px;"></div>
 <div class="empty-state" id="outboundsEmpty" style="display:none;">No outbounds. Create one to proxy traffic.</div>
 {% endblock %}
 
@@ -20,11 +20,10 @@
         </div>
         <div class="modal-body">
             <div class="field"><label>Name</label><input class="input" id="obName"></div>
-            <div class="field"><label>Type</label><select class="input" id="obType" onchange="onObTypeChange()"><option value="single">Single Node</option><option value="auto">Auto Failover Pool</option></select></div>
-            <div id="obSingleFields"><div class="field"><label>Node</label><select class="input" id="obSingleNode"></select></div></div>
-            <div id="obAutoFields" style="display:none;">
-                <div class="field"><label>Check Interval (s)</label><input class="input" type="number" id="obCheckInterval" value="240"></div>
-                <div class="field"><label>Test URL</label><input class="input" id="obTestUrl" value="http://www.gstatic.com/generate_204"></div>
+            <div class="field"><label>Type</label><select class="input" id="obType" onchange="onObTypeChange()"><option value="single">single</option><option value="auto">auto switch</option></select></div>
+            <div class="field"><label>Nodes</label>
+                <input class="input" id="obNodeFilter" placeholder="Filter nodes..." oninput="filterObNodes()" style="margin-bottom:6px;">
+                <div id="obNodeList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border,#333);border-radius:4px;"></div>
             </div>
             <input type="hidden" id="obEditId">
         </div>
@@ -43,7 +42,7 @@
             <button class="modal-close" onclick="closeModal('poolAddModal')">&times;</button>
         </div>
         <div class="modal-body">
-            <div class="field"><label>Node</label><select class="input" id="poolNodeSelect"></select></div>
+            <div class="field"><label>Node</label><input class="input" id="poolNodeFilter" placeholder="Filter nodes..." oninput="filterPoolNodes()" style="margin-bottom:6px;"><select class="input" id="poolNodeSelect"></select></div>
             <input type="hidden" id="poolObId">
         </div>
         <div class="modal-footer">
@@ -90,15 +89,21 @@ function renderOutbounds() {
             var poolRows = (o.pool || []).map(function(p, i) {
                 return '<div class="row-flex"><span class="' + (i === 0 ? 'pool-cur' : '') + '">#' + (i+1) + '</span><span class="tag">' + escapeHtml(p.protocol) + '</span><span style="flex:2">' + escapeHtml(p.name) + '</span><span style="flex:2">' + escapeHtml(p.address) + ':' + p.port + '</span><span>' + (p.tcp_latency !== null ? p.tcp_latency + 'ms' : '—') + '</span><button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',-1)" ' + (i===0?'disabled':'') + '>&#9650;</button><button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',1)">&#9660;</button><button class="btn btn-sm btn-ghost btn-danger" onclick="removePoolNode(' + o.id + ',' + p.pool_id + ')">&#10005;</button></div>';
             }).join('');
-            return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><span><span class="tag">auto</span> <strong>' + escapeHtml(o.name) + '</strong> &middot; ' + (o.pool||[]).length + ' nodes</span><span style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button></span></div><div style="margin-top:6px;">' + poolRows + '<div style="padding:4px 0;"><button class="btn btn-sm" onclick="openPoolAdd(' + o.id + ')">+ add node</button></div></div></div></div>';
+            return '<div class="section"><div class="section-body"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><span><span class="tag">auto switch</span> <strong>' + escapeHtml(o.name) + '</strong> &middot; ' + (o.pool||[]).length + ' nodes</span><span style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button></span></div><div style="margin-top:6px;">' + poolRows + '<div style="padding:4px 0;"><button class="btn btn-sm" onclick="openPoolAdd(' + o.id + ')">+ add node</button></div></div></div></div>';
         }
     }).join('');
 }
 
+/* -- Unified node list state -- */
+var _selectedNodes = [];  // ordered node IDs
+
 function onObTypeChange() {
-    var isAuto = document.getElementById('obType').value === 'auto';
-    document.getElementById('obSingleFields').style.display = isAuto ? 'none' : '';
-    document.getElementById('obAutoFields').style.display = isAuto ? '' : 'none';
+    var isSingle = document.getElementById('obType').value === 'single';
+    // single: keep only first selected; auto: no change
+    if (isSingle && _selectedNodes.length > 1) {
+        _selectedNodes = [_selectedNodes[0]];
+    }
+    renderNodeList();
 }
 
 function openObModal(editId) {
@@ -106,38 +111,78 @@ function openObModal(editId) {
     document.getElementById('obModalTitle').textContent = editId ? 'Edit Outbound' : 'New Outbound';
     document.getElementById('obName').value = '';
     document.getElementById('obType').value = 'single';
-    onObTypeChange();
-    var sel = document.getElementById('obSingleNode');
-    sel.innerHTML = allNodes.map(function(n) { return '<option value="' + n.id + '">' + escapeHtml(n.name) + ' (' + n.protocol + ' ' + n.address + ':' + n.port + ')</option>'; }).join('');
+    document.getElementById('obNodeFilter').value = '';
+    _selectedNodes = [];
     if (editId) {
         var o = outbounds.find(function(x) { return x.id == editId; });
         if (o) {
             document.getElementById('obName').value = o.name;
             document.getElementById('obType').value = o.type;
-            onObTypeChange();
-            var cfg = typeof o.config_json === 'string' ? JSON.parse(o.config_json) : o.config_json;
-            if (o.type === 'single' && cfg.node_id) sel.value = cfg.node_id;
-            if (o.type === 'auto') {
-                if (cfg.check_interval) document.getElementById('obCheckInterval').value = cfg.check_interval;
-                if (cfg.test_url) document.getElementById('obTestUrl').value = cfg.test_url;
+            if (o.type === 'single') {
+                var cfg = typeof o.config_json === 'string' ? JSON.parse(o.config_json) : o.config_json;
+                if (cfg.node_id) _selectedNodes = [cfg.node_id];
+            } else {
+                _selectedNodes = (o.pool || []).map(function(p) { return p.node_id; });
             }
         }
     }
+    renderNodeList();
     document.getElementById('obModal').classList.add('show');
 }
+
+function renderNodeList() {
+    var kw = (document.getElementById('obNodeFilter').value || '').toLowerCase();
+    var isSingle = document.getElementById('obType').value === 'single';
+    var container = document.getElementById('obNodeList');
+    var filtered = allNodes.filter(function(n) {
+        return !kw || n.name.toLowerCase().indexOf(kw) !== -1;
+    });
+    container.innerHTML = filtered.map(function(n) {
+        var sel = _selectedNodes.indexOf(n.id) !== -1;
+        var style = sel ? 'background:var(--bg-page,#1a1a2e);color:var(--text-muted,#666);opacity:0.6;' : 'cursor:pointer;';
+        var check = sel ? ' ✓' : '';
+        return '<div style="padding:6px 10px;border-bottom:1px solid var(--border,#222);' + style + '" onclick="onNodeClick(' + n.id + ')">' + escapeHtml(n.name) + check + '</div>';
+    }).join('');
+}
+
+function onNodeClick(nodeId) {
+    var isSingle = document.getElementById('obType').value === 'single';
+    var idx = _selectedNodes.indexOf(nodeId);
+    if (isSingle) {
+        _selectedNodes = (idx !== -1) ? [] : [nodeId];
+    } else {
+        if (idx !== -1) { _selectedNodes.splice(idx, 1); }
+        else { _selectedNodes.push(nodeId); }
+    }
+    renderNodeList();
+}
+
+function filterObNodes() { renderNodeList(); }
 
 async function saveOb() {
     var editId = document.getElementById('obEditId').value;
     var obType = document.getElementById('obType').value;
     var config = {};
-    if (obType === 'single') { config.node_id = parseInt(document.getElementById('obSingleNode').value); }
-    else { config.check_interval = parseInt(document.getElementById('obCheckInterval').value) || 240; config.test_url = document.getElementById('obTestUrl').value; }
+    if (obType === 'single') {
+        if (!_selectedNodes.length) { addLog('warn', 'Please select a node'); return; }
+        config.node_id = _selectedNodes[0];
+    }
     var payload = { name: document.getElementById('obName').value, type: obType, config_json: JSON.stringify(config) };
     var url = '/api/outbounds' + (editId ? '/' + editId : '');
     var method = editId ? 'PUT' : 'POST';
     try {
         var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
         var data = await resp.json();
+        // For auto type: sync pool nodes
+        if (data.success && obType === 'auto') {
+            var obId = editId || data.outbound_id;
+            if (obId && _selectedNodes.length) {
+                await fetch('/api/outbounds/' + obId + '/nodes/sync', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({node_ids: _selectedNodes})
+                });
+            }
+        }
         closeModal('obModal');
         addLog(data.success ? 'ok' : 'error', data.message || '');
         loadData();
@@ -146,12 +191,13 @@ async function saveOb() {
 
 function openPoolAdd(obId) {
     document.getElementById('poolObId').value = obId;
+    document.getElementById('poolNodeFilter').value = '';
     var ob = outbounds.find(function(x) { return x.id == obId; });
     var poolIds = (ob && ob.pool) ? ob.pool.map(function(p) { return p.node_id; }) : [];
-    var sel = document.getElementById('poolNodeSelect');
-    sel.innerHTML = allNodes.filter(function(n) { return poolIds.indexOf(n.id) === -1; }).map(function(n) {
-        return '<option value="' + n.id + '">' + escapeHtml(n.name) + ' (' + n.protocol + ')</option>';
-    }).join('');
+    _poolNodeOptions = allNodes.filter(function(n) { return poolIds.indexOf(n.id) === -1; }).map(function(n) {
+        return { id: n.id, text: n.name };
+    });
+    renderPoolNodeSelect('');
     document.getElementById('poolAddModal').classList.add('show');
 }
 
@@ -189,6 +235,23 @@ function confirmDeleteOb(id) {
         try { await fetch('/api/outbounds/' + id, { method: 'DELETE' }); closeModal('deleteModal'); loadData(); addLog('ok', 'Outbound deleted'); } catch(e) {}
     };
     document.getElementById('deleteModal').classList.add('show');
+}
+
+/* -- Node filter for pool add modal -- */
+var _poolNodeOptions = [];
+
+function renderPoolNodeSelect(keyword) {
+    var sel = document.getElementById('poolNodeSelect');
+    var kw = (keyword || '').toLowerCase();
+    sel.innerHTML = _poolNodeOptions.filter(function(o) {
+        return !kw || o.text.toLowerCase().indexOf(kw) !== -1;
+    }).map(function(o) {
+        return '<option value="' + o.id + '">' + escapeHtml(o.text) + '</option>';
+    }).join('');
+}
+
+function filterPoolNodes() {
+    renderPoolNodeSelect(document.getElementById('poolNodeFilter').value);
 }
 
 loadData();

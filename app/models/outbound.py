@@ -112,3 +112,19 @@ def reorder_pool_nodes(outbound_id, node_order):
             (pri + 1, pool_id, outbound_id)
         )
     db.commit()
+
+
+def sync_pool_nodes(outbound_id, node_ids):
+    """Replace all pool nodes with the given node_ids in order."""
+    db = get_db()
+    db.execute('DELETE FROM outbound_nodes WHERE outbound_id = ?', (outbound_id,))
+    for pri, nid in enumerate(node_ids):
+        # Skip invalid node IDs
+        exists = db.execute('SELECT 1 FROM nodes WHERE id = ?', (nid,)).fetchone()
+        if not exists:
+            continue
+        db.execute(
+            'INSERT INTO outbound_nodes (outbound_id, node_id, priority) VALUES (?, ?, ?)',
+            (outbound_id, nid, pri + 1)
+        )
+    db.commit()
