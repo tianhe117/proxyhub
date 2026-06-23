@@ -93,7 +93,7 @@ function renderOutbounds() {
             return '<div class="row-flex ' + (isActive ? 'row-active' : '') + '"><span style="flex:2;padding-left:8px;">' + escapeHtml(nd.name) + '</span><span style="flex:1">' + escapeHtml(nd.protocol) + '</span><span style="flex:2">' + escapeHtml(nd.address) + ':' + nd.port + '</span><span style="flex:1">' + tcp + '</span><span style="flex:1">' + curl + '</span><span style="width:170px;display:flex;gap:2px;">' + chkBtn + (extra || '') + '</span></div>';
         }
         if (o.type === 'direct') {
-            return '<div class="section"><div class="section-body">' + hdr + '<div class="row-flex" style="padding-left:8px;color:var(--text-secondary);">Traffic goes directly from this server</div></div></div>';
+            return '<div class="section"><div class="section-body">' + hdr + '</div></div>';
         } else if (o.type === 'single') {
             var cfg = typeof o.config_json === 'string' ? JSON.parse(o.config_json) : o.config_json;
             var nd = allNodes.find(function(n) { return n.id === cfg.node_id; });
