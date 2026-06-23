@@ -172,6 +172,38 @@ def stop_all_for_service(service_name):
                 stop_process(service_name, key)
 
 
+def count_processes():
+    """Count running proxy processes by matching bin names."""
+    from app.settings import get_bin_dir
+    bin_dir = os.path.abspath(get_bin_dir())
+    bin_names = set()
+    if os.path.isdir(bin_dir):
+        for fname in os.listdir(bin_dir):
+            fpath = os.path.join(bin_dir, fname)
+            if os.path.isfile(fpath) and os.access(fpath, os.X_OK):
+                bin_names.add(fname)
+
+    count = 0
+    for proc in os.popen('ps -eo pid,comm,args').readlines():
+        parts = proc.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        pid_str, comm, args = parts
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        matched = comm in bin_names
+        if not matched:
+            for name in bin_names:
+                if name in args:
+                    matched = True
+                    break
+        if matched and pid != os.getpid():
+            count += 1
+    return count
+
+
 def stop_all_processes():
     """Stop all running proxy processes by matching bin names."""
     from app.settings import get_bin_dir

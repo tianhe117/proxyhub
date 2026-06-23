@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify
 
 from app.settings import get_db_path, get_data_dir
 from app.settings import BIN_REGISTRY
-from app.process.manager import get_version, stop_all_processes
+from app.process.manager import get_version, stop_all_processes, count_processes
 from app.services.service_manager import start_service
 from app.models.service import get_auto_start_services, update_status
 from app.logger import log
@@ -63,3 +63,10 @@ def restart_all():
             log('error', 'system', f'Failed to start {svc["name"]}: {e}')
     log('info', 'system', f'Restarted {started}/{len(auto_svcs)} auto-start service(s)')
     return jsonify({'success': True, 'killed': killed, 'started': started})
+
+
+@api_system.route('/process-count', methods=['GET'])
+@auth_required
+def process_count():
+    """Return the count of running proxy processes."""
+    return jsonify({'count': count_processes()})
