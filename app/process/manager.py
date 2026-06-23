@@ -172,6 +172,53 @@ def stop_all_for_service(service_name):
                 stop_process(service_name, key)
 
 
+def stop_all_processes():
+    """Stop all running proxy processes by matching bin names."""
+    from app.settings import get_bin_dir
+    bin_dir = os.path.abspath(get_bin_dir())
+    bin_names = set()
+    kill_set = set()
+    if os.path.isdir(bin_dir):
+        for fname in os.listdir(bin_dir):
+            fpath = os.path.join(bin_dir, fname)
+            if os.path.isfile(fpath) and os.access(fpath, os.X_OK):
+                bin_names.add(fname)
+                kill_set.add(fpath)
+
+    count = 0
+    for proc in os.popen('ps -eo pid,comm,args').readlines():
+        parts = proc.strip().split(None, 2)
+        if len(parts) < 3:
+            continue
+        pid_str, comm, args = parts
+        try:
+            pid = int(pid_str)
+        except ValueError:
+            continue
+        # Match by command name or full path in args
+        matched = comm in bin_names
+        if not matched:
+            for k in kill_set:
+                if k in args:
+                    matched = True
+                    break
+        if matched and pid != os.getpid():
+            try:
+                os.kill(pid, signal.SIGTERM)
+                count += 1
+            except (OSError, ProcessLookupError):
+                pass
+
+    # Clean up all PID files
+    pid_dir = get_pid_dir()
+    if os.path.isdir(pid_dir):
+        for fname in os.listdir(pid_dir):
+            if fname.endswith('.pid'):
+                _remove_pid(os.path.join(pid_dir, fname))
+
+    return count
+
+
 def get_process_status(service_name, bin_type):
     """Return 'running' or 'stopped' for a specific process."""
     pid_file = _get_pid_file(service_name, bin_type)

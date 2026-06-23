@@ -3,6 +3,7 @@
 
 {% block navbar_actions %}
 <button class="btn btn-sm btn-primary" onclick="openServiceModal()">+ New Service</button>
+<button class="btn btn-sm btn-danger" onclick="restartAll()">Restart All</button>
 <a href="/logout" class="btn btn-sm">Logout</a>
 {% endblock %}
 
@@ -76,6 +77,23 @@
         </div>
     </div>
 </div>
+
+<!-- Restart All Modal -->
+<div class="modal-overlay" id="restartModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Restart All Services</span>
+            <button class="modal-close" onclick="closeModal('restartModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>Stop all proxy processes and restart auto-start services?</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('restartModal')">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmRestartAll()">Restart</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block statusbar_right %}
@@ -85,6 +103,20 @@
 {% block extra_js %}
 <script>
 var services = [], inbounds = [], outbounds = [];
+
+function restartAll() {
+    document.getElementById('restartModal').classList.add('show');
+}
+
+async function confirmRestartAll() {
+    closeModal('restartModal');
+    try {
+        var resp = await fetch('/api/system/restart-all', { method: 'POST' });
+        var data = await resp.json();
+        addLog(data.success ? 'ok' : 'error', 'Stopped ' + data.killed + ' process(es), restarted ' + data.started + ' service(s)');
+        loadData();
+    } catch(e) { addLog('error', 'Restart failed: ' + e); }
+}
 
 async function loadData() {
     try {
