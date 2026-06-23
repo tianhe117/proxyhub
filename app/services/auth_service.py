@@ -23,6 +23,7 @@ def login(username, password):
     cfg_pass = get_setting('web_password') or ''
 
     if username == cfg_user and password == cfg_pass:
+        session.permanent = True
         session['authenticated'] = True
         return True, ''
     return False, 'Invalid username or password'

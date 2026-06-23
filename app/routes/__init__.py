@@ -13,9 +13,12 @@ from app.services.auth_service import is_authenticated
 def create_app():
     """Create and configure the Flask application."""
     import os as _os
+    from datetime import timedelta
     _base = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
     app = Flask(__name__, template_folder=_os.path.join(_base, 'templates'))
-    app.secret_key = _os.urandom(24)
+
+    # Session persists for 30 days
+    app.permanent_session_lifetime = timedelta(days=30)
 
     # Suppress werkzeug request logs (avoids polling log loops)
     import logging
@@ -31,6 +34,15 @@ def create_app():
     from app.models.database import init_db
     with app.app_context():
         init_db()
+
+        # Fixed secret key (persists across restarts)
+        from app.models.setting import get_setting, set_setting
+        secret = get_setting('secret_key')
+        if not secret:
+            import secrets
+            secret = secrets.token_hex(32)
+            set_setting('secret_key', secret)
+        app.secret_key = secret
 
     # Start auto-start daemon
     from app.services.service_manager import start_auto_start_daemon
