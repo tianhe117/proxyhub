@@ -13,6 +13,8 @@ from . import auth_required
 api_outbounds = Blueprint('api_outbounds', __name__, url_prefix='/api/outbounds')
 
 
+TYPE_ORDER = {'direct': 0, 'single': 1, 'auto': 2}
+
 @api_outbounds.route('/', methods=['GET'])
 @auth_required
 def list_outbounds():
@@ -22,6 +24,7 @@ def list_outbounds():
         d = dict(o)
         d['pool'] = [dict(p) for p in get_pool_nodes(o['id'])]
         result.append(d)
+    result.sort(key=lambda x: TYPE_ORDER.get(x.get('type'), 99))
     return jsonify(result)
 
 
