@@ -1,0 +1,545 @@
+{% extends "base.html" %}
+{% block title %}ProxyHub — Nodes{% endblock %}
+
+{% block navbar_actions %}
+<button class="btn btn-sm btn-primary" onclick="openNodeModal()">+ New Node</button>
+<button class="btn btn-sm" onclick="checkAll()">Check All</button>
+{% endblock %}
+
+{% block content %}
+<div id="nodesContainer"></div>
+<div class="empty-state" id="nodesEmpty" style="display:none;">No nodes. Add a subscription or create custom nodes.</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Node Modal -->
+<div class="modal-overlay" id="nodeModal">
+    <div class="modal" style="min-width:480px;">
+        <div class="modal-header">
+            <span class="modal-title" id="nodeModalTitle">New Node</span>
+            <button class="modal-close" onclick="closeModal('nodeModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Import URL</label><div style="display:flex;gap:8px;"><input class="input" id="nodeImportUrl" placeholder="vmess://... or ss://..." style="flex:1;"><button class="btn btn-sm" onclick="parseImportUrl()">Parse</button></div></div>
+            <div class="field"><label>Name</label><input class="input" id="nodeName"></div>
+            <div class="field"><label>Protocol</label><select class="input" id="nodeProtocol" onchange="onProtoChange()"><option value="vmess">VMess</option><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="ss">SS</option><option value="hysteria2">Hysteria2</option><option value="tuic">TUIC</option></select></div>
+            <div class="field"><label>Bin</label><select class="input" id="nodeBinType"></select></div>
+            <div class="field"><label>Address</label><input class="input" id="nodeAddr"></div>
+            <div class="field"><label>Port</label><input class="input" type="number" id="nodePort"></div>
+            <div id="nodeProtoFields"></div>
+            <div class="field"><label>Transport</label><select class="input" id="nodeNetwork" onchange="onNetChange()"><option value="tcp">TCP</option><option value="ws">WebSocket</option><option value="h2">HTTP/2</option><option value="grpc">gRPC</option></select></div>
+            <div id="nodeNetFields"></div>
+            <div class="field"><label><input type="checkbox" id="nodeTls" onchange="onTlsChange()"> TLS</label></div>
+            <div id="nodeTlsFields" style="display:none;">
+                <div class="field"><label>SNI</label><input class="input" id="nodeSni"></div>
+                <div class="field"><label>ALPN</label><input class="input" id="nodeAlpn" placeholder="h3,http/1.1"></div>
+                <div class="field"><label><input type="checkbox" id="nodeAllowInsecure"> Allow Insecure</label></div>
+                <div class="field"><label>Fingerprint</label><input class="input" id="nodeFingerprint"></div>
+            </div>
+            <input type="hidden" id="nodeEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('nodeModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveNode()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body"><p id="deleteMessage"></p></div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var groups = [];
+var LS_KEY = 'proxyhub_collapsed';
+var VALID_BIN_TYPES = {
+    vmess: ['xray'], vless: ['xray'], trojan: ['xray'],
+    ss: ['xray', 'sslocal'], hysteria2: ['sing-box'], tuic: ['sing-box']
+};
+
+async function loadNodes() {
+    try {
+        var resp = await fetch('/api/nodes/grouped');
+        groups = await resp.json();
+        renderNodes();
+        var total = 0;
+        groups.forEach(function(g) { total += g.count; });
+        document.getElementById('nodeCount').textContent = total + ' nodes';
+    } catch(e) {}
+}
+
+function isGroupCollapsed(gi, isSub) {
+    try {
+        var saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+        if (saved.hasOwnProperty(String(gi))) return saved[String(gi)];
+    } catch(e) {}
+    return !!isSub; // default: subs collapsed, custom expanded
+}
+
+function renderNodes() {
+    var c = document.getElementById('nodesContainer');
+    if (!groups.length) { c.innerHTML = ''; document.getElementById('nodesEmpty').style.display = 'block'; return; }
+    document.getElementById('nodesEmpty').style.display = 'none';
+    c.innerHTML = groups.map(function(g, gi) {
+        var subName = g.sub ? escapeHtml(g.sub.name) : 'Custom Nodes';
+        var isSub = !!g.sub;
+        var collapsed = isGroupCollapsed(gi, isSub);
+        var rows = g.nodes.map(function(n) {
+            var tcp = n.tcp_latency !== null ? (n.tcp_latency < 0 ? '<span class="lat-bad">fail</span>' : '<span class="' + latClass(n.tcp_latency, 150, 300) + '">' + n.tcp_latency + 'ms</span>') : '<span class="lat-pending">—</span>';
+            var curl = n.curl_latency !== null ? (n.curl_latency < 0 ? '<span class="lat-bad">fail</span>' : '<span class="' + latClass(n.curl_latency, 1000, 2000) + '">' + n.curl_latency + 'ms</span>') : '<span class="lat-pending">—</span>';
+            return '<div class="row-flex">' +
+                '<span style="flex:2;padding-left:8px;">' + escapeHtml(n.name) + '</span>' +
+                '<span style="flex:1">' + escapeHtml(n.protocol) + '</span>' +
+                '<span style="flex:1">' + escapeHtml(n.bin_type) + '</span>' +
+                '<span style="flex:2">' + escapeHtml(n.address) + ':' + n.port + '</span>' +
+                '<span style="flex:1">' + tcp + '</span>' +
+                '<span style="flex:1">' + curl + '</span>' +
+                '<button class="btn btn-sm" onclick="openNodeModal(' + n.id + ')">&#9998;</button>' +
+                '<button class="btn btn-sm btn-ok" onclick="checkSingle(' + n.id + ')">&#8635;</button>' +
+                '<button class="btn btn-sm btn-danger" onclick="confirmDelete(' + n.id + ')">&#10005;</button>' +
+                '</div>';
+        }).join('');
+        var hdrClass = collapsed ? 'collapse-header section-title collapsed' : 'collapse-header section-title';
+        var bodyClass = collapsed ? 'collapse-body' : 'collapse-body show';
+        var colStyle = collapsed ? ' style="display:none;font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;"' : ' style="font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;"';
+        return '<div class="section"><div class="' + hdrClass + '" data-group="' + gi + '" onclick="toggleCollapse(this)">' + subName + ' &middot; ' + g.count + ' nodes <button class="btn btn-sm" style="float:right;" onclick="event.stopPropagation();checkGroup(' + gi + ')">check all</button></div>' +
+            '<div class="row-flex"' + colStyle + '>' +
+                '<span style="flex:2;padding-left:8px;">Name</span>' +
+                '<span style="flex:1">Protocol</span>' +
+                '<span style="flex:1">Bin</span>' +
+                '<span style="flex:2">Address</span>' +
+                '<span style="flex:1">TCP</span>' +
+                '<span style="flex:1">Curl</span>' +
+                '<span style="width:84px;"></span>' +
+            '</div>' +
+            '<div class="' + bodyClass + '">' + rows + '</div></div>';
+    }).join('');
+}
+
+function latClass(val, ok, warn) { return val <= ok ? 'lat-ok' : (val <= warn ? 'lat-warn' : 'lat-bad'); }
+
+function toggleCollapse(hdr) {
+    var colHdr = hdr.nextElementSibling;
+    var body = colHdr.nextElementSibling;
+    var collapsed = body.classList.toggle('show');
+    colHdr.style.display = collapsed ? '' : 'none';
+    hdr.classList.toggle('collapsed', !collapsed);
+    // Persist to localStorage
+    try {
+        var saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+        saved[hdr.dataset.group] = !collapsed;
+        localStorage.setItem(LS_KEY, JSON.stringify(saved));
+    } catch(e) {}
+}
+
+function onProtoChange() {
+    var proto = document.getElementById('nodeProtocol').value;
+    var types = VALID_BIN_TYPES[proto] || ['xray'];
+    var sel = document.getElementById('nodeBinType');
+    sel.innerHTML = types.map(function(t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
+    renderProtoFields();
+}
+
+function onNetChange() { renderNetFields(); }
+function onTlsChange() { document.getElementById('nodeTlsFields').style.display = document.getElementById('nodeTls').checked ? '' : 'none'; }
+
+function renderProtoFields() {
+    var proto = document.getElementById('nodeProtocol').value;
+    var div = document.getElementById('nodeProtoFields');
+    var html = '';
+    if (proto === 'vmess') {
+        html = '<div class="field"><label>UUID</label><input class="input" id="nf_uuid"></div><div class="field"><label>alterId</label><input class="input" type="number" id="nf_alterId" value="0"></div><div class="field"><label>Security</label><select class="input" id="nf_security"><option value="auto">auto</option><option value="aes-128-gcm">aes-128-gcm</option><option value="chacha20-poly1305">chacha20-poly1305</option><option value="none">none</option></select></div>';
+    } else if (proto === 'vless') {
+        html = '<div class="field"><label>UUID</label><input class="input" id="nf_uuid"></div><div class="field"><label>Flow</label><input class="input" id="nf_flow"></div><div class="field"><label>Encryption</label><input class="input" id="nf_encryption" value="none"></div>';
+    } else if (proto === 'trojan') {
+        html = '<div class="field"><label>Password</label><input class="input" id="nf_password"></div>';
+    } else if (proto === 'ss') {
+        html = '<div class="field"><label>Method</label><select class="input" id="nf_method"><option value="aes-256-gcm">aes-256-gcm</option><option value="aes-128-gcm">aes-128-gcm</option><option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</option><option value="xchacha20-ietf-poly1305">xchacha20-ietf-poly1305</option><option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</option><option value="2022-blake3-aes-256-gcm">2022-blake3-aes-256-gcm</option><option value="2022-blake3-chacha20-poly1305">2022-blake3-chacha20-poly1305</option></select></div><div class="field"><label>Password</label><input class="input" id="nf_password"></div><div class="field"><label>Plugin</label><input class="input" id="nf_plugin" placeholder="obfs-local"></div><div class="field"><label>Plugin Opts</label><input class="input" id="nf_plugin_opts" placeholder="obfs=http;obfs-host=..."></div>';
+    } else if (proto === 'hysteria2') {
+        html = '<div class="field"><label>Password</label><input class="input" id="nf_password"></div><div class="field"><label>Up Mbps</label><input class="input" type="number" id="nf_up_mbps"></div><div class="field"><label>Down Mbps</label><input class="input" type="number" id="nf_down_mbps"></div><div class="field"><label>Obfs Password</label><input class="input" id="nf_obfs_password"></div>';
+    } else if (proto === 'tuic') {
+        html = '<div class="field"><label>UUID</label><input class="input" id="nf_uuid"></div><div class="field"><label>Password</label><input class="input" id="nf_password"></div><div class="field"><label>Congestion</label><input class="input" id="nf_congestion" value="cubic"></div><div class="field"><label>UDP Mode</label><input class="input" id="nf_udp" value="native"></div>';
+    }
+    div.innerHTML = html;
+}
+
+function renderNetFields() {
+    var net = document.getElementById('nodeNetwork').value;
+    var div = document.getElementById('nodeNetFields');
+    if (net === 'ws') div.innerHTML = '<div class="field"><label>ws_host</label><input class="input" id="nf_ws_host"></div><div class="field"><label>ws_path</label><input class="input" id="nf_ws_path" value="/"></div>';
+    else if (net === 'h2') div.innerHTML = '<div class="field"><label>h2_host</label><input class="input" id="nf_h2_host"></div><div class="field"><label>h2_path</label><input class="input" id="nf_h2_path" value="/"></div>';
+    else if (net === 'grpc') div.innerHTML = '<div class="field"><label>grpc_service_name</label><input class="input" id="nf_grpc_svc"></div>';
+    else div.innerHTML = '';
+}
+
+function collectConfig() {
+    var proto = document.getElementById('nodeProtocol').value;
+    var cfg = {};
+    if (proto === 'vmess') { cfg.uuid = gel('nf_uuid'); cfg.alterId = parseInt(gel('nf_alterId'))||0; cfg.security = gel('nf_security'); }
+    else if (proto === 'vless') { cfg.uuid = gel('nf_uuid'); cfg.flow = gel('nf_flow'); cfg.encryption = gel('nf_encryption')||'none'; }
+    else if (proto === 'trojan') { cfg.password = gel('nf_password'); }
+    else if (proto === 'ss') { cfg.method = gel('nf_method'); cfg.password = gel('nf_password'); cfg.plugin = gel('nf_plugin'); cfg.plugin_opts = gel('nf_plugin_opts'); }
+    else if (proto === 'hysteria2') { cfg.password = gel('nf_password'); cfg.up_mbps = parseInt(gel('nf_up_mbps'))||0; cfg.down_mbps = parseInt(gel('nf_down_mbps'))||0; if (gel('nf_obfs_password')) { cfg.obfs = 'salamander'; cfg.obfs_password = gel('nf_obfs_password'); } }
+    else if (proto === 'tuic') { cfg.uuid = gel('nf_uuid'); cfg.password = gel('nf_password'); cfg.congestion_control = gel('nf_congestion')||'cubic'; cfg.udp_relay_mode = gel('nf_udp')||'native'; }
+
+    cfg.network = document.getElementById('nodeNetwork').value;
+    var net = cfg.network;
+    if (net === 'ws') { cfg.ws_host = gel('nf_ws_host'); cfg.ws_path = gel('nf_ws_path'); }
+    else if (net === 'h2') { cfg.h2_host = gel('nf_h2_host'); cfg.h2_path = gel('nf_h2_path'); }
+    else if (net === 'grpc') { cfg.grpc_service_name = gel('nf_grpc_svc'); }
+
+    if (document.getElementById('nodeTls').checked) {
+        cfg.tls = true; cfg.sni = gel('nodeSni'); cfg.alpn = gel('nodeAlpn');
+        cfg.allowInsecure = document.getElementById('nodeAllowInsecure').checked;
+        cfg.fingerprint = gel('nodeFingerprint');
+    }
+    return cfg;
+}
+
+function gel(id) { var e = document.getElementById(id); return e ? e.value : ''; }
+
+function openNodeModal(editId) {
+    document.getElementById('nodeEditId').value = editId || '';
+    document.getElementById('nodeModalTitle').textContent = editId ? 'Edit Node' : 'New Node';
+    document.getElementById('nodeName').value = ''; document.getElementById('nodeAddr').value = ''; document.getElementById('nodePort').value = '';
+    document.getElementById('nodeImportUrl').value = '';
+    document.getElementById('nodeTls').checked = false; onTlsChange();
+    document.getElementById('nodeModal').classList.add('show');
+    onProtoChange();
+    renderNetFields();
+    if (editId) {
+        var node = null;
+        groups.forEach(function(g) { g.nodes.forEach(function(n) { if (n.id == editId) node = n; }); });
+        if (node) {
+            document.getElementById('nodeName').value = node.name;
+            document.getElementById('nodeProtocol').value = node.protocol;
+            document.getElementById('nodeAddr').value = node.address;
+            document.getElementById('nodePort').value = node.port;
+            onProtoChange();
+            try {
+                var cfg = JSON.parse(node.config_json);
+                document.getElementById('nodeNetwork').value = cfg.network || 'tcp';
+                if (cfg.tls) { document.getElementById('nodeTls').checked = true; onTlsChange(); document.getElementById('nodeSni').value = cfg.sni || ''; document.getElementById('nodeAlpn').value = cfg.alpn || ''; document.getElementById('nodeAllowInsecure').checked = cfg.allowInsecure || false; document.getElementById('nodeFingerprint').value = cfg.fingerprint || ''; }
+                renderNetFields();
+                if (cfg.uuid) gelSet('nf_uuid', cfg.uuid);
+                if (cfg.password) gelSet('nf_password', cfg.password);
+                if (cfg.method) gelSet('nf_method', cfg.method);
+                if (cfg.ws_host) gelSet('nf_ws_host', cfg.ws_host);
+                if (cfg.ws_path) gelSet('nf_ws_path', cfg.ws_path);
+                if (cfg.h2_host) gelSet('nf_h2_host', cfg.h2_host);
+                if (cfg.h2_path) gelSet('nf_h2_path', cfg.h2_path);
+                if (cfg.grpc_service_name) gelSet('nf_grpc_svc', cfg.grpc_service_name);
+                if (cfg.plugin) gelSet('nf_plugin', cfg.plugin);
+                if (cfg.plugin_opts) gelSet('nf_plugin_opts', cfg.plugin_opts);
+                document.getElementById('nodeBinType').value = node.bin_type || 'xray';
+            } catch(e) {}
+        }
+    }
+}
+
+function gelSet(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
+
+async function saveNode() {
+    var editId = document.getElementById('nodeEditId').value;
+    var payload = {
+        name: document.getElementById('nodeName').value,
+        protocol: document.getElementById('nodeProtocol').value,
+        address: document.getElementById('nodeAddr').value,
+        port: parseInt(document.getElementById('nodePort').value),
+        config_json: JSON.stringify(collectConfig()),
+        bin_type: document.getElementById('nodeBinType').value
+    };
+    var url = '/api/nodes' + (editId ? '/' + editId : '');
+    var method = editId ? 'PUT' : 'POST';
+    try {
+        var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        var data = await resp.json();
+        closeModal('nodeModal');
+        addLog(data.success ? 'ok' : 'error', data.message || '');
+        loadNodes();
+    } catch(e) { addLog('error', 'Save failed: ' + e); }
+}
+
+function parseImportUrl() {
+    var url = document.getElementById('nodeImportUrl').value.trim();
+    if (!url) return;
+    try {
+        if (url.startsWith('vmess://')) parseVmess(url);
+        else if (url.startsWith('vless://')) parseVless(url);
+        else if (url.startsWith('ss://')) parseSs(url);
+        else if (url.startsWith('trojan://')) parseTrojan(url);
+        else if (url.startsWith('hy2://') || url.startsWith('hysteria2://')) parseHy2(url);
+        else { addLog('error', 'Unsupported URL format'); return; }
+        addLog('ok', 'Parsed URL, please review and save');
+    } catch(e) { addLog('error', 'Failed to parse URL: ' + e.message); }
+}
+
+function parseVmess(url) {
+    var b64 = url.slice(8);
+    var missing = b64.length % 4; if (missing) b64 += '='.repeat(4 - missing);
+    var d = JSON.parse(atob(b64));
+    document.getElementById('nodeProtocol').value = 'vmess';
+    document.getElementById('nodeName').value = d.ps || '';
+    document.getElementById('nodeAddr').value = d.add || '';
+    document.getElementById('nodePort').value = d.port || '';
+    var net = (d.net || 'tcp').toLowerCase();
+    if (net === 'raw') net = 'tcp';
+    document.getElementById('nodeNetwork').value = net;
+    renderNetFields();
+    if (d.tls === 'tls') {
+        document.getElementById('nodeTls').checked = true; onTlsChange();
+        document.getElementById('nodeSni').value = d.sni || d.host || '';
+        document.getElementById('nodeFingerprint').value = d.fp || '';
+    }
+    onProtoChange();
+    gelSet('nf_uuid', d.id || '');
+    gelSet('nf_security', d.scy || 'auto');
+    gelSet('nf_alterId', d.aid || '0');
+    if (net === 'ws') { gelSet('nf_ws_host', d.host || ''); gelSet('nf_ws_path', d.path || '/'); }
+    else if (net === 'h2') { gelSet('nf_h2_host', d.host || ''); gelSet('nf_h2_path', d.path || '/'); }
+    else if (net === 'grpc') { gelSet('nf_grpc_svc', d.path || d.serviceName || ''); }
+}
+
+function parseVless(url) {
+    var content = url.slice(8);
+    var name = '';
+    var hashIdx = content.indexOf('#');
+    if (hashIdx !== -1) { name = decodeURIComponent(content.slice(hashIdx + 1)); content = content.slice(0, hashIdx); }
+    var params = {};
+    var qIdx = content.indexOf('?');
+    if (qIdx !== -1) {
+        var qs = content.slice(qIdx + 1);
+        content = content.slice(0, qIdx);
+        qs.split('&').forEach(function(p) {
+            var kv = p.split('=');
+            if (kv.length === 2) params[kv[0]] = decodeURIComponent(kv[1]);
+        });
+    }
+    var atIdx = content.indexOf('@');
+    var uuid = content.slice(0, atIdx);
+    var serverpart = (content.slice(atIdx + 1) || '').replace(/\/$/, '');
+    var address, port;
+    if (serverpart.includes(':')) {
+        var sp = serverpart.split(':');
+        port = parseInt(sp[sp.length - 1]);
+        address = sp.slice(0, -1).join(':');
+    } else { address = serverpart; port = 443; }
+
+    document.getElementById('nodeProtocol').value = 'vless';
+    document.getElementById('nodeName').value = name || address + ':' + port;
+    document.getElementById('nodeAddr').value = address;
+    document.getElementById('nodePort').value = port;
+    var net = (params.type || 'tcp').toLowerCase();
+    document.getElementById('nodeNetwork').value = net;
+    renderNetFields();
+    var security = params.security || '';
+    if (security === 'tls' || security === 'reality') {
+        document.getElementById('nodeTls').checked = true; onTlsChange();
+        document.getElementById('nodeSni').value = params.sni || params.host || '';
+        document.getElementById('nodeAlpn').value = params.alpn || '';
+        document.getElementById('nodeFingerprint').value = params.fp || '';
+    }
+    onProtoChange();
+    gelSet('nf_uuid', uuid);
+    gelSet('nf_flow', params.flow || '');
+    gelSet('nf_encryption', 'none');
+    if (net === 'ws') { gelSet('nf_ws_host', params.host || ''); gelSet('nf_ws_path', params.path || '/'); }
+    else if (net === 'h2') { gelSet('nf_h2_host', params.host || ''); gelSet('nf_h2_path', params.path || '/'); }
+    else if (net === 'grpc') { gelSet('nf_grpc_svc', params.serviceName || params.path || ''); }
+}
+
+function parseSs(url) {
+    var content = url.slice(5);
+    var name = '';
+    var hashIdx = content.indexOf('#');
+    if (hashIdx !== -1) { name = decodeURIComponent(content.slice(hashIdx + 1)); content = content.slice(0, hashIdx); }
+
+    var plugin = '', pluginOpts = '';
+    var qIdx = content.indexOf('?');
+    if (qIdx !== -1) {
+        var qs = content.slice(qIdx + 1);
+        content = content.slice(0, qIdx);
+        qs.split('&').forEach(function(p) {
+            if (p.startsWith('plugin=')) {
+                var pd = decodeURIComponent(p.slice(7));
+                var semi = pd.indexOf(';');
+                if (semi !== -1) { plugin = pd.slice(0, semi); pluginOpts = pd.slice(semi + 1); }
+                else { plugin = pd; }
+            }
+        });
+    }
+
+    var atIdx = content.indexOf('@');
+    var method, password;
+    if (atIdx !== -1) {
+        var b64part = content.slice(0, atIdx);
+        var serverpart = (content.slice(atIdx + 1) || '').replace(/\/$/, '');
+        var missing = b64part.length % 4; if (missing) b64part += '='.repeat(4 - missing);
+        var decoded = atob(b64part);
+        var colonIdx = decoded.indexOf(':');
+        method = decoded.slice(0, colonIdx);
+        password = decoded.slice(colonIdx + 1);
+
+        var address, port;
+        if (serverpart.includes(':')) {
+            var sp = serverpart.split(':');
+            port = parseInt(sp[sp.length - 1]);
+            address = sp.slice(0, -1).join(':');
+        } else { address = serverpart; port = 8388; }
+
+        document.getElementById('nodeProtocol').value = 'ss';
+        document.getElementById('nodeName').value = name || address + ':' + port;
+        document.getElementById('nodeAddr').value = address;
+        document.getElementById('nodePort').value = port;
+        onProtoChange();
+        if (plugin) document.getElementById('nodeBinType').value = 'sslocal';
+        gelSet('nf_method', method);
+        gelSet('nf_password', password);
+        if (plugin) { gelSet('nf_plugin', plugin); gelSet('nf_plugin_opts', pluginOpts); }
+    }
+}
+
+function parseTrojan(url) {
+    var content = url.slice(9);
+    var name = '';
+    var hashIdx = content.indexOf('#');
+    if (hashIdx !== -1) { name = decodeURIComponent(content.slice(hashIdx + 1)); content = content.slice(0, hashIdx); }
+    var params = {};
+    var qIdx = content.indexOf('?');
+    if (qIdx !== -1) {
+        var qs = content.slice(qIdx + 1);
+        content = content.slice(0, qIdx);
+        qs.split('&').forEach(function(p) {
+            var kv = p.split('=');
+            if (kv.length === 2) params[kv[0]] = decodeURIComponent(kv[1]);
+        });
+    }
+    var atIdx = content.indexOf('@');
+    var password = decodeURIComponent(content.slice(0, atIdx));
+    var serverpart = (content.slice(atIdx + 1) || '').replace(/\/$/, '');
+    var address, port;
+    if (serverpart.includes(':')) {
+        var sp = serverpart.split(':');
+        port = parseInt(sp[sp.length - 1]);
+        address = sp.slice(0, -1).join(':');
+    } else { address = serverpart; port = 443; }
+
+    document.getElementById('nodeProtocol').value = 'trojan';
+    document.getElementById('nodeName').value = name || address + ':' + port;
+    document.getElementById('nodeAddr').value = address;
+    document.getElementById('nodePort').value = port;
+    var net = (params.type || 'tcp').toLowerCase();
+    document.getElementById('nodeNetwork').value = net;
+    renderNetFields();
+    document.getElementById('nodeTls').checked = true; onTlsChange();
+    document.getElementById('nodeSni').value = params.sni || params.peer || '';
+    onProtoChange();
+    gelSet('nf_password', password);
+    if (net === 'ws') { gelSet('nf_ws_host', params.host || ''); gelSet('nf_ws_path', params.path || '/'); }
+    else if (net === 'grpc') { gelSet('nf_grpc_svc', params.serviceName || ''); }
+}
+
+function parseHy2(url) {
+    var content = url.replace(/^hysteria2?:\/\//, '');
+    var name = '';
+    var hashIdx = content.indexOf('#');
+    if (hashIdx !== -1) { name = decodeURIComponent(content.slice(hashIdx + 1)); content = content.slice(0, hashIdx); }
+    var params = {};
+    var qIdx = content.indexOf('?');
+    if (qIdx !== -1) {
+        var qs = content.slice(qIdx + 1);
+        content = content.slice(0, qIdx);
+        qs.split('&').forEach(function(p) {
+            var kv = p.split('=');
+            if (kv.length === 2) params[kv[0]] = decodeURIComponent(kv[1]);
+        });
+    }
+    var atIdx = content.indexOf('@');
+    var password = decodeURIComponent(content.slice(0, atIdx));
+    var serverpart = (content.slice(atIdx + 1) || '').replace(/\/$/, '');
+    var address, port;
+    if (serverpart.includes(':')) {
+        var sp = serverpart.split(':');
+        port = parseInt(sp[sp.length - 1]);
+        address = sp.slice(0, -1).join(':');
+    } else { address = serverpart; port = 443; }
+
+    document.getElementById('nodeProtocol').value = 'hysteria2';
+    document.getElementById('nodeName').value = name || address + ':' + port;
+    document.getElementById('nodeAddr').value = address;
+    document.getElementById('nodePort').value = port;
+    onProtoChange();
+    gelSet('nf_password', password);
+    gelSet('nf_up_mbps', params.upmbps || '');
+    gelSet('nf_down_mbps', params.downmbps || '');
+    if (params.obfs) { gelSet('nf_obfs_password', params['obfs-password'] || ''); }
+}
+
+async function checkSingle(id) {
+    try {
+        var resp = await fetch('/api/nodes/check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({node_ids:[id], check_type:'both'}) });
+        var data = await resp.json();
+        if (data.task_id) { addLog('info', 'Check started for node #' + id); pollCheck(data.task_id); }
+        else { addLog('warn', data.message || 'Check rejected'); }
+    } catch(e) {}
+}
+
+async function checkGroup(gi) {
+    var ids = groups[gi].nodes.map(function(n) { return n.id; });
+    try {
+        var resp = await fetch('/api/nodes/check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({node_ids:ids, check_type:'both'}) });
+        var data = await resp.json();
+        if (data.task_id) { addLog('info', 'Bulk check started'); pollCheck(data.task_id); }
+        else { addLog('warn', data.message || 'Check rejected'); }
+    } catch(e) {}
+}
+
+async function checkAll() {
+    try {
+        var resp = await fetch('/api/nodes/check', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({check_type:'both'}) });
+        var data = await resp.json();
+        if (data.task_id) { addLog('info', 'Full check started'); pollCheck(data.task_id); }
+        else { addLog('warn', data.message || 'Check rejected'); }
+    } catch(e) {}
+}
+
+function pollCheck(taskId) {
+    var iv = setInterval(async function() {
+        try {
+            var resp = await fetch('/api/nodes/check/' + taskId + '/status');
+            var data = await resp.json();
+            if (!data.running) { clearInterval(iv); loadNodes(); addLog('ok', 'Check completed'); }
+        } catch(e) { clearInterval(iv); }
+    }, 1500);
+}
+
+function confirmDelete(id) {
+    document.getElementById('deleteMessage').textContent = 'Delete node #' + id + '?';
+    document.getElementById('deleteConfirmBtn').onclick = async function() {
+        try {
+            await fetch('/api/nodes/' + id, { method: 'DELETE' });
+            closeModal('deleteModal');
+            loadNodes();
+            addLog('ok', 'Node deleted');
+        } catch(e) {}
+    };
+    document.getElementById('deleteModal').classList.add('show');
+}
+
+loadNodes();
+setInterval(loadNodes, 10000);
+</script>
+{% endblock %}

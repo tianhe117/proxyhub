@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}ProxyHub — Inbounds{% endblock %}
+
+{% block navbar_actions %}
+<button class="btn btn-sm btn-primary" onclick="openInModal()">+ New Inbound</button>
+{% endblock %}
+
+{% block content %}
+<div id="inboundsList"></div>
+<div class="empty-state" id="inboundsEmpty" style="display:none;">No inbounds. Create a local listener to accept connections.</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Inbound Modal -->
+<div class="modal-overlay" id="inModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title" id="inModalTitle">New Inbound</span>
+            <button class="modal-close" onclick="closeModal('inModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="inName"></div>
+            <div class="field"><label>Protocol</label><select class="input" id="inProtocol" onchange="onInProtoChange()"><option value="http">HTTP</option><option value="socks">SOCKS</option><option value="ss">Shadowsocks</option><option value="vmess">VMess</option></select></div>
+            <div class="field"><label>Port</label><input class="input" type="number" id="inPort"></div>
+            <div id="inProtoFields"></div>
+            <input type="hidden" id="inEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('inModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveIn()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body"><p id="deleteMessage"></p></div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var inbounds = [];
+
+async function loadData() {
+    try { var resp = await fetch('/api/inbounds'); inbounds = await resp.json(); renderInbounds(); } catch(e) {}
+}
+
+function renderInbounds() {
+    var list = document.getElementById('inboundsList');
+    if (!inbounds.length) { list.innerHTML = ''; document.getElementById('inboundsEmpty').style.display = 'block'; return; }
+    document.getElementById('inboundsEmpty').style.display = 'none';
+    list.innerHTML = inbounds.map(function(i) {
+        var hdr = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><span><span class="tag">' + escapeHtml(i.protocol) + '</span> <strong>' + escapeHtml(i.name) + '</strong></span><span style="display:flex;gap:4px;"><button class="btn btn-sm" onclick="openInModal(' + i.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="confirmDelete(' + i.id + ')">&#10005;</button></span></div>';
+        var rows = kvRow('Port', i.port);
+        try {
+            var p = typeof i.params_json === 'string' ? JSON.parse(i.params_json) : i.params_json;
+            if (p) {
+                if (i.protocol === 'http' || i.protocol === 'socks') {
+                    if (p.username) rows += kvRow('Username', escapeHtml(p.username));
+                    if (p.password) rows += kvRow('Password', '••••••');
+                } else if (i.protocol === 'ss') {
+                    if (p.method) rows += kvRow('Method', escapeHtml(p.method));
+                    if (p.password) rows += kvRow('Password', '••••••');
+                } else if (i.protocol === 'vmess') {
+                    if (p.uuid) rows += kvRow('UUID', escapeHtml(p.uuid));
+                    if (p.alterId !== undefined) rows += kvRow('alterId', p.alterId);
+                    if (p.network) {
+                        rows += kvRow('Network', escapeHtml(p.network));
+                        if (p.ws_path) rows += kvRow('WS Path', escapeHtml(p.ws_path));
+                        if (p.h2_path) rows += kvRow('H2 Path', escapeHtml(p.h2_path));
+                        if (p.grpc_service_name) rows += kvRow('gRPC Service', escapeHtml(p.grpc_service_name));
+                    }
+                }
+            }
+        } catch(e) {}
+        return '<div class="section"><div class="section-body">' + hdr + rows + '</div></div>';
+    }).join('');
+}
+
+function kvRow(key, val) {
+    return '<div style="padding:2px 0;"><span style="color:var(--text-secondary);font-size:12px;">' + key + '</span> <span>' + val + '</span></div>';
+}
+
+function onInProtoChange() {
+    var proto = document.getElementById('inProtocol').value;
+    var div = document.getElementById('inProtoFields');
+    if (proto === 'http' || proto === 'socks') {
+        div.innerHTML = '<div class="field"><label>Username</label><input class="input" id="inf_user"></div><div class="field"><label>Password</label><input class="input" id="inf_pass"></div>';
+    } else if (proto === 'ss') {
+        div.innerHTML = '<div class="field"><label>Method</label><select class="input" id="inf_method"><option value="aes-256-gcm">aes-256-gcm</option><option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</option></select></div><div class="field"><label>Password</label><input class="input" id="inf_pass"></div>';
+    } else if (proto === 'vmess') {
+        div.innerHTML = '<div class="field"><label>UUID</label><input class="input" id="inf_uuid"></div><div class="field"><label>alterId</label><input class="input" type="number" id="inf_alterId" value="0"></div><div class="field"><label>Network</label><select class="input" id="inf_network" onchange="onInNetChange()"><option value="">TCP</option><option value="ws">WebSocket</option><option value="h2">HTTP/2</option><option value="grpc">gRPC</option></select></div><div id="inNetFields"></div>';
+    } else div.innerHTML = '';
+}
+
+function onInNetChange() {
+    var net = document.getElementById('inf_network').value;
+    var div = document.getElementById('inNetFields');
+    if (net === 'ws') div.innerHTML = '<div class="field"><label>Path</label><input class="input" id="inf_ws_path" value="/"></div>';
+    else if (net === 'h2') div.innerHTML = '<div class="field"><label>Path</label><input class="input" id="inf_h2_path" value="/"></div>';
+    else if (net === 'grpc') div.innerHTML = '<div class="field"><label>Service Name</label><input class="input" id="inf_grpc_svc"></div>';
+    else div.innerHTML = '';
+}
+
+function collectInParams() {
+    var proto = document.getElementById('inProtocol').value;
+    var p = {};
+    if (proto === 'http' || proto === 'socks') { p.username = gel('inf_user'); p.password = gel('inf_pass'); }
+    else if (proto === 'ss') { p.method = gel('inf_method'); p.password = gel('inf_pass'); }
+    else if (proto === 'vmess') {
+        p.uuid = gel('inf_uuid'); p.alterId = parseInt(gel('inf_alterId'))||0;
+        var net = gel('inf_network'); if (net) { p.network = net;
+            if (net === 'ws') p.ws_path = gel('inf_ws_path');
+            else if (net === 'h2') p.h2_path = gel('inf_h2_path');
+            else if (net === 'grpc') p.grpc_service_name = gel('inf_grpc_svc');
+        }
+    }
+    return JSON.stringify(p);
+}
+
+function gel(id) { var e = document.getElementById(id); return e ? e.value : ''; }
+
+function openInModal(editId) {
+    document.getElementById('inEditId').value = editId || '';
+    document.getElementById('inModalTitle').textContent = editId ? 'Edit Inbound' : 'New Inbound';
+    document.getElementById('inName').value = ''; document.getElementById('inPort').value = '';
+    onInProtoChange();
+    if (editId) {
+        var i = inbounds.find(function(x) { return x.id == editId; });
+        if (i) {
+            document.getElementById('inName').value = i.name;
+            document.getElementById('inProtocol').value = i.protocol;
+            document.getElementById('inPort').value = i.port;
+            onInProtoChange();
+            try {
+                var p = typeof i.params_json === 'string' ? JSON.parse(i.params_json) : i.params_json;
+                setTimeout(function() {
+                    if (p.username) gelSet('inf_user', p.username);
+                    if (p.password) gelSet('inf_pass', p.password);
+                    if (p.method) gelSet('inf_method', p.method);
+                    if (p.uuid) gelSet('inf_uuid', p.uuid);
+                    if (p.alterId !== undefined) gelSet('inf_alterId', p.alterId);
+                    if (p.network) { gelSet('inf_network', p.network); onInNetChange(); }
+                    if (p.ws_path) gelSet('inf_ws_path', p.ws_path);
+                    if (p.h2_path) gelSet('inf_h2_path', p.h2_path);
+                    if (p.grpc_service_name) gelSet('inf_grpc_svc', p.grpc_service_name);
+                }, 50);
+            } catch(e) {}
+        }
+    }
+    document.getElementById('inModal').classList.add('show');
+}
+
+function gelSet(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
+
+async function saveIn() {
+    var editId = document.getElementById('inEditId').value;
+    var payload = {
+        name: document.getElementById('inName').value,
+        protocol: document.getElementById('inProtocol').value,
+        port: parseInt(document.getElementById('inPort').value),
+        params_json: collectInParams()
+    };
+    var url = '/api/inbounds' + (editId ? '/' + editId : '');
+    var method = editId ? 'PUT' : 'POST';
+    try {
+        var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        var data = await resp.json();
+        closeModal('inModal');
+        addLog(data.success ? 'ok' : 'error', data.message || '');
+        loadData();
+    } catch(e) { addLog('error', 'Save failed: ' + e); }
+}
+
+function confirmDelete(id) {
+    document.getElementById('deleteMessage').textContent = 'Delete inbound #' + id + '?';
+    document.getElementById('deleteConfirmBtn').onclick = async function() {
+        try { await fetch('/api/inbounds/' + id, { method: 'DELETE' }); closeModal('deleteModal'); loadData(); addLog('ok', 'Inbound deleted'); } catch(e) {}
+    };
+    document.getElementById('deleteModal').classList.add('show');
+}
+
+loadData();
+</script>
+{% endblock %}

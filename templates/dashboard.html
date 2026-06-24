@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}ProxyHub — Dashboard{% endblock %}
+
+{% block navbar_actions %}
+<button class="btn btn-sm btn-primary" onclick="openServiceModal()">+ New Service</button>
+<button class="btn btn-sm btn-danger" onclick="restartAll()">Restart All</button>
+<a href="/logout" class="btn btn-sm">Logout</a>
+{% endblock %}
+
+{% block content %}
+<!-- Stats Row -->
+<div class="section">
+    <div class="section-body" style="display:flex;gap:12px;">
+        <div class="stat-item" style="flex:1;text-align:center;">
+            <div style="font-size:16px;font-weight:bold;" id="statNodes">0</div>
+            <div style="font-size:12px;color:#888;">Nodes</div>
+        </div>
+        <div class="stat-item" style="flex:1;text-align:center;">
+            <div style="font-size:16px;font-weight:bold;" id="statSubs">0</div>
+            <div style="font-size:12px;color:#888;">Subscriptions</div>
+        </div>
+        <div class="stat-item" style="flex:1;text-align:center;">
+            <div style="font-size:16px;font-weight:bold;" id="statProcs">0</div>
+            <div style="font-size:12px;color:#888;">Processes</div>
+        </div>
+    </div>
+</div>
+
+<!-- Services -->
+<div id="servicesList"></div>
+<div class="empty-state" id="servicesEmpty" style="display:none;">No services. Create one to get started.</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Service Modal -->
+<div class="modal-overlay" id="serviceModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title" id="svcModalTitle">New Service</span>
+            <button class="modal-close" onclick="closeModal('serviceModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="svcName"></div>
+            <div class="field"><label>Inbound</label><select class="input" id="svcInbound"></select></div>
+            <div class="field"><label>Outbound</label><select class="input" id="svcOutbound"></select></div>
+            <div class="field"><label><input type="checkbox" id="svcAutoStart"> Auto-start on boot</label></div>
+            <input type="hidden" id="svcEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('serviceModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveService()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal-overlay" id="deleteModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Delete</span>
+            <button class="modal-close" onclick="closeModal('deleteModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="deleteMessage"></p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('deleteModal')">Cancel</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- Restart All Modal -->
+<div class="modal-overlay" id="restartModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Restart All Services</span>
+            <button class="modal-close" onclick="closeModal('restartModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p>Stop all proxy processes and restart auto-start services?</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('restartModal')">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmRestartAll()">Restart</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block statusbar_right %}
+<span id="svcCount">0 services</span>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var services = [], inbounds = [], outbounds = [];
+
+function restartAll() {
+    document.getElementById('restartModal').classList.add('show');
+}
+
+async function confirmRestartAll() {
+    closeModal('restartModal');
+    try {
+        var resp = await fetch('/api/system/restart-all', { method: 'POST' });
+        var data = await resp.json();
+        addLog(data.success ? 'ok' : 'error', 'Stopped ' + data.killed + ' process(es), restarted ' + data.started + ' service(s)');
+        loadData();
+    } catch(e) { addLog('error', 'Restart failed: ' + e); }
+}
+
+async function loadData() {
+    try {
+        var nr = await fetch('/api/nodes/grouped');
+        var groups = await nr.json();
+        var totalNodes = 0, subCount = 0;
+        groups.forEach(function(g) {
+            totalNodes += g.count;
+            if (g.sub && g.sub.id !== 0) subCount++;
+        });
+        document.getElementById('statNodes').textContent = totalNodes;
+        document.getElementById('statSubs').textContent = subCount;
+        document.getElementById('nodeCount').textContent = totalNodes + ' nodes';
+    } catch(e) {}
+
+    try {
+        var pr = await fetch('/api/system/process-count');
+        var pdata = await pr.json();
+        document.getElementById('statProcs').textContent = pdata.count;
+    } catch(e) {}
+
+    try {
+        var ir = await fetch('/api/inbounds');
+        inbounds = await ir.json();
+    } catch(e) {}
+
+    try {
+        var or = await fetch('/api/outbounds');
+        outbounds = await or.json();
+    } catch(e) {}
+
+    try {
+        var sr = await fetch('/api/services');
+        services = await sr.json();
+        renderServices();
+        document.getElementById('svcCount').textContent = services.length + ' services';
+    } catch(e) {}
+}
+
+function renderServices() {
+    var list = document.getElementById('servicesList');
+    var empty = document.getElementById('servicesEmpty');
+    if (!services.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    var rows = services.map(function(s) {
+        var dot = s.status === 'running' ? 'ok' : (s.status === 'error' ? 'error' : 'idle');
+        var ib = inbounds.find(function(i) { return i.id === s.inbound_id; });
+        var ob = outbounds.find(function(o) { return o.id === s.outbound_id; });
+        var ibName = ib ? escapeHtml(ib.name) + ' (' + ib.protocol + ':' + ib.port + ')' : '—';
+        var obName = ob ? escapeHtml(ob.name) + ' (' + ob.type + ')' : '—';
+        var autoLabel = s.auto_start ? '<span style="color:var(--green);">ON</span>' : 'OFF';
+        var btns = '<button class="btn btn-sm btn-ok" onclick="controlService(' + s.id + ',\'start\')" ' + (s.status === 'running' ? 'disabled' : '') + '>&#9654;</button>' +
+            '<button class="btn btn-sm btn-danger" onclick="controlService(' + s.id + ',\'stop\')" ' + (s.status !== 'running' ? 'disabled' : '') + '>&#9632;</button>' +
+            '<button class="btn btn-sm" onclick="controlService(' + s.id + ',\'restart\')">&#8635;</button>' +
+            '<button class="btn btn-sm" onclick="openServiceModal(' + s.id + ')">&#9998;</button>' +
+            '<button class="btn btn-sm btn-danger" onclick="confirmDeleteService(' + s.id + ')">&#10005;</button>';
+        return '<div class="row-flex" style="align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">' +
+            '<span style="flex:2;display:flex;align-items:center;gap:6px;"><span class="status-dot ' + dot + '"></span><strong>' + escapeHtml(s.name) + '</strong></span>' +
+            '<span style="flex:2;">' + ibName + '</span>' +
+            '<span style="flex:2;">' + obName + '</span>' +
+            '<span style="flex:1;">' + autoLabel + '</span>' +
+            '<span style="width:170px;display:flex;gap:2px;">' + btns + '</span>' +
+            '</div>';
+    }).join('');
+    var header = '<div class="row-flex" style="font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;">' +
+        '<span style="flex:2;padding-left:8px;">Name</span>' +
+        '<span style="flex:2;">Inbound</span>' +
+        '<span style="flex:2;">Outbound</span>' +
+        '<span style="flex:1;">Auto</span>' +
+        '<span style="width:170px;"></span></div>';
+    list.innerHTML = '<div class="section"><div class="section-body">' + header + rows + '</div></div>';
+}
+
+async function controlService(id, action) {
+    try {
+        var resp = await fetch('/api/services/' + id + '/' + action, { method: 'POST' });
+        var data = await resp.json();
+        addLog(data.success ? 'ok' : 'error', 'Service ' + action + ': ' + (data.message || ''));
+        loadData();
+    } catch(e) { addLog('error', 'Service ' + action + ' failed: ' + e); }
+}
+
+
+function openServiceModal(editId) {
+    document.getElementById('svcEditId').value = editId || '';
+    document.getElementById('svcModalTitle').textContent = editId ? 'Edit Service' : 'New Service';
+    document.getElementById('svcName').value = '';
+    document.getElementById('svcAutoStart').checked = false;
+    if (editId) {
+        var s = services.find(function(x) { return x.id == editId; });
+        if (s) {
+            document.getElementById('svcName').value = s.name;
+            document.getElementById('svcAutoStart').checked = s.auto_start == 1;
+        }
+    }
+    var inSel = document.getElementById('svcInbound');
+    inSel.innerHTML = inbounds.map(function(i) { return '<option value="' + i.id + '">' + escapeHtml(i.name) + ' (' + i.protocol + ':' + i.port + ')</option>'; }).join('');
+    var outSel = document.getElementById('svcOutbound');
+    outSel.innerHTML = outbounds.map(function(o) { return '<option value="' + o.id + '">' + escapeHtml(o.name) + ' (' + o.type + ')</option>'; }).join('');
+    if (editId && s) {
+        inSel.value = s.inbound_id;
+        outSel.value = s.outbound_id;
+    }
+    document.getElementById('serviceModal').classList.add('show');
+}
+
+async function saveService() {
+    var editId = document.getElementById('svcEditId').value;
+    var payload = {
+        name: document.getElementById('svcName').value,
+        inbound_id: parseInt(document.getElementById('svcInbound').value),
+        outbound_id: parseInt(document.getElementById('svcOutbound').value),
+        auto_start: document.getElementById('svcAutoStart').checked ? 1 : 0
+    };
+    var url = '/api/services' + (editId ? '/' + editId : '');
+    var method = editId ? 'PUT' : 'POST';
+    try {
+        var resp = await fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        var data = await resp.json();
+        closeModal('serviceModal');
+        addLog(data.success ? 'ok' : 'error', data.message || '');
+        loadData();
+    } catch(e) { addLog('error', 'Save failed: ' + e); }
+}
+
+function confirmDeleteService(id) {
+    document.getElementById('deleteMessage').textContent = 'Delete service #' + id + '? This cannot be undone.';
+    document.getElementById('deleteConfirmBtn').onclick = async function() {
+        try {
+            var resp = await fetch('/api/services/' + id, { method: 'DELETE' });
+            var data = await resp.json();
+            closeModal('deleteModal');
+            addLog('ok', data.message || 'Deleted');
+            loadData();
+        } catch(e) {}
+    };
+    document.getElementById('deleteModal').classList.add('show');
+}
+
+loadData();
+setInterval(loadData, 10000);
+</script>
+{% endblock %}

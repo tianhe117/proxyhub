@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% block title %}ProxyHub — Settings{% endblock %}
+
+{% block content %}
+<!-- 1. Binaries Section -->
+<div class="section">
+    <div class="section-title">Binaries</div>
+    <div class="section-body" id="binsSection">
+        <div class="empty-state">Loading...</div>
+    </div>
+</div>
+
+<!-- 2. Binary Paths -->
+<div class="section">
+    <div class="section-title">Binary Paths</div>
+    <div class="section-body">
+        <div class="field-row">
+            <div class="field"><label>Xray</label><input class="input" id="set_bin_path_xray"></div>
+            <div class="field"><label>sslocal</label><input class="input" id="set_bin_path_sslocal"></div>
+        </div>
+        <div class="field-row">
+            <div class="field"><label>sing-box</label><input class="input" id="set_bin_path_singbox"></div>
+            <div class="field"><label>Config Directory</label><input class="input" id="set_config_dir"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 3. Node Check -->
+<div class="section">
+    <div class="section-title">Node Check</div>
+    <div class="section-body">
+        <div class="field-row">
+            <div class="field"><label>Check Interval (s)</label><input class="input" type="number" id="set_check_interval_normal"></div>
+            <div class="field"><label>Failover Interval (s)</label><input class="input" type="number" id="set_check_interval_failover"></div>
+        </div>
+        <div class="field-row">
+            <div class="field"><label>TCP Timeout (s)</label><input class="input" type="number" id="set_tcp_timeout"></div>
+            <div class="field"><label>Curl Timeout (s)</label><input class="input" type="number" id="set_curl_timeout"></div>
+        </div>
+        <div class="field"><label>Test URL</label><input class="input" id="set_test_url"></div>
+    </div>
+</div>
+
+<!-- 4. Web UI -->
+<div class="section">
+    <div class="section-title">Web UI</div>
+    <div class="section-body">
+        <div class="field-row">
+            <div class="field"><label>Port</label><input class="input" type="number" id="set_web_port"></div>
+            <div class="field"><label>Username</label><input class="input" id="set_web_username"></div>
+        </div>
+        <div class="field-row">
+            <div class="field"><label>Password</label><input class="input" type="password" id="set_web_password" oninput="checkPwMatch()"></div>
+            <div class="field"><label>Confirm Password</label><input class="input" type="password" id="set_web_password_confirm" oninput="checkPwMatch()"></div>
+        </div>
+        <span id="pwMismatch" class="error-msg" style="display:none;">Passwords do not match</span>
+        <div style="margin-top:4px;"><button class="btn btn-sm btn-danger" onclick="clearPassword()">Clear Password</button></div>
+    </div>
+</div>
+
+<!-- 5. System Info -->
+<div class="section">
+    <div class="section-title">System Info</div>
+    <div class="section-body" id="sysInfo">
+        <div class="empty-state">Loading...</div>
+    </div>
+</div>
+
+<!-- 6. Danger Zone -->
+<div class="section">
+    <div class="section-title">Danger Zone</div>
+    <div class="section-body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-danger" onclick="dangerAction('nodes', 'Clear all nodes')">Clear All Nodes</button>
+            <button class="btn btn-danger" onclick="dangerAction('settings', 'Reset all settings')">Reset Settings</button>
+            <button class="btn btn-danger" onclick="dangerAction('db', 'Delete database')">Clear Database</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block navbar_actions %}
+<button class="btn btn-primary btn-sm" onclick="saveSettings()">Save</button>
+{% endblock %}
+
+{% block modals %}
+<!-- Danger Confirm Modal -->
+<div class="modal-overlay" id="dangerModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Danger Zone</span>
+            <button class="modal-close" onclick="closeModal('dangerModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="dangerMsg" style="margin-bottom:12px;"></p>
+            <div class="field">
+                <label>Type <strong id="dangerKeyword"></strong> to confirm:</label>
+                <input class="input" id="dangerConfirmInput">
+            </div>
+            <input type="hidden" id="dangerAction">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('dangerModal')">Cancel</button>
+            <button class="btn btn-danger" onclick="execDanger()">Confirm</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings Diff Modal -->
+<div class="modal-overlay" id="diffModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Confirm Changes</span>
+            <button class="modal-close" onclick="closeModal('diffModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <pre id="diffContent" style="font-size:12px;background:var(--bg-page);padding:12px;border-radius:4px;max-height:240px;overflow:auto;margin:0;"></pre>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('diffModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="confirmSaveSettings()">Apply</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var originalSettings = {};
+var changes = {};
+var clearPwFlag = false;
+
+async function loadSettings() {
+    try {
+        var resp = await fetch('/api/settings');
+        var data = await resp.json();
+        originalSettings = data;
+        ['bin_path_xray','bin_path_sslocal','bin_path_singbox','config_dir',
+         'check_interval_normal','check_interval_failover','tcp_timeout','curl_timeout',
+         'test_url','web_port','web_username'].forEach(function(k) {
+            var e = document.getElementById('set_' + k);
+            if (e) e.value = data[k] || '';
+        });
+        // Password: leave blank to keep unchanged
+        document.getElementById('set_web_password').value = '';
+        document.getElementById('set_web_password_confirm').value = '';
+        clearPwFlag = false;
+    } catch(e) {}
+}
+
+async function loadBinStatus() {
+    try {
+        var resp = await fetch('/api/bins/status');
+        var bins = await resp.json();
+        var html = '';
+        for (var k in bins) {
+            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;">' +
+                '<span><strong>' + escapeHtml(k) + '</strong> <span style="color:#888;">' + escapeHtml(bins[k].version) + '</span></span>' +
+                '<span style="display:flex;gap:4px;">' +
+                '<button class="btn btn-sm" onclick="checkUpgrade(\'' + k + '\', this)">Check Update</button>' +
+                '</span></div>';
+        }
+        document.getElementById('binsSection').innerHTML = html;
+    } catch(e) {}
+}
+
+async function loadSysInfo() {
+    try {
+        var resp = await fetch('/api/system/info');
+        var info = await resp.json();
+        document.getElementById('sysInfo').innerHTML =
+            '<div>Platform: ' + escapeHtml(info.platform) + '</div>' +
+            '<div>Python: ' + escapeHtml(info.python) + '</div>' +
+            '<div>DB Size: ' + escapeHtml(info.db_size) + '</div>';
+    } catch(e) {}
+}
+
+async function checkUpgrade(binName, btn) {
+    try {
+        addLog('info', 'Checking update for ' + binName + '...');
+        var resp = await fetch('/api/upgrade/check/' + binName);
+        var data = await resp.json();
+        if (data.is_update) {
+            addLog('ok', binName + ': new version ' + data.latest_version + ' available (current: ' + data.current_version + ')');
+            showConfirm(
+                'Download Update',
+                'Download ' + binName + ' ' + data.latest_version + '?',
+                async function() {
+                    var dr = await fetch('/api/upgrade/download/' + binName, { method: 'POST' });
+                    var dd = await dr.json();
+                    addLog(dd.success ? 'ok' : 'error', dd.message || '');
+                    loadBinStatus();
+                },
+                'Download'
+            );
+        } else if (data.current_version === 'N/A') {
+            addLog('warn', binName + ': binary not found, cannot check version');
+            if (btn) { btn.disabled = true; btn.textContent = 'N/A'; }
+        } else {
+            addLog('ok', binName + ' is up to date (' + data.current_version + ')');
+            if (btn) { btn.disabled = true; btn.textContent = 'Up to date'; }
+        }
+    } catch(e) { addLog('error', 'Check failed: ' + e); }
+}
+
+function checkPwMatch() {
+    var pw = document.getElementById('set_web_password').value;
+    var cfm = document.getElementById('set_web_password_confirm').value;
+    var hint = document.getElementById('pwMismatch');
+    if (cfm && pw !== cfm) {
+        hint.style.display = 'block';
+    } else {
+        hint.style.display = 'none';
+    }
+}
+
+function clearPassword() {
+    if (!confirm('Clear password? This will disable authentication.')) return;
+    clearPwFlag = true;
+    document.getElementById('set_web_password').value = '';
+    document.getElementById('set_web_password_confirm').value = '';
+    saveSettings();
+}
+
+function collectFormData() {
+    var keys = ['bin_path_xray','bin_path_sslocal','bin_path_singbox','config_dir',
+                'check_interval_normal','check_interval_failover','tcp_timeout','curl_timeout',
+                'test_url','web_port','web_username'];
+    var data = {};
+    keys.forEach(function(k) {
+        var e = document.getElementById('set_' + k);
+        if (e) data[k] = e.value;
+    });
+    var pw = document.getElementById('set_web_password').value;
+    if (clearPwFlag) {
+        data['web_password'] = '';
+    } else if (pw) {
+        var cfm = document.getElementById('set_web_password_confirm').value;
+        if (pw !== cfm) {
+            document.getElementById('pwMismatch').style.display = 'block';
+            return null;
+        }
+        data['web_password'] = pw;
+    }
+    // else: leave blank = don't change password
+    return data;
+}
+
+function saveSettings() {
+    var data = collectFormData();
+    if (!data) return;
+    changes = {};
+    for (var k in data) {
+        if (data[k] != originalSettings[k]) {
+            changes[k] = { old: originalSettings[k], new: data[k] };
+        }
+    }
+    if (!Object.keys(changes).length) {
+        showMessage('No changes detected.');
+        return;
+    }
+    var diffText = Object.keys(changes).map(function(k) {
+        if (k === 'web_password') {
+            return 'web_password: ' + (changes[k].new === '' ? 'Clear password' : 'Change password');
+        }
+        return k + ': ' + (changes[k].old || '') + ' → ' + changes[k].new;
+    }).join('\n');
+    document.getElementById('diffContent').textContent = diffText;
+    document.getElementById('diffModal').classList.add('show');
+}
+
+async function confirmSaveSettings() {
+    closeModal('diffModal');
+    var data = collectFormData();
+    if (!data) return;
+    try {
+        var resp = await fetch('/api/settings', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        var result = await resp.json();
+        addLog(result.success ? 'ok' : 'error', 'Settings saved');
+        loadSettings();
+    } catch(e) { addLog('error', 'Save failed: ' + e); }
+}
+
+function dangerAction(action, msg) {
+    var kw = action === 'nodes' ? 'CLEAR NODES' : (action === 'settings' ? 'RESET SETTINGS' : 'DELETE DATABASE');
+    document.getElementById('dangerMsg').textContent = msg;
+    document.getElementById('dangerKeyword').textContent = kw;
+    document.getElementById('dangerAction').value = action;
+    document.getElementById('dangerConfirmInput').value = '';
+    document.getElementById('dangerModal').classList.add('show');
+}
+
+async function execDanger() {
+    var action = document.getElementById('dangerAction').value;
+    var kw = document.getElementById('dangerKeyword').textContent;
+    if (document.getElementById('dangerConfirmInput').value !== kw) {
+        showMessage('Confirmation text does not match.');
+        return;
+    }
+    closeModal('dangerModal');
+    try {
+        if (action === 'nodes') {
+            await fetch('/api/nodes/clear', { method: 'POST' });
+            addLog('ok', 'All nodes cleared');
+        } else if (action === 'settings') {
+            await fetch('/api/settings/reset', { method: 'POST' });
+            addLog('ok', 'Settings reset to defaults');
+            loadSettings();
+        } else if (action === 'db') {
+            showMessage('Database clearing is not implemented via API. Delete data/proxyhub.db manually.');
+        }
+    } catch(e) { addLog('error', 'Action failed: ' + e); }
+}
+
+loadSettings();
+loadBinStatus();
+loadSysInfo();
+</script>
+{% endblock %}

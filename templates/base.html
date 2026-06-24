@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ProxyHub{% endblock %}</title>
+    <style>
+        /* ================================================================
+           Design System (§11.1)
+           ================================================================ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-page:        #fafafa;
+            --bg-card:        #fff;
+            --border:         #e0e0e0;
+            --text:           #333;
+            --text-secondary: #888;
+            --text-disabled:  #bbb;
+            --accent:         #1976d2;
+            --green:          #4caf50;
+            --red:            #e53935;
+            --orange:         #ffa726;
+            --font:           'Consolas', 'Monaco', 'Courier New', monospace;
+            --radius:         4px;
+        }
+
+        body {
+            font-family: var(--font);
+            font-size: 14px;
+            background: var(--bg-page);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ---- Navbar ---- */
+        .navbar {
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 0 12px;
+            flex-shrink: 0;
+        }
+        .navbar-brand { font-size: 15px; font-weight: bold; }
+        .navbar-actions { display: flex; gap: 4px; align-items: center; }
+
+        /* ---- Main area ---- */
+        .main-area { display: flex; flex: 1; overflow: hidden; }
+
+        /* ---- Sidebar ---- */
+        .sidebar {
+            width: 200px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            padding: 8px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar .list-item {
+            display: block;
+            padding: 6px 12px;
+            color: var(--text);
+            text-decoration: none;
+            font-size: 14px;
+            border-left: 3px solid transparent;
+        }
+        .sidebar .list-item:hover { background: var(--bg-page); }
+        .sidebar .list-item.active {
+            border-left-color: var(--accent);
+            background: var(--bg-page);
+            font-weight: bold;
+        }
+
+        /* ---- Content ---- */
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        /* ---- Log Panel ---- */
+        .log-panel {
+            border-top: 1px solid var(--border);
+            background: var(--bg-card);
+            flex-shrink: 0;
+        }
+        .log-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 12px;
+            background: var(--bg-page);
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            user-select: none;
+        }
+        .log-header .arrow { transition: transform 0.2s; }
+        .log-header .arrow.collapsed { transform: rotate(-90deg); }
+        .log-body {
+            max-height: 160px;
+            overflow-y: auto;
+            font-size: 12px;
+            padding: 4px 0;
+        }
+        .log-body.collapsed { display: none; }
+        .log-line { padding: 1px 12px; white-space: pre-wrap; word-break: break-all; }
+        .log-line .time { color: var(--text-secondary); margin-right: 8px; }
+        .log-line.info  { color: var(--text); }
+        .log-line.ok    { color: var(--green); }
+        .log-line.warn  { color: var(--orange); }
+        .log-line.error { color: var(--red); }
+
+        /* ---- Status Bar ---- */
+        .status-bar {
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            font-size: 12px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .status-left, .status-right { display: flex; gap: 8px; align-items: center; }
+
+        /* ---- Status dot ---- */
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+        .status-dot.ok    { background: var(--green); }
+        .status-dot.error { background: var(--red); }
+        .status-dot.idle  { background: var(--text-disabled); }
+
+        /* ---- Cards / Sections ---- */
+        .section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+        }
+        .section-title {
+            font-weight: bold;
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 12px;
+            background: var(--bg-page);
+            border-bottom: 1px solid var(--border);
+        }
+        .section-body { padding: 12px; }
+
+        /* ---- Buttons ---- */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 28px;
+            padding: 0 14px;
+            font-size: 14px;
+            font-family: var(--font);
+            cursor: pointer;
+            border: 1px solid #ccc;
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            color: var(--text);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .btn:hover { background: #f5f5f5; }
+        .btn:disabled { color: var(--text-disabled); border-color: var(--border); cursor: default; pointer-events: none; }
+        .btn-sm { padding: 2px 8px; font-size: 12px; height: auto; }
+        .btn-primary { background: #333; color: #fff; border-color: #333; }
+        .btn-primary:hover { background: #555; }
+        .btn-danger { color: var(--red); border-color: var(--red); }
+        .btn-danger:hover { background: #fce4ec; }
+        .btn-ok { color: var(--green); border-color: var(--green); }
+        .btn-ok:hover { background: #e8f5e9; }
+        .btn-ghost { border: none; color: var(--text-secondary); padding: 0 4px; }
+        .btn-ghost:hover { color: var(--text); }
+
+        /* ---- Forms ---- */
+        .input {
+            font-family: var(--font);
+            font-size: 14px;
+            height: 28px;
+            padding: 0 8px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-page);
+            color: var(--text);
+            width: 100%;
+        }
+        .input:focus { outline: none; border-color: #999; }
+        textarea.input { min-height: 80px; line-height: 1.6; padding: 4px 8px; resize: vertical; }
+        select.input { appearance: auto; }
+        .field { margin: 10px 0; }
+        .field label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 2px; }
+        .field-row { display: flex; gap: 12px; }
+        .field-row > * { flex: 1; }
+        .radio-group { display: flex; gap: 16px; }
+        .radio-group label { font-size: 13px; cursor: pointer; }
+
+        /* ---- Tags ---- */
+        .tag {
+            display: inline-block;
+            padding: 1px 6px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 12px;
+        }
+
+        /* ---- Modal (横版统一风格) ---- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.3);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            min-width: 440px;
+            max-width: 600px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-page);
+            flex-shrink: 0;
+        }
+        .modal-header .modal-title {
+            font-size: 15px;
+            font-weight: bold;
+            color: var(--text);
+        }
+        .modal-close {
+            cursor: pointer;
+            font-size: 17px;
+            color: var(--text-secondary);
+            background: none;
+            border: none;
+            padding: 0 4px;
+            line-height: 1;
+        }
+        .modal-close:hover { color: var(--text); }
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-body .field { margin: 10px 0; }
+        .modal-body .field:first-child { margin-top: 0; }
+        .modal-body .field:last-child { margin-bottom: 0; }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+            background: var(--bg-page);
+            flex-shrink: 0;
+        }
+        .modal-footer .btn { min-width: 72px; }
+
+        /* ---- Collapse ---- */
+        .collapse-header { cursor: pointer; user-select: none; }
+        .collapse-header.collapsed { color: var(--text); background: #eee; }
+        .collapse-body { display: none; }
+        .collapse-body.show { display: block; }
+
+        /* ---- Misc ---- */
+        .empty-state { text-align: center; padding: 40px; color: var(--text-secondary); font-style: italic; }
+        .lat-pending { color: var(--text-disabled); }
+        .lat-ok { color: var(--green); }
+        .lat-warn { color: var(--orange); }
+        .lat-bad { color: var(--red); }
+        .pool-cur { color: var(--green); font-weight: bold; }
+        .row-active { background: rgba(80,200,120,0.1); }
+        .row-active span { color: var(--green) !important; }
+        .error-msg { color: var(--red); font-size: 13px; }
+
+        /* ---- Row (flex table cell) ---- */
+        .row-flex { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+        .row-flex + .row-flex { border-top: 1px solid var(--border); }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navbar -->
+    <div class="navbar">
+        <span class="navbar-brand">ProxyHub</span>
+        <div class="navbar-actions">
+            {% block navbar_actions %}
+            <a href="/logout" class="btn btn-sm">Logout</a>
+            {% endblock %}
+        </div>
+    </div>
+
+    <!-- Main area -->
+    <div class="main-area">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            {% set nav = [
+                ('dashboard', '/'),
+                ('inbounds', '/inbounds'),
+                ('outbounds', '/outbounds'),
+                ('subscriptions', '/subscriptions'),
+                ('nodes', '/nodes'),
+                ('settings', '/settings'),
+            ] %}
+            {% for p, url in nav %}
+            <a href="{{ url }}" class="list-item{% if page == p %} active{% endif %}">{{ p }}</a>
+            {% endfor %}
+        </div>
+
+        <!-- Content -->
+        <div class="content" id="content">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- Log Panel -->
+    <div class="log-panel">
+        <div class="log-header" onclick="toggleLog()">
+            <span><span class="arrow" id="logArrow">&#9650;</span> Logs</span>
+            <span id="logCount">0 lines</span>
+        </div>
+        <div class="log-body" id="logBody"></div>
+    </div>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-left"></div>
+        <div class="status-right">
+            {% block statusbar_right %}{% endblock %}
+            <span id="nodeCount"></span>
+        </div>
+    </div>
+
+    <!-- Global Modals -->
+    <!-- Confirm Modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title" id="confirmTitle">Confirm</span>
+                <button class="modal-close" onclick="closeModal('confirmModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage" style="line-height:1.6;"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('confirmModal')">Cancel</button>
+                <button class="btn btn-primary" id="confirmOkBtn">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal -->
+    <div class="modal-overlay" id="messageModal">
+        <div class="modal">
+            <div class="modal-header">
+                <span class="modal-title">Notice</span>
+                <button class="modal-close" onclick="closeModal('messageModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="messageText" style="line-height:1.6;"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('messageModal')">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page-specific modals -->
+    {% block modals %}{% endblock %}
+
+    <!-- Global JavaScript -->
+    <script>
+        var logSince = 0;
+        var logVisible = true;
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function addLog(level, msg) {
+            var body = document.getElementById('logBody');
+            var line = document.createElement('div');
+            line.className = 'log-line ' + (level || 'info');
+            var now = new Date();
+            var time = ('0'+now.getHours()).slice(-2) + ':' +
+                       ('0'+now.getMinutes()).slice(-2) + ':' +
+                       ('0'+now.getSeconds()).slice(-2);
+            line.innerHTML = '<span class="time">' + time + '</span>' + escapeHtml(msg);
+            body.appendChild(line);
+            if (logVisible) body.scrollTop = body.scrollHeight;
+        }
+
+        function toggleLog() {
+            var body = document.getElementById('logBody');
+            var arrow = document.getElementById('logArrow');
+            logVisible = !logVisible;
+            body.classList.toggle('collapsed', !logVisible);
+            arrow.classList.toggle('collapsed', !logVisible);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+
+        function showMessage(msg) {
+            document.getElementById('messageText').textContent = msg;
+            document.getElementById('messageModal').classList.add('show');
+        }
+
+        function showConfirm(title, msg, onConfirm, confirmLabel) {
+            document.getElementById('confirmTitle').textContent = title || 'Confirm';
+            document.getElementById('confirmMessage').textContent = msg;
+            var btn = document.getElementById('confirmOkBtn');
+            btn.textContent = confirmLabel || 'OK';
+            btn.onclick = function() {
+                closeModal('confirmModal');
+                if (onConfirm) onConfirm();
+            };
+            document.getElementById('confirmModal').classList.add('show');
+        }
+
+        async function fetchLogs() {
+            try {
+                var resp = await fetch('/api/logs?since=' + logSince);
+                var data = await resp.json();
+                if (data.logs) {
+                    data.logs.forEach(function(l) {
+                        addLog(l.level, '[' + l.module + '] ' + l.message);
+                        logSince = Math.max(logSince, data.total);
+                    });
+                }
+                document.getElementById('logCount').textContent = data.total + ' lines';
+            } catch(e) {}
+        }
+
+        // Initial fetch & polling
+        fetchLogs();
+        setInterval(fetchLogs, 2000);
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
