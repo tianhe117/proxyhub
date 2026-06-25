@@ -102,8 +102,8 @@ def _run_checks(task_id, nodes, results, check_type):
             if check_type == 'url' or (check_type == 'both' and results[node['id']]['tcp'] and results[node['id']]['tcp'].get('success')):
                 # Generate temp config
                 try:
-                    local_port = _find_temp_port()
-                    config_path = _generate_temp_config(node, local_port)
+                    local_port = find_temp_port()
+                    config_path = generate_temp_config(node, local_port)
                     bin_type = node['bin_type']
                     bin_key = f'bin_path_{bin_type if bin_type != "sing-box" else "singbox"}'
                     bin_path = get_setting(bin_key) or ''
@@ -145,7 +145,7 @@ def _run_checks(task_id, nodes, results, check_type):
         log('ok', 'checker', f'Check task {task_id} completed')
 
 
-def _generate_temp_config(node, local_port):
+def generate_temp_config(node, local_port):
     """Generate a minimal temp config file for URL testing.
 
     Returns the absolute path to the config file.
@@ -161,7 +161,7 @@ def _generate_temp_config(node, local_port):
     return tmp_path
 
 
-def _find_temp_port():
+def find_temp_port():
     """Find a random available port for temp testing."""
     import random
     import socket

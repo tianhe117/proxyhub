@@ -7,16 +7,32 @@ from app.models.service import (
 )
 from app.services.service_manager import (
     start_service, stop_service, restart_service,
+    get_current_node,
 )
+from app.process.manager import is_service_running, get_all_processes
 from . import auth_required
 
 api_services = Blueprint('api_services', __name__, url_prefix='/api/services')
 
 
+def _has_in_and_out(procs):
+    """Check a service process dict has both in and out."""
+    keys = procs.keys() if isinstance(procs, dict) else set()
+    return any('_in' in k for k in keys) and any('_out' in k for k in keys)
+
+
 @api_services.route('/', methods=['GET'])
 @auth_required
 def list_services():
-    return jsonify([dict(s) for s in list_all()])
+    # Scan once, reuse for all services
+    all_procs = get_all_processes()
+    result = []
+    for s in list_all():
+        data = dict(s)
+        svc_procs = all_procs.get(data['name'], {})
+        data['status'] = 'running' if _has_in_and_out(svc_procs) else 'stopped'
+        result.append(data)
+    return jsonify(result)
 
 
 @api_services.route('/<int:svc_id>', methods=['GET'])
@@ -25,7 +41,9 @@ def get_service(svc_id):
     svc = get_by_id(svc_id)
     if not svc:
         return jsonify({'success': False, 'message': 'Not found'}), 404
-    return jsonify(dict(svc))
+    data = dict(svc)
+    data['status'] = 'running' if is_service_running(data['name']) else 'stopped'
+    return jsonify(data)
 
 
 @api_services.route('/', methods=['POST'])
@@ -74,3 +92,12 @@ def stop_service_handler(svc_id):
 def restart_service_handler(svc_id):
     result = restart_service(svc_id)
     return jsonify(result), 200 if result['success'] else 400
+
+
+@api_services.route('/<int:svc_id>/current-node', methods=['GET'])
+@auth_required
+def get_current_node_handler(svc_id):
+    info = get_current_node(svc_id)
+    if info:
+        return jsonify(info)
+    return jsonify({'node_id': 0, 'node_name': '', 'outbound_type': ''})

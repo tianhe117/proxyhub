@@ -70,11 +70,27 @@
 
 {% block extra_js %}
 <script>
-var outbounds = [], allNodes = [];
+var outbounds = [], allNodes = [], services = [], currentNodeMap = {};
 
 async function loadData() {
     try { var nr = await fetch('/api/nodes/'); allNodes = await nr.json(); } catch(e) {}
-    try { var resp = await fetch('/api/outbounds'); outbounds = await resp.json(); renderOutbounds(); } catch(e) {}
+    try { var sr = await fetch('/api/services'); services = await sr.json(); } catch(e) {}
+    try { var resp = await fetch('/api/outbounds'); outbounds = await resp.json(); } catch(e) {}
+
+    // Fetch current node for each service (to highlight in pool)
+    currentNodeMap = {};
+    for (var i = 0; i < services.length; i++) {
+        var s = services[i];
+        try {
+            var cr = await fetch('/api/services/' + s.id + '/current-node');
+            var cn = await cr.json();
+            if (cn && cn.node_id) {
+                // Map outbound_id → current_node_id (last service wins if multiple share outbound)
+                currentNodeMap[s.outbound_id] = cn.node_id;
+            }
+        } catch(e) {}
+    }
+    renderOutbounds();
 }
 
 function renderOutbounds() {
@@ -101,13 +117,14 @@ function renderOutbounds() {
             return '<div class="section"><div class="section-body">' + hdr + colHdr + row + '</div></div>';
         } else {
             var pool = o.pool || [];
+            var activeNodeId = currentNodeMap[o.id] || (pool.length ? pool[0].node_id : 0);
             var poolRows = pool.map(function(p, i) {
                 var btns = '<button class="btn btn-sm btn-ghost" onclick="movePoolTop(' + o.id + ',' + p.pool_id + ')"' + (i === 0 ? ' disabled' : '') + '>&#9198;</button>' +
                     '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',-1)"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
                     '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',1)"' + (i === pool.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
                     '<button class="btn btn-sm btn-ghost" onclick="movePoolBottom(' + o.id + ',' + p.pool_id + ')"' + (i === pool.length - 1 ? ' disabled' : '') + '>&#9197;</button>' +
                     '<button class="btn btn-sm btn-ghost btn-danger" onclick="removePoolNode(' + o.id + ',' + p.pool_id + ')">&#10005;</button>';
-                return nodeRow(p, i === 0, btns);
+                return nodeRow(p, p.node_id === activeNodeId, btns);
             }).join('');
             return '<div class="section"><div class="section-body">' + hdr + colHdr + poolRows + '<div style="padding:4px 0;"><button class="btn btn-sm" onclick="openPoolAdd(' + o.id + ')">+ add node</button></div></div></div>';
         }

@@ -5,11 +5,13 @@ import platform
 
 from flask import Blueprint, jsonify
 
-from app.settings import get_db_path, get_data_dir
+from app.settings import get_db_path
 from app.settings import BIN_REGISTRY
 from app.process.manager import get_version, stop_all_processes, count_processes
-from app.services.service_manager import start_service
-from app.models.service import get_auto_start_services, update_status
+from app.services.service_manager import (
+    start_service, stop_health_check_daemon, restart_health_check_daemon,
+)
+from app.models.service import get_auto_start_services, list_all, update_status
 from app.logger import log
 from . import auth_required
 
@@ -39,19 +41,29 @@ def system_info():
     })
 
 
-@api_system.route('/restart-all', methods=['POST'])
+@api_system.route('/stop-all', methods=['POST'])
 @auth_required
-def restart_all():
-    """Stop all processes, then restart auto-start services."""
-    # 1. Stop all processes
+def stop_all():
+    """Stop all processes and the health-check daemon."""
+    # Stop health check daemon first (so it doesn't try to restart things)
+    stop_health_check_daemon()
+    # Stop all proxy processes
     killed = stop_all_processes()
-    # 2. Reset all service statuses to stopped
-    from app.models.service import list_all
+    # Reset all services to stopped
     for svc in list_all():
         if svc['status'] != 'stopped':
             update_status(svc['id'], 'stopped')
-    log('info', 'system', f'Stopped {killed} process(es)')
-    # 3. Restart auto-start services
+    log('info', 'system', f'StAll: stopped {killed} process(es), health daemon paused')
+    return jsonify({'success': True, 'killed': killed})
+
+
+@api_system.route('/start-all', methods=['POST'])
+@auth_required
+def start_all():
+    """Restart health-check daemon and start auto-start services."""
+    # Restart health check daemon
+    restart_health_check_daemon()
+    # Start auto-start services
     auto_svcs = get_auto_start_services()
     started = 0
     for svc in auto_svcs:
@@ -61,8 +73,8 @@ def restart_all():
                 started += 1
         except Exception as e:
             log('error', 'system', f'Failed to start {svc["name"]}: {e}')
-    log('info', 'system', f'Restarted {started}/{len(auto_svcs)} auto-start service(s)')
-    return jsonify({'success': True, 'killed': killed, 'started': started})
+    log('info', 'system', f'StAll: started {started}/{len(auto_svcs)} auto-start service(s)')
+    return jsonify({'success': True, 'started': started})
 
 
 @api_system.route('/process-count', methods=['GET'])
