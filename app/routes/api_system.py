@@ -5,11 +5,11 @@ import platform
 
 from flask import Blueprint, jsonify
 
-from app.settings import get_db_path, get_data_dir
+from app.settings import get_db_path
 from app.settings import BIN_REGISTRY
 from app.process.manager import get_version, stop_all_processes, count_processes
 from app.services.service_manager import start_service
-from app.models.service import get_auto_start_services, update_status
+from app.models.service import get_auto_start_services
 from app.logger import log
 from . import auth_required
 
@@ -45,13 +45,13 @@ def restart_all():
     """Stop all processes, then restart auto-start services."""
     # 1. Stop all processes
     killed = stop_all_processes()
-    # 2. Reset all service statuses to stopped
-    from app.models.service import list_all
+    # 2. Reset all services to stopped (processes are gone)
+    from app.models.service import list_all, update_status
     for svc in list_all():
         if svc['status'] != 'stopped':
             update_status(svc['id'], 'stopped')
     log('info', 'system', f'Stopped {killed} process(es)')
-    # 3. Restart auto-start services
+    # 3. Restart auto-start services (will set status back to running)
     auto_svcs = get_auto_start_services()
     started = 0
     for svc in auto_svcs:

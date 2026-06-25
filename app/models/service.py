@@ -48,7 +48,7 @@ def delete(svc_id):
 
 
 def update_status(svc_id, status):
-    """Update only the status field."""
+    """Update only the status field (desired state for health monitoring)."""
     db = get_db()
     db.execute('UPDATE services SET status = ? WHERE id = ?', (status, svc_id))
     db.commit()

@@ -44,9 +44,10 @@ def create_app():
             set_setting('secret_key', secret)
         app.secret_key = secret
 
-    # Start auto-start daemon
-    from app.services.service_manager import start_auto_start_daemon
+    # Start auto-start daemon and health-check daemon
+    from app.services.service_manager import start_auto_start_daemon, start_health_check_daemon
     start_auto_start_daemon(app)
+    start_health_check_daemon(app)
 
     return app
 
