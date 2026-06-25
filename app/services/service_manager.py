@@ -13,6 +13,7 @@ from app.models.service import (
 )
 from app.process.manager import (
     start_process, stop_service as stop_service_processes,
+    stop_all_processes as stop_all_bin_processes,
     is_service_running, get_service_processes
 )
 from app.services.config_service import (
@@ -184,6 +185,10 @@ def start_auto_start_daemon(app):
         # Wait for Flask to be fully up
         time.sleep(2)
         with app.app_context():
+            # Kill any leftover processes from previous runs (e.g. after Python was killed)
+            killed = stop_all_bin_processes()
+            if killed:
+                log('info', 'system', f'Cleaned up {killed} orphaned process(es) from previous run')
             services = get_auto_start_services()
             for svc in services:
                 try:
