@@ -3,7 +3,7 @@
 
 {% block navbar_actions %}
 <button class="btn btn-sm btn-primary" onclick="openServiceModal()">+ New Service</button>
-<button class="btn btn-sm btn-danger" onclick="restartAll()">Restart All</button>
+<button class="btn btn-sm btn-danger" id="stopStartBtn" onclick="toggleAll()">Stop All</button>
 <a href="/logout" class="btn btn-sm">Logout</a>
 {% endblock %}
 
@@ -70,22 +70,6 @@
     </div>
 </div>
 
-<!-- Restart All Modal -->
-<div class="modal-overlay" id="restartModal">
-    <div class="modal">
-        <div class="modal-header">
-            <span class="modal-title">Restart All Services</span>
-            <button class="modal-close" onclick="closeModal('restartModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <p>Stop all proxy processes and restart auto-start services?</p>
-        </div>
-        <div class="modal-footer">
-            <button class="btn" onclick="closeModal('restartModal')">Cancel</button>
-            <button class="btn btn-danger" onclick="confirmRestartAll()">Restart</button>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block statusbar_right %}
@@ -96,18 +80,40 @@
 <script>
 var services = [], inbounds = [], outbounds = [];
 
-function restartAll() {
-    document.getElementById('restartModal').classList.add('show');
+function hasRunningService() {
+    return services.some(function(s) { return s.status === 'running'; });
 }
 
-async function confirmRestartAll() {
-    closeModal('restartModal');
-    try {
-        var resp = await fetch('/api/system/restart-all', { method: 'POST' });
-        var data = await resp.json();
-        addLog(data.success ? 'ok' : 'error', 'Stopped ' + data.killed + ' process(es), restarted ' + data.started + ' service(s)');
-        loadData();
-    } catch(e) { addLog('error', 'Restart failed: ' + e); }
+function updateStopStartBtn() {
+    var btn = document.getElementById('stopStartBtn');
+    if (hasRunningService()) {
+        btn.textContent = 'Stop All';
+        btn.className = 'btn btn-sm btn-danger';
+    } else {
+        btn.textContent = 'Start All';
+        btn.className = 'btn btn-sm btn-ok';
+    }
+}
+
+async function toggleAll() {
+    var btn = document.getElementById('stopStartBtn');
+    if (hasRunningService()) {
+        // Stop all
+        try {
+            var resp = await fetch('/api/system/stop-all', { method: 'POST' });
+            var data = await resp.json();
+            addLog(data.success ? 'ok' : 'error', 'Stopped ' + data.killed + ' process(es), health daemon paused');
+            loadData();
+        } catch(e) { addLog('error', 'Stop All failed: ' + e); }
+    } else {
+        // Start all
+        try {
+            var resp = await fetch('/api/system/start-all', { method: 'POST' });
+            var data = await resp.json();
+            addLog(data.success ? 'ok' : 'error', 'Started ' + data.started + ' auto-start service(s), health daemon resumed');
+            loadData();
+        } catch(e) { addLog('error', 'Start All failed: ' + e); }
+    }
 }
 
 async function loadData() {
@@ -180,6 +186,7 @@ function renderServices() {
         '<span style="flex:1;">Auto</span>' +
         '<span style="width:170px;"></span></div>';
     list.innerHTML = '<div class="section"><div class="section-body">' + header + rows + '</div></div>';
+    updateStopStartBtn();
 }
 
 async function controlService(id, action) {

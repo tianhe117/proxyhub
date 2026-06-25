@@ -7,6 +7,7 @@ from app.models.service import (
 )
 from app.services.service_manager import (
     start_service, stop_service, restart_service,
+    get_current_node,
 )
 from app.process.manager import is_service_running, get_all_processes
 from . import auth_required
@@ -91,3 +92,12 @@ def stop_service_handler(svc_id):
 def restart_service_handler(svc_id):
     result = restart_service(svc_id)
     return jsonify(result), 200 if result['success'] else 400
+
+
+@api_services.route('/<int:svc_id>/current-node', methods=['GET'])
+@auth_required
+def get_current_node_handler(svc_id):
+    info = get_current_node(svc_id)
+    if info:
+        return jsonify(info)
+    return jsonify({'node_id': 0, 'node_name': '', 'outbound_type': ''})

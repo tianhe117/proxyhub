@@ -51,12 +51,16 @@ def check_inbound_port(port):
     return True, ''
 
 
-def get_outbound_node(outbound):
+def get_outbound_node(outbound, node_id=None):
     """Resolve the node that an outbound points to.
 
     - single: config_json.node_id → node row
-    - auto: first pool entry (lowest priority) → node row
+    - auto: first pool entry (lowest priority) → node row, unless node_id overrides
     - direct: virtual node (freedom protocol, no remote server)
+
+    Args:
+        outbound: outbound row
+        node_id: override node ID (used by failover to pick a specific node)
     """
     cfg = outbound['config_json']
     if isinstance(cfg, str):
@@ -69,10 +73,12 @@ def get_outbound_node(outbound):
             'config_json': '{}', 'bin_type': 'xray',
         }
     elif outbound['type'] == 'single':
-        node_id = cfg.get('node_id') if isinstance(cfg, dict) else json.loads(cfg).get('node_id')
-        return get_node(node_id)
+        nid = cfg.get('node_id') if isinstance(cfg, dict) else json.loads(cfg).get('node_id')
+        return get_node(nid)
     else:
-        # auto — take first node from pool
+        # auto — use node_id override if provided, otherwise first pool entry
+        if node_id:
+            return get_node(node_id)
         out_id = outbound['id']
         pool = get_pool_nodes(out_id)
         if not pool:
