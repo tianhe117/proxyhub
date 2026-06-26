@@ -3,8 +3,6 @@
 
 {% block navbar_actions %}
 <button class="btn btn-sm btn-primary" onclick="openServiceModal()">+ New Service</button>
-<button class="btn btn-sm btn-danger" id="stopStartBtn" onclick="toggleAll()">Stop All</button>
-<a href="/logout" class="btn btn-sm">Logout</a>
 {% endblock %}
 
 {% block content %}
@@ -80,46 +78,18 @@
 <script>
 var services = [], inbounds = [], outbounds = [];
 
-function hasRunningService() {
-    return services.some(function(s) { return s.status === 'running'; });
-}
-
-function updateStopStartBtn() {
-    var btn = document.getElementById('stopStartBtn');
-    if (hasRunningService()) {
-        btn.textContent = 'Stop All';
-        btn.className = 'btn btn-sm btn-danger';
-    } else {
-        btn.textContent = 'Start All';
-        btn.className = 'btn btn-sm btn-ok';
-    }
-}
-
-async function toggleAll() {
-    var btn = document.getElementById('stopStartBtn');
-    if (hasRunningService()) {
-        // Stop all
-        try {
-            var resp = await fetch('/api/system/stop-all', { method: 'POST' });
-            var data = await resp.json();
-            addLog(data.success ? 'ok' : 'error', 'Stopped ' + data.killed + ' process(es), health daemon paused');
-            loadData();
-        } catch(e) { addLog('error', 'Stop All failed: ' + e); }
-    } else {
-        // Start all
-        try {
-            var resp = await fetch('/api/system/start-all', { method: 'POST' });
-            var data = await resp.json();
-            addLog(data.success ? 'ok' : 'error', 'Started ' + data.started + ' auto-start service(s), health daemon resumed');
-            loadData();
-        } catch(e) { addLog('error', 'Start All failed: ' + e); }
-    }
-}
-
 async function loadData() {
     try {
-        var nr = await fetch('/api/nodes/grouped');
-        var groups = await nr.json();
+        var results = await Promise.all([
+            fetch('/api/nodes/grouped').then(function(r) { return r.json(); }),
+            fetch('/api/system/process-count').then(function(r) { return r.json(); }),
+            cachedFetch('inbounds', '/api/inbounds'),
+            cachedFetch('outbounds', '/api/outbounds'),
+            fetch('/api/services').then(function(r) { return r.json(); })
+        ]);
+        var groups = results[0], pdata = results[1];
+        inbounds = results[2]; outbounds = results[3]; services = results[4];
+
         var totalNodes = 0, subCount = 0;
         groups.forEach(function(g) {
             totalNodes += g.count;
@@ -128,30 +98,12 @@ async function loadData() {
         document.getElementById('statNodes').textContent = totalNodes;
         document.getElementById('statSubs').textContent = subCount;
         document.getElementById('nodeCount').textContent = totalNodes + ' nodes';
-    } catch(e) {}
-
-    try {
-        var pr = await fetch('/api/system/process-count');
-        var pdata = await pr.json();
         document.getElementById('statProcs').textContent = pdata.count;
-    } catch(e) {}
 
-    try {
-        var ir = await fetch('/api/inbounds');
-        inbounds = await ir.json();
-    } catch(e) {}
-
-    try {
-        var or = await fetch('/api/outbounds');
-        outbounds = await or.json();
-    } catch(e) {}
-
-    try {
-        var sr = await fetch('/api/services');
-        services = await sr.json();
+        _globalServices = services;
         renderServices();
         document.getElementById('svcCount').textContent = services.length + ' services';
-    } catch(e) {}
+    } catch(e) { addLog('error', 'Dashboard load failed: ' + e); }
 }
 
 function renderServices() {

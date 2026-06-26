@@ -73,24 +73,26 @@
 var outbounds = [], allNodes = [], services = [], currentNodeMap = {};
 
 async function loadData() {
-    try { var nr = await fetch('/api/nodes/'); allNodes = await nr.json(); } catch(e) {}
-    try { var sr = await fetch('/api/services'); services = await sr.json(); } catch(e) {}
-    try { var resp = await fetch('/api/outbounds'); outbounds = await resp.json(); } catch(e) {}
+    try {
+        var results = await Promise.all([
+            cachedFetch('nodes', '/api/nodes/'),
+            cachedFetch('outbounds', '/api/outbounds'),
+            fetch('/api/services').then(function(r) { return r.json(); }),
+            fetch('/api/services/current-nodes').then(function(r) { return r.json(); })
+        ]);
+        allNodes = results[0]; outbounds = results[1]; services = results[2];
+        _globalServices = services;
 
-    // Fetch current node for each service (to highlight in pool)
-    currentNodeMap = {};
-    for (var i = 0; i < services.length; i++) {
-        var s = services[i];
-        try {
-            var cr = await fetch('/api/services/' + s.id + '/current-node');
-            var cn = await cr.json();
-            if (cn && cn.node_id) {
-                // Map outbound_id → current_node_id (last service wins if multiple share outbound)
-                currentNodeMap[s.outbound_id] = cn.node_id;
+        // Build outbound_id → current_node_id map from batch result
+        currentNodeMap = {};
+        var cnData = results[3];
+        services.forEach(function(s) {
+            if (cnData[s.id] && cnData[s.id].node_id) {
+                currentNodeMap[s.outbound_id] = cnData[s.id].node_id;
             }
-        } catch(e) {}
-    }
-    renderOutbounds();
+        });
+        renderOutbounds();
+    } catch(e) { addLog('error', 'Load failed: ' + e); }
 }
 
 function renderOutbounds() {

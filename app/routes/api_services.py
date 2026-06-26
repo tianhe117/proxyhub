@@ -101,3 +101,15 @@ def get_current_node_handler(svc_id):
     if info:
         return jsonify(info)
     return jsonify({'node_id': 0, 'node_name': '', 'outbound_type': ''})
+
+
+@api_services.route('/current-nodes', methods=['GET'])
+@auth_required
+def get_all_current_nodes():
+    """批量返回所有 service 的 current-node 信息。"""
+    result = {}
+    for s in list_all():
+        info = get_current_node(s['id'])
+        if info:
+            result[s['id']] = info
+    return jsonify(result)
