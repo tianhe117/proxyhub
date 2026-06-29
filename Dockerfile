@@ -14,6 +14,7 @@ RUN apt-get update -qq && \
         curl \
         simple-obfs \
         procps \
+        tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python dependencies ──────────────────────────────────────────
