@@ -519,10 +519,6 @@ def start_health_check_daemon(app):
                         )
 
                         if health['healthy']:
-                            log('info', 'failover',
-                                f'outbound#{outbound_id} ({outbound["name"]}): '
-                                f'node {current_node["name"]} OK '
-                                f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms)')
                             state['fail_count'] = 0
                             state['all_dead_count'] = 0
                             state['interval'] = _get_normal_interval()
