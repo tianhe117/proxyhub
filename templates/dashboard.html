@@ -2,7 +2,7 @@
 {% block title %}ProxyHub — Dashboard{% endblock %}
 
 {% block navbar_actions %}
-<button class="btn btn-sm btn-primary" onclick="openServiceModal()">+ New Service</button>
+<button class="btn btn-sm btn-primary" onclick="openServiceModal()">+ New</button>
 {% endblock %}
 
 {% block content %}
@@ -138,7 +138,7 @@ function renderServices() {
         '<span style="flex:1;">Auto</span>' +
         '<span style="width:170px;"></span></div>';
     list.innerHTML = '<div class="section"><div class="section-body">' + header + rows + '</div></div>';
-    updateStopStartBtn();
+    updateToggleBtn();
 }
 
 async function controlService(id, action) {

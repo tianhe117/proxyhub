@@ -2,11 +2,13 @@
 {% block title %}ProxyHub — Nodes{% endblock %}
 
 {% block navbar_actions %}
-<button class="btn btn-sm btn-primary" onclick="openNodeModal()">+ New Node</button>
-<button class="btn btn-sm" onclick="checkAll()">Check All</button>
+<button class="btn btn-sm btn-primary" onclick="openNodeModal()">+ New</button>
 {% endblock %}
 
 {% block content %}
+<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+    <button class="btn btn-sm" onclick="confirmCheckAll()">Check All Groups</button>
+</div>
 <div id="nodesContainer"></div>
 <div class="empty-state" id="nodesEmpty" style="display:none;">No nodes. Add a subscription or create custom nodes.</div>
 {% endblock %}
@@ -115,7 +117,7 @@ function renderNodes() {
         var hdrClass = collapsed ? 'collapse-header section-title collapsed' : 'collapse-header section-title';
         var bodyClass = collapsed ? 'collapse-body' : 'collapse-body show';
         var colStyle = collapsed ? ' style="display:none;font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;"' : ' style="font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;"';
-        return '<div class="section"><div class="' + hdrClass + '" data-group="' + gi + '" onclick="toggleCollapse(this)">' + subName + ' &middot; ' + g.count + ' nodes <button class="btn btn-sm" style="float:right;" onclick="event.stopPropagation();checkGroup(' + gi + ')">check all</button></div>' +
+        return '<div class="section"><div class="' + hdrClass + '" data-group="' + gi + '" onclick="toggleCollapse(this)">' + subName + ' &middot; ' + g.count + ' nodes <button class="btn btn-sm" style="float:right;" onclick="event.stopPropagation();confirmCheckGroup(' + gi + ')">Check Group</button></div>' +
             '<div class="row-flex"' + colStyle + '>' +
                 '<span style="flex:2;padding-left:8px;">Name</span>' +
                 '<span style="flex:1">Protocol</span>' +
@@ -497,6 +499,14 @@ async function checkSingle(id) {
     } catch(e) {}
 }
 
+function confirmCheckGroup(gi) {
+    var count = groups[gi].nodes.length;
+    var name = groups[gi].sub ? groups[gi].sub.name : 'Custom Nodes';
+    showConfirm('Check Group', 'Check all ' + count + ' nodes in "' + name + '"?', function() {
+        checkGroup(gi);
+    }, 'Check');
+}
+
 async function checkGroup(gi) {
     var ids = groups[gi].nodes.map(function(n) { return n.id; });
     try {
@@ -505,6 +515,15 @@ async function checkGroup(gi) {
         if (data.task_id) { addLog('info', 'Bulk check started'); pollCheck(data.task_id); }
         else { addLog('warn', data.message || 'Check rejected'); }
     } catch(e) {}
+}
+
+function confirmCheckAll() {
+    if (!groups || !groups.length) { addLog('warn', 'No nodes to check'); return; }
+    var total = 0;
+    groups.forEach(function(g) { total += g.nodes.length; });
+    showConfirm('Check All Groups', 'Check all ' + total + ' nodes in ' + groups.length + ' groups?', function() {
+        checkAll();
+    }, 'Check');
 }
 
 async function checkAll() {

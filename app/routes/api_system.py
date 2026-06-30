@@ -1,9 +1,12 @@
 """System info API routes (§4.11)."""
 
 import os
+import signal
+import threading
+
 import platform
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, Response
 
 from app.settings import get_db_path
 from app.settings import BIN_REGISTRY
@@ -82,3 +85,13 @@ def start_all():
 def process_count():
     """Return the count of running proxy processes."""
     return jsonify({'count': count_processes()})
+
+
+@api_system.route('/shutdown', methods=['POST'])
+@auth_required
+def shutdown():
+    """Shutdown the application. Docker will auto-restart if configured."""
+    log('warn', 'system', 'Shutdown requested — shutting down')
+    # Schedule exit after response is sent, so client receives a proper 200
+    threading.Timer(0.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+    return Response('{"status":"shutting_down"}', status=200, mimetype='application/json')

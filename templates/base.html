@@ -300,8 +300,9 @@
     <div class="navbar">
         <span class="navbar-brand">ProxyHub</span>
         <div class="navbar-actions">
-            <button class="btn btn-sm btn-danger" id="stopStartBtn" onclick="toggleAll()">Stop All</button>
             {% block navbar_actions %}{% endblock %}
+            <button class="btn btn-sm" id="toggleAllBtn" onclick="toggleAll()">Start All</button>
+            <button class="btn btn-sm btn-danger" onclick="confirmShutdown()" title="Shutdown ProxyHub">Shutdown</button>
             <a href="/logout" class="btn btn-sm">Logout</a>
         </div>
     </div>
@@ -506,22 +507,33 @@
 
         /* ---- Global Stop All / Start All ---- */
         var _globalServices = [];
+        var CACHE_KEY = 'proxyhub_has_running';
 
         function hasRunningService() {
             return _globalServices.some(function(s) { return s.status === 'running'; });
         }
 
-        function updateStopStartBtn() {
-            var btn = document.getElementById('stopStartBtn');
+        function restoreBtnState() {
+            var cached = sessionStorage.getItem(CACHE_KEY);
+            if (cached === null) return;
+            var running = cached === '1';
+            var btn = document.getElementById('toggleAllBtn');
             if (!btn) return;
-            if (hasRunningService()) {
-                btn.textContent = 'Stop All';
-                btn.className = 'btn btn-sm btn-danger';
-            } else {
-                btn.textContent = 'Start All';
-                btn.className = 'btn btn-sm btn-ok';
-            }
+            btn.textContent = running ? 'Stop All' : 'Start All';
+            btn.className = running ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-ok';
         }
+
+        function updateToggleBtn() {
+            var btn = document.getElementById('toggleAllBtn');
+            if (!btn) return;
+            var running = hasRunningService();
+            btn.textContent = running ? 'Stop All' : 'Start All';
+            btn.className = running ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-ok';
+            sessionStorage.setItem(CACHE_KEY, running ? '1' : '0');
+        }
+
+        // Restore cached state immediately on page load
+        restoreBtnState();
 
         async function toggleAll() {
             var shouldStop = hasRunningService();
@@ -540,12 +552,23 @@
             try {
                 var resp = await fetch('/api/services');
                 _globalServices = await resp.json();
-                updateStopStartBtn();
+                updateToggleBtn();
             } catch(e) {}
         }
 
         pollServiceStatus();
         setInterval(pollServiceStatus, 10000);
+
+        function confirmShutdown() {
+            showConfirm('Shutdown', 'Shutdown the application? Docker will auto-restart if configured.', async function() {
+                try {
+                    await fetch('/api/system/shutdown', { method: 'POST' });
+                    addLog('warn', 'Shutdown requested — restarting...');
+                } catch(e) {
+                    console.warn('Shutdown request failed:', e);
+                }
+            }, 'Shutdown');
+        }
     </script>
     {% block extra_js %}{% endblock %}
 </body>

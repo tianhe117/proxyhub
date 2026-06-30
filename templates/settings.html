@@ -216,11 +216,12 @@ function checkPwMatch() {
 }
 
 function clearPassword() {
-    if (!confirm('Clear password? This will disable authentication.')) return;
-    clearPwFlag = true;
-    document.getElementById('set_web_password').value = '';
-    document.getElementById('set_web_password_confirm').value = '';
-    saveSettings();
+    showConfirm('Clear Password', 'Clear password? This will disable authentication.', function() {
+        clearPwFlag = true;
+        document.getElementById('set_web_password').value = '';
+        document.getElementById('set_web_password_confirm').value = '';
+        saveSettings();
+    }, 'Clear');
 }
 
 function collectFormData() {
