@@ -130,9 +130,8 @@ def _do_failover(outbound_id, pool, current_node_id):
         f'outbound#{outbound_id} ({ob_name}): '
         f'scanning {len(pool)} nodes in pool (skipping current node_id={current_node_id})...')
 
-    # Scan all nodes except current
+    # Scan pool from head, pick first available healthy node
     best_node_id = None
-    best_tcp = -1
     for entry in pool:
         nid = entry['node_id']
         if nid == current_node_id:
@@ -152,9 +151,8 @@ def _do_failover(outbound_id, pool, current_node_id):
             log('info', 'failover',
                 f'  candidate {node["name"]}: OK '
                 f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms)')
-            if best_node_id is None or health['tcp_latency'] < best_tcp:
-                best_node_id = nid
-                best_tcp = health['tcp_latency']
+            best_node_id = nid
+            break
         else:
             log('info', 'failover',
                 f'  candidate {node["name"]}: FAIL '
