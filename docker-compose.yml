@@ -4,13 +4,12 @@ services:
     image: proxyhub:1.0
     container_name: proxyhub
     restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
     volumes:
-      # 整个项目目录挂载：git pull 后 restart 即可，无需 rebuild
       - .:/opt/proxyhub
     ports:
       # Web UI
       - "8080:8080"
       # inbound 端口：根据你在面板中的配置添加
       # - "1080:1080"
-    environment:
-      - TZ=Asia/Shanghai
