@@ -65,6 +65,12 @@
 </div>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+.pool-idx { width:36px; text-align:center; padding:2px 4px; font-size:12px; height:auto; }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
 var outbounds = [], allNodes = [], services = [], currentNodeMap = {};
@@ -163,12 +169,11 @@ function renderOutbounds() {
                 ? '<button class="btn btn-sm btn-ok" disabled>&#10003;</button>'
                 : '<button class="btn btn-sm btn-primary" onclick="confirmSwitchNode(this)" data-ob="' + o.id + '" data-node="' + p.node_id + '" data-name="' + escapeHtml(p.name) + '" title="Switch to this node">&#8644;</button>';
             var btns = switchBtn +
-                '<button class="btn btn-sm btn-ghost" onclick="movePoolTop(' + o.id + ',' + p.pool_id + ')"' + (i === 0 ? ' disabled' : '') + '>&#9198;</button>' +
                 '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',-1)"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
+                '<input class="input pool-idx" value="' + (i + 1) + '" onkeydown="if(event.key===\'Enter\')this.blur()" onchange="movePoolToIndex(' + o.id + ',' + p.pool_id + ',this.value)" title="Position">' +
                 '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',1)"' + (i === pool.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
-                '<button class="btn btn-sm btn-ghost" onclick="movePoolBottom(' + o.id + ',' + p.pool_id + ')"' + (i === pool.length - 1 ? ' disabled' : '') + '>&#9197;</button>' +
                 '<button class="btn btn-sm btn-ghost btn-danger" onclick="removePoolNode(' + o.id + ',' + p.pool_id + ')">&#10005;</button>';
-            return obNodeRow(p, isCurrentNode, btns, '210px');
+            return obNodeRow(p, isCurrentNode, btns, '155px');
         }).join('');
         var hdrBtns = '<button class="btn btn-sm" onclick="event.stopPropagation();openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="event.stopPropagation();confirmDeleteOb(' + o.id + ')">&#10005;</button>';
         html += '<div class="section">' +
@@ -176,7 +181,7 @@ function renderOutbounds() {
                 '<span class="tag">auto switch</span> <strong>' + escapeHtml(o.name) + '</strong> &middot; ' + pool.length + ' nodes ' +
                 '<span style="float:right;display:flex;gap:4px;">' + hdrBtns + '</span>' +
             '</div>' +
-            '<div class="' + bodyClass + '">' + obColHdr('210px') + poolRows +
+            '<div class="' + bodyClass + '">' + obColHdr('155px') + poolRows +
             '</div></div>';
     });
     list.innerHTML = html;
@@ -295,6 +300,30 @@ async function removePoolNode(obId, poolId) {
     try { await fetch('/api/outbounds/' + obId + '/nodes/' + poolId, { method: 'DELETE' }); addLog('ok', 'Node removed from pool'); loadData(); } catch(e) {}
 }
 
+async function _savePoolOrder(obId, order) {
+    try {
+        await fetch('/api/outbounds/' + obId + '/nodes/reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({order: order}) });
+        addLog('ok', 'Pool reordered');
+        loadData();
+    } catch(e) {}
+}
+
+async function movePoolToIndex(obId, poolId, targetIdx) {
+    var ob = outbounds.find(function(x) { return x.id == obId; });
+    if (!ob || !ob.pool) return;
+    var order = ob.pool.map(function(p) { return p.pool_id; });
+    var idx = order.indexOf(poolId);
+    if (idx < 0) return;
+    targetIdx = parseInt(targetIdx);
+    if (isNaN(targetIdx) || targetIdx < 1) targetIdx = 1;
+    if (targetIdx > order.length) targetIdx = order.length;
+    var newIdx = targetIdx - 1;
+    if (newIdx === idx) return;
+    order.splice(idx, 1);
+    order.splice(newIdx, 0, poolId);
+    _savePoolOrder(obId, order);
+}
+
 async function movePoolNode(obId, poolId, dir) {
     var ob = outbounds.find(function(x) { return x.id == obId; });
     if (!ob || !ob.pool) return;
@@ -304,28 +333,9 @@ async function movePoolNode(obId, poolId, dir) {
     var newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= order.length) return;
     order.splice(idx, 1); order.splice(newIdx, 0, poolId);
-    try { await fetch('/api/outbounds/' + obId + '/nodes/reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({order: order}) }); addLog('ok', 'Pool reordered'); loadData(); } catch(e) {}
+    _savePoolOrder(obId, order);
 }
 
-async function movePoolTop(obId, poolId) {
-    var ob = outbounds.find(function(x) { return x.id == obId; });
-    if (!ob || !ob.pool) return;
-    var order = ob.pool.map(function(p) { return p.pool_id; });
-    var idx = order.indexOf(poolId);
-    if (idx <= 0) return;
-    order.splice(idx, 1); order.unshift(poolId);
-    try { await fetch('/api/outbounds/' + obId + '/nodes/reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({order: order}) }); addLog('ok', 'Moved to top'); loadData(); } catch(e) {}
-}
-
-async function movePoolBottom(obId, poolId) {
-    var ob = outbounds.find(function(x) { return x.id == obId; });
-    if (!ob || !ob.pool) return;
-    var order = ob.pool.map(function(p) { return p.pool_id; });
-    var idx = order.indexOf(poolId);
-    if (idx < 0 || idx >= order.length - 1) return;
-    order.splice(idx, 1); order.push(poolId);
-    try { await fetch('/api/outbounds/' + obId + '/nodes/reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({order: order}) }); addLog('ok', 'Moved to bottom'); loadData(); } catch(e) {}
-}
 
 function confirmSwitchNode(btn) {
     var obId = btn.getAttribute('data-ob');
