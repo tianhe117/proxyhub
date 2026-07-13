@@ -38,6 +38,7 @@ _failover_state = {}  # {outbound_id: {fail_count, current_node_id, last_check, 
 FAILOVER_CHECK_INTERVAL = 15       # seconds between health check ticks
 FAIL_THRESHOLD = 3                 # consecutive failures before switching
 ALL_DEAD_INTERVALS = [5*60, 10*60, 15*60, 30*60]  # 递增等待
+PREFERRED_RECOVERY_INTERVAL = 300   # 优先节点恢复检查间隔（秒）
 
 
 def _get_normal_interval():
@@ -50,6 +51,11 @@ def _get_fail_fast_interval():
     return int(get_setting('check_interval_failover') or 30)
 
 
+def _get_preferred_recovery_interval():
+    """Preferred recovery check interval (seconds) — hardcoded."""
+    return PREFERRED_RECOVERY_INTERVAL
+
+
 def _get_failover_state(outbound_id):
     """Get or initialize failover state for an outbound."""
     if outbound_id not in _failover_state:
@@ -59,6 +65,7 @@ def _get_failover_state(outbound_id):
             'last_check': 0,
             'interval': _get_fail_fast_interval(),  # 首次检查快速触发
             'all_dead_count': 0,
+            'last_preferred_check': 0,
         }
     return _failover_state[outbound_id]
 
@@ -179,6 +186,7 @@ def _do_failover(outbound_id, pool, current_node_id):
         state = _get_failover_state(outbound_id)
         state['current_node_id'] = best_node_id
         state['fail_count'] = 0
+        state['last_preferred_check'] = 0
         if failed:
             # Some services failed — stay in fail-fast so health check retries soon
             state['interval'] = _get_fail_fast_interval()
@@ -199,6 +207,7 @@ def _do_failover(outbound_id, pool, current_node_id):
         # All nodes dead — increment wait
         state = _get_failover_state(outbound_id)
         state['fail_count'] = 0
+        state['last_preferred_check'] = 0
         state['all_dead_count'] += 1
         idx = min(state['all_dead_count'] - 1, len(ALL_DEAD_INTERVALS) - 1)
         state['interval'] = ALL_DEAD_INTERVALS[idx]
@@ -524,6 +533,59 @@ def start_health_check_daemon(app):
                             state['fail_count'] = 0
                             state['all_dead_count'] = 0
                             state['interval'] = _get_normal_interval()
+
+                            # Preferred node recovery: when current node is not
+                            # pool[0], periodically scan earlier nodes
+                            current_idx = next(
+                                (i for i, e in enumerate(pool)
+                                 if e['node_id'] == state['current_node_id']), -1)
+                            if current_idx > 0:
+                                rec_int = _get_preferred_recovery_interval()
+                                if now - state.get('last_preferred_check', 0) >= rec_int:
+                                    state['last_preferred_check'] = now
+                                    better = None
+                                    for entry in pool[:current_idx]:
+                                        n = get_node(entry['node_id'])
+                                        if not n:
+                                            continue
+                                        h = _check_node_health(n, tag)
+                                        update_latency(
+                                            entry['node_id'],
+                                            h['tcp_latency'], h['curl_latency'],
+                                            datetime.now().isoformat())
+                                        if h['healthy']:
+                                            better = n
+                                            break
+                                    if better:
+                                        log('info', 'failover',
+                                            f'outbound#{outbound_id} ({outbound["name"]}): '
+                                            f'preferred node {better["name"]} recovered, switching back')
+                                        restarted, failed = [], []
+                                        for svc in list_all():
+                                            if svc['outbound_id'] != outbound_id:
+                                                continue
+                                            if svc['status'] != 'running':
+                                                continue
+                                            r = _start_service_with_node(svc['id'], better['id'])
+                                            if r['success']:
+                                                restarted.append(svc['name'])
+                                            else:
+                                                failed.append(svc['name'])
+                                        state['current_node_id'] = better['id']
+                                        state['fail_count'] = 0
+                                        if failed:
+                                            log('warn', 'failover',
+                                                f'  switched to {better["name"]} but '
+                                                f'{len(failed)} svc failed; '
+                                                f'restarted: {", ".join(restarted)}; '
+                                                f'failed: {", ".join(failed)}')
+                                        else:
+                                            log('ok', 'failover',
+                                                f'  switched back to preferred node '
+                                                f'{better["name"]}, restarted: {", ".join(restarted)}')
+                            else:
+                                # Already on pool[0], clear recovery state
+                                state['last_preferred_check'] = 0
                         else:
                             state['fail_count'] += 1
                             log('warn', 'failover',
@@ -598,6 +660,7 @@ def switch_node(outbound_id, node_id):
     state['current_node_id'] = node_id
     state['fail_count'] = 0
     state['all_dead_count'] = 0
+    state['last_preferred_check'] = 0
     state['interval'] = _get_normal_interval()
 
     # Restart all running services on this outbound
