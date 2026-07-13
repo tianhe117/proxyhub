@@ -1,7 +1,6 @@
 """System info API routes (§4.11)."""
 
 import os
-import signal
 import threading
 
 import platform
@@ -92,6 +91,7 @@ def process_count():
 def shutdown():
     """Shutdown the application. Docker will auto-restart if configured."""
     log('warn', 'system', 'Shutdown requested — shutting down')
-    # Schedule exit after response is sent, so client receives a proper 200
-    threading.Timer(0.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+    # Use os._exit() so process exits regardless of PID 1 semantics.
+    # Timer ensures the HTTP response is sent before the process dies.
+    threading.Timer(0.5, lambda: os._exit(0)).start()
     return Response('{"status":"shutting_down"}', status=200, mimetype='application/json')
