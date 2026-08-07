@@ -39,6 +39,8 @@ FAILOVER_CHECK_INTERVAL = 15       # seconds between health check ticks
 FAIL_THRESHOLD = 2                 # consecutive failures before switching
 ALL_DEAD_INTERVALS = [5*60, 10*60, 15*60, 30*60]  # 递增等待
 PREFERRED_RECOVERY_INTERVAL = 180   # 优先节点恢复检查间隔（秒）
+PORT_RELEASE_WAIT = 1              # kill 后等待端口释放的时间（秒）
+DAEMON_START_DELAY = 2             # auto-start daemon 等待 Flask 就绪的时间（秒）
 
 
 def _get_normal_interval():
@@ -293,7 +295,7 @@ def _start_service_with_node(service_id, node_id):
     procs = get_service_processes(service_name)
     if procs:
         stop_service_processes(service_name)
-        time.sleep(0.5)  # let ports release before re-binding
+        time.sleep(PORT_RELEASE_WAIT)  # let ports release before re-binding
 
     # Generate config with node override
     from app.models.inbound import get_by_id as get_inbound
@@ -430,7 +432,7 @@ def restart_service(service_id):
         return stop
 
     # Brief pause to let ports free up
-    time.sleep(0.5)
+    time.sleep(PORT_RELEASE_WAIT)
 
     return start_service(service_id)
 
@@ -504,7 +506,7 @@ def start_health_check_daemon(app):
                                 missing.append('out')
                             log('warn', 'health', f'{service_name}: missing {missing}, {len(procs)} leftover process(es) — restarting')
                             stop_service_processes(service_name)
-                            time.sleep(0.3)
+                            time.sleep(PORT_RELEASE_WAIT)
 
                         try:
                             result = start_service(svc['id'])
@@ -658,7 +660,7 @@ def start_auto_start_daemon(app):
     """Launch a background thread that starts auto_start=1 services."""
     def _daemon():
         # Wait for Flask to be fully up
-        time.sleep(2)
+        time.sleep(DAEMON_START_DELAY)
         with app.app_context():
             # Kill any leftover processes from previous runs (e.g. after Python was killed)
             killed = stop_all_bin_processes()
