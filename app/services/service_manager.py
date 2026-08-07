@@ -595,39 +595,6 @@ def start_health_check_daemon(app):
                             state['fail_count'] = 0
                             state['all_dead_count'] = 0
                             state['interval'] = _get_normal_interval()
-
-                            # Preferred node recovery: when current node is not
-                            # pool[0], periodically scan pool[1:current_idx] for
-                            # earlier nodes that have recovered. pool[0] is the
-                            # fallback node, not a preferred recovery target.
-                            current_idx = next(
-                                (i for i, e in enumerate(pool)
-                                 if e['node_id'] == state['current_node_id']), -1)
-                            if current_idx > 0:
-                                rec_int = _get_preferred_recovery_interval()
-                                if now - state.get('last_preferred_check', 0) >= rec_int:
-                                    state['last_preferred_check'] = now
-                                    better = None
-                                    for entry in pool[1:current_idx]:
-                                        n = get_node(entry['node_id'])
-                                        if not n:
-                                            continue
-                                        h = _check_node_health(n, tag)
-                                        update_latency(
-                                            entry['node_id'],
-                                            h['tcp_latency'], h['curl_latency'],
-                                            datetime.now().isoformat())
-                                        if h['healthy']:
-                                            better = n
-                                            break
-                                    if better:
-                                        log('info', 'failover',
-                                            f'outbound#{outbound_id} ({outbound["name"]}): '
-                                            f'preferred node {better["name"]} recovered, switching back')
-                                        _switch_to_node(outbound_id, better['id'], caller='failover')
-                            else:
-                                # Already on pool[0], clear recovery state
-                                state['last_preferred_check'] = 0
                         else:
                             state['fail_count'] += 1
                             log('warn', 'failover',
@@ -640,6 +607,40 @@ def start_health_check_daemon(app):
                                 _do_failover(outbound_id, pool, state['current_node_id'])
                             else:
                                 state['interval'] = _get_fail_fast_interval()
+
+                        # Phase 3: higher-priority node check.
+                        # Periodically scan pool[1:] for a healthier node with
+                        # a lower index. pool[0] is the fallback — never a scan
+                        # target.
+                        if health['healthy']:
+                            current_idx = next(
+                                (i for i, e in enumerate(pool)
+                                 if e['node_id'] == state['current_node_id']), -1)
+                            rec_int = _get_preferred_recovery_interval()
+                            if now - state.get('last_preferred_check', 0) >= rec_int:
+                                state['last_preferred_check'] = now
+                                better = None
+                                for i, entry in enumerate(pool):
+                                    if i == 0:
+                                        continue  # skip pool[0] fallback
+                                    if current_idx > 0 and i >= current_idx:
+                                        continue  # only lower-index nodes
+                                    n = get_node(entry['node_id'])
+                                    if not n:
+                                        continue
+                                    h = _check_node_health(n, tag)
+                                    update_latency(
+                                        entry['node_id'],
+                                        h['tcp_latency'], h['curl_latency'],
+                                        datetime.now().isoformat())
+                                    if h['healthy']:
+                                        better = n
+                                        break
+                                if better:
+                                    log('info', 'failover',
+                                        f'outbound#{outbound_id} ({outbound["name"]}): '
+                                        f'higher-priority node {better["name"]} available, switching')
+                                    _switch_to_node(outbound_id, better['id'], caller='failover')
 
             except Exception as e:
                 log('error', 'health', f'Health check loop error: {e}')
