@@ -123,100 +123,158 @@ def _check_node_health(node, tag):
     }
 
 
-def _do_failover(outbound_id, pool, current_node_id):
-    """Scan pool for a healthy node and switch all services on this outbound.
+def _switch_to_node(outbound_id, node_id, caller='failover'):
+    """Switch all running services on an outbound to a specific node.
+
+    Restarts every running service on the outbound to use the given node,
+    then updates failover state accordingly.
 
     Returns:
-        bool: True if switched to a new node, False if all nodes dead
+        tuple: (restarted list, failed list)
+    """
+    state = _get_failover_state(outbound_id)
+    outbound = get_outbound(outbound_id)
+    ob_name = outbound['name'] if outbound else f'#{outbound_id}'
+    node = get_node(node_id)
+    if not node:
+        log('error', caller, f'node_id={node_id} not found')
+        return [], []
+
+    restarted, failed = [], []
+    for svc in list_all():
+        if svc['outbound_id'] != outbound_id:
+            continue
+        if svc['status'] != 'running':
+            continue
+        result = _start_service_with_node(svc['id'], node_id)
+        if result['success']:
+            restarted.append(svc['name'])
+        else:
+            failed.append(svc['name'])
+            log('error', caller,
+                f'{svc["name"]}: restart failed — {result["message"]}')
+
+    # Update failover state
+    state['current_node_id'] = node_id
+    state['fail_count'] = 0
+    state['last_preferred_check'] = 0
+
+    if failed:
+        state['interval'] = _get_fail_fast_interval()
+        state['all_dead_count'] = 0
+        log('warn', caller,
+            f'outbound#{outbound_id} ({ob_name}): '
+            f'switched to {node["name"]} but {len(failed)} service(s) failed — '
+            f'retry in {state["interval"]}s; restarted: {", ".join(restarted)}; '
+            f'failed: {", ".join(failed)}')
+    else:
+        state['all_dead_count'] = 0
+        state['interval'] = _get_normal_interval()
+        log('ok', caller,
+            f'outbound#{outbound_id} ({ob_name}): '
+            f'switched to {node["name"]}, restarted: {", ".join(restarted)}')
+
+    return restarted, failed
+
+
+def _do_failover(outbound_id, pool, current_node_id):
+    """Failover with pool[0] as designated fallback node.
+
+    pool[0] is the stable backup — assumed to be reliable (if slower).
+    When the current node fails:
+      - If NOT on pool[0]: switch to pool[0] immediately (no health check),
+        then scan pool[1:] for a better node.
+      - If already on pool[0]: scan pool[1:] for any available node.
+
+    Returns:
+        bool: True if services are running (on pool[0] or a better node),
+              False if every node in pool is dead.
     """
     outbound = get_outbound(outbound_id)
     ob_name = outbound['name'] if outbound else f'#{outbound_id}'
     tag = f'failover_{outbound_id}_{int(time.time())}'
+    fallback_node_id = pool[0]['node_id']
 
-    log('warn', 'failover',
-        f'outbound#{outbound_id} ({ob_name}): '
-        f'scanning {len(pool)} nodes in pool (skipping current node_id={current_node_id})...')
-
-    # Scan pool from head, pick first available healthy node
-    best_node_id = None
-    for entry in pool:
-        nid = entry['node_id']
-        if nid == current_node_id:
-            continue
-
-        node = get_node(nid)
-        if not node:
-            continue
-
-        health = _check_node_health(node, tag)
-
-        # Update DB latency
-        update_latency(nid, health['tcp_latency'], health['curl_latency'],
-                       datetime.now().isoformat())
-
-        if health['healthy']:
-            log('info', 'failover',
-                f'  candidate {node["name"]}: OK '
-                f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms)')
-            best_node_id = nid
-            break
-        else:
-            log('info', 'failover',
-                f'  candidate {node["name"]}: FAIL '
-                f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms)')
-
-    if best_node_id is not None:
-        # Found a healthy node — restart all running services on this outbound first
-        new_node = get_node(best_node_id)
-        restarted, failed = [], []
-        for svc in list_all():
-            if svc['outbound_id'] != outbound_id:
-                continue
-            if svc['status'] != 'running':
-                continue
-            result = _start_service_with_node(svc['id'], best_node_id)
-            if result['success']:
-                restarted.append(svc['name'])
-            else:
-                failed.append(svc['name'])
-                log('error', 'failover',
-                    f'{svc["name"]}: restart failed — {result["message"]}')
-
-        # Update state according to outcome
-        state = _get_failover_state(outbound_id)
-        state['current_node_id'] = best_node_id
-        state['fail_count'] = 0
-        state['last_preferred_check'] = 0
-        if failed:
-            # Some services failed — stay in fail-fast so health check retries soon
-            state['interval'] = _get_fail_fast_interval()
-            state['all_dead_count'] = 0
-            log('warn', 'failover',
-                f'outbound#{outbound_id} ({ob_name}): '
-                f'switched to {new_node["name"]} but {len(failed)} service(s) failed — '
-                f'retry in {state["interval"]}s; restarted: {", ".join(restarted)}; '
-                f'failed: {", ".join(failed)}')
-        else:
-            state['all_dead_count'] = 0
-            state['interval'] = _get_normal_interval()
-            log('ok', 'failover',
-                f'outbound#{outbound_id} ({ob_name}): '
-                f'switched to {new_node["name"]}, restarted: {", ".join(restarted)}')
-        return True
-    else:
-        # All nodes dead — increment wait
-        state = _get_failover_state(outbound_id)
-        state['fail_count'] = 0
-        state['last_preferred_check'] = 0
-        state['all_dead_count'] += 1
-        idx = min(state['all_dead_count'] - 1, len(ALL_DEAD_INTERVALS) - 1)
-        state['interval'] = ALL_DEAD_INTERVALS[idx]
-        state['last_check'] = time.time()
+    if current_node_id != fallback_node_id:
+        # Not on fallback — switch to pool[0] immediately, no health check
         log('warn', 'failover',
             f'outbound#{outbound_id} ({ob_name}): '
-            f'all {len(pool)} nodes unavailable, '
-            f'{state["interval"] // 60}min until next check')
-        return False
+            f'falling back to pool[0] node_id={fallback_node_id}, '
+            f'then scanning pool[1:] for a better node...')
+        _switch_to_node(outbound_id, fallback_node_id, caller='failover')
+
+        # Scan pool[1:] for a better node
+        for entry in pool[1:]:
+            nid = entry['node_id']
+            if nid == fallback_node_id:
+                continue
+            node = get_node(nid)
+            if not node:
+                continue
+            health = _check_node_health(node, tag)
+            update_latency(nid, health['tcp_latency'], health['curl_latency'],
+                           datetime.now().isoformat())
+            if health['healthy']:
+                log('info', 'failover',
+                    f'  better node {node["name"]}: OK '
+                    f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms), switching')
+                _switch_to_node(outbound_id, nid, caller='failover')
+                return True
+            else:
+                log('info', 'failover',
+                    f'  candidate {node["name"]}: FAIL '
+                    f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms)')
+
+        # No better node found — staying on pool[0], that's fine
+        log('info', 'failover',
+            f'outbound#{outbound_id} ({ob_name}): '
+            f'no better node in pool[1:], staying on pool[0]')
+        return True
+
+    else:
+        # Already on fallback (pool[0]) — scan pool[1:] for any available node
+        log('warn', 'failover',
+            f'outbound#{outbound_id} ({ob_name}): '
+            f'already on pool[0], scanning pool[1:] '
+            f'({len(pool) - 1} nodes)...')
+
+        best_node_id = None
+        for entry in pool[1:]:
+            nid = entry['node_id']
+            node = get_node(nid)
+            if not node:
+                continue
+            health = _check_node_health(node, tag)
+            update_latency(nid, health['tcp_latency'], health['curl_latency'],
+                           datetime.now().isoformat())
+            if health['healthy']:
+                log('info', 'failover',
+                    f'  candidate {node["name"]}: OK '
+                    f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms)')
+                best_node_id = nid
+                break
+            else:
+                log('info', 'failover',
+                    f'  candidate {node["name"]}: FAIL '
+                    f'(tcp={health["tcp_latency"]}ms, curl={health["curl_latency"]}ms)')
+
+        if best_node_id is not None:
+            _switch_to_node(outbound_id, best_node_id, caller='failover')
+            return True
+        else:
+            # All nodes dead — increment wait
+            state = _get_failover_state(outbound_id)
+            state['fail_count'] = 0
+            state['last_preferred_check'] = 0
+            state['all_dead_count'] += 1
+            idx = min(state['all_dead_count'] - 1, len(ALL_DEAD_INTERVALS) - 1)
+            state['interval'] = ALL_DEAD_INTERVALS[idx]
+            state['last_check'] = time.time()
+            log('warn', 'failover',
+                f'outbound#{outbound_id} ({ob_name}): '
+                f'pool[0] + all {len(pool) - 1} other nodes unavailable, '
+                f'{state["interval"] // 60}min until next check')
+            return False
 
 
 def _start_service_with_node(service_id, node_id):
@@ -496,6 +554,10 @@ def start_health_check_daemon(app):
                                 f'outbound#{outbound_id} ({outbound["name"]}): pool is empty, skip')
                             continue
 
+                        # Single node — nothing to failover to, skip entire Phase 2
+                        if len(pool) <= 1:
+                            continue
+
                         pool_ids = {e['node_id'] for e in pool}
                         if state['current_node_id'] != 0 and state['current_node_id'] not in pool_ids:
                             log('info', 'failover',
@@ -535,7 +597,9 @@ def start_health_check_daemon(app):
                             state['interval'] = _get_normal_interval()
 
                             # Preferred node recovery: when current node is not
-                            # pool[0], periodically scan earlier nodes
+                            # pool[0], periodically scan pool[1:current_idx] for
+                            # earlier nodes that have recovered. pool[0] is the
+                            # fallback node, not a preferred recovery target.
                             current_idx = next(
                                 (i for i, e in enumerate(pool)
                                  if e['node_id'] == state['current_node_id']), -1)
@@ -544,7 +608,7 @@ def start_health_check_daemon(app):
                                 if now - state.get('last_preferred_check', 0) >= rec_int:
                                     state['last_preferred_check'] = now
                                     better = None
-                                    for entry in pool[:current_idx]:
+                                    for entry in pool[1:current_idx]:
                                         n = get_node(entry['node_id'])
                                         if not n:
                                             continue
@@ -560,29 +624,7 @@ def start_health_check_daemon(app):
                                         log('info', 'failover',
                                             f'outbound#{outbound_id} ({outbound["name"]}): '
                                             f'preferred node {better["name"]} recovered, switching back')
-                                        restarted, failed = [], []
-                                        for svc in list_all():
-                                            if svc['outbound_id'] != outbound_id:
-                                                continue
-                                            if svc['status'] != 'running':
-                                                continue
-                                            r = _start_service_with_node(svc['id'], better['id'])
-                                            if r['success']:
-                                                restarted.append(svc['name'])
-                                            else:
-                                                failed.append(svc['name'])
-                                        state['current_node_id'] = better['id']
-                                        state['fail_count'] = 0
-                                        if failed:
-                                            log('warn', 'failover',
-                                                f'  switched to {better["name"]} but '
-                                                f'{len(failed)} svc failed; '
-                                                f'restarted: {", ".join(restarted)}; '
-                                                f'failed: {", ".join(failed)}')
-                                        else:
-                                            log('ok', 'failover',
-                                                f'  switched back to preferred node '
-                                                f'{better["name"]}, restarted: {", ".join(restarted)}')
+                                        _switch_to_node(outbound_id, better['id'], caller='failover')
                             else:
                                 # Already on pool[0], clear recovery state
                                 state['last_preferred_check'] = 0
@@ -655,32 +697,9 @@ def switch_node(outbound_id, node_id):
     if not node:
         return {'success': False, 'message': 'Node not found'}
 
-    # Update failover state
-    state = _get_failover_state(outbound_id)
-    state['current_node_id'] = node_id
-    state['fail_count'] = 0
-    state['all_dead_count'] = 0
-    state['last_preferred_check'] = 0
-    state['interval'] = _get_normal_interval()
+    restarted, failed = _switch_to_node(outbound_id, node_id, caller='switch')
 
-    # Restart all running services on this outbound
-    restarted = []
-    for svc in list_all():
-        if svc['outbound_id'] != outbound_id:
-            continue
-        if svc['status'] != 'running':
-            continue
-        result = _start_service_with_node(svc['id'], node_id)
-        if result['success']:
-            restarted.append(svc['name'])
-        else:
-            log('error', 'switch', f'{svc["name"]}: restart failed — {result["message"]}')
-
-    if restarted:
-        log('ok', 'switch',
-            f'outbound#{outbound_id} ({outbound["name"]}): '
-            f'manually switched to {node["name"]}, restarted: {", ".join(restarted)}')
-    else:
+    if not restarted and not failed:
         log('info', 'switch',
             f'outbound#{outbound_id} ({outbound["name"]}): '
             f'manually switched to {node["name"]}, no running services to restart')

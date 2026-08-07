@@ -119,12 +119,13 @@ function toggleObCollapse(hdr) {
     } catch(e) {}
 }
 
-function obNodeRow(nd, isActive, extra, btnWidth) {
+function obNodeRow(nd, isActive, extra, btnWidth, label) {
     var tcp = nd.tcp_latency !== null ? (nd.tcp_latency < 0 ? '<span style="color:var(--red)">fail</span>' : nd.tcp_latency + 'ms') : '<span style="color:#888">—</span>';
     var curl = nd.curl_latency !== null ? (nd.curl_latency < 0 ? '<span style="color:var(--red)">fail</span>' : nd.curl_latency + 'ms') : '<span style="color:#888">—</span>';
     var nid = nd.id || nd.node_id;
     var chkBtn = '<button class="btn btn-sm btn-ok" onclick="checkSingleNode(' + nid + ')">&#8635;</button>';
-    return '<div class="row-flex ' + (isActive ? 'row-active' : '') + '"><span style="flex:2;padding-left:8px;">' + escapeHtml(nd.name) + '</span><span style="flex:1">' + escapeHtml(nd.protocol) + '</span><span style="flex:2">' + escapeHtml(nd.address) + ':' + nd.port + '</span><span style="flex:1">' + tcp + '</span><span style="flex:1">' + curl + '</span><span style="width:' + btnWidth + ';display:flex;gap:2px;">' + chkBtn + (extra || '') + '</span></div>';
+    var labelHtml = label ? '<span class="tag" style="font-size:10px;background:var(--bg-muted);color:var(--text-muted);margin-left:4px;" title="备选节点：故障时优先回退到此节点">' + label + '</span>' : '';
+    return '<div class="row-flex ' + (isActive ? 'row-active' : '') + '"><span style="flex:2;padding-left:8px;">' + escapeHtml(nd.name) + labelHtml + '</span><span style="flex:1">' + escapeHtml(nd.protocol) + '</span><span style="flex:2">' + escapeHtml(nd.address) + ':' + nd.port + '</span><span style="flex:1">' + tcp + '</span><span style="flex:1">' + curl + '</span><span style="width:' + btnWidth + ';display:flex;gap:2px;">' + chkBtn + (extra || '') + '</span></div>';
 }
 
 function obHdr(o, typeLabel) {
@@ -173,7 +174,7 @@ function renderOutbounds() {
                 '<input class="input pool-idx" value="' + (i + 1) + '" onkeydown="if(event.key===\'Enter\')this.blur()" onchange="movePoolToIndex(' + o.id + ',' + p.pool_id + ',this.value)" title="Position">' +
                 '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',1)"' + (i === pool.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
                 '<button class="btn btn-sm btn-ghost btn-danger" onclick="removePoolNode(' + o.id + ',' + p.pool_id + ')">&#10005;</button>';
-            return obNodeRow(p, isCurrentNode, btns, '155px');
+            return obNodeRow(p, isCurrentNode, btns, '155px', i === 0 ? '备选' : '');
         }).join('');
         var hdrBtns = '<button class="btn btn-sm" onclick="event.stopPropagation();openObModal(' + o.id + ')">&#9998;</button><button class="btn btn-sm btn-danger" onclick="event.stopPropagation();confirmDeleteOb(' + o.id + ')">&#10005;</button>';
         html += '<div class="section">' +
