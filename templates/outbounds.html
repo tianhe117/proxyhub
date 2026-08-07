@@ -171,7 +171,7 @@ function renderOutbounds() {
                 : '<button class="btn btn-sm btn-primary" onclick="confirmSwitchNode(this)" data-ob="' + o.id + '" data-node="' + p.node_id + '" data-name="' + escapeHtml(p.name) + '" title="Switch to this node">&#8644;</button>';
             var btns = switchBtn +
                 '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',-1)"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
-                '<input class="input pool-idx" value="' + (i + 1) + '" onkeydown="if(event.key===\'Enter\')this.blur()" onchange="movePoolToIndex(' + o.id + ',' + p.pool_id + ',this.value)" title="Position">' +
+                '<input class="input pool-idx" value="' + i + '" onkeydown="if(event.key===\'Enter\')this.blur()" onchange="movePoolToIndex(' + o.id + ',' + p.pool_id + ',this.value)" title="Position">' +
                 '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',1)"' + (i === pool.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
                 '<button class="btn btn-sm btn-ghost btn-danger" onclick="removePoolNode(' + o.id + ',' + p.pool_id + ')">&#10005;</button>';
             return obNodeRow(p, isCurrentNode, btns, '155px', i === 0 ? '备选' : '');
@@ -316,12 +316,11 @@ async function movePoolToIndex(obId, poolId, targetIdx) {
     var idx = order.indexOf(poolId);
     if (idx < 0) return;
     targetIdx = parseInt(targetIdx);
-    if (isNaN(targetIdx) || targetIdx < 1) targetIdx = 1;
-    if (targetIdx > order.length) targetIdx = order.length;
-    var newIdx = targetIdx - 1;
-    if (newIdx === idx) return;
+    if (isNaN(targetIdx) || targetIdx < 0) targetIdx = 0;
+    if (targetIdx >= order.length) targetIdx = order.length - 1;
+    if (targetIdx === idx) return;
     order.splice(idx, 1);
-    order.splice(newIdx, 0, poolId);
+    order.splice(targetIdx, 0, poolId);
     _savePoolOrder(obId, order);
 }
 
