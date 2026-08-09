@@ -15,6 +15,7 @@ venv/
 bin/
 config/
 data/
+logs/
 
 # --- IDE / Editor ---
 .vscode/

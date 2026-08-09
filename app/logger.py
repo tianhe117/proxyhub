@@ -2,7 +2,7 @@
 
 Captures all stdout/stderr output into an in-memory deque and exposes it
 via `get_logs(since)` for the /api/logs endpoint.  Also persists every log
-line to data/proxyhub.log so logs survive restarts.
+line to logs/YYYY-MM-DD_HHMMSS.log so logs survive restarts.
 """
 
 import os
@@ -11,7 +11,7 @@ import threading
 from datetime import datetime
 from collections import deque
 
-from app.settings import get_data_dir
+from app.settings import get_logs_dir
 
 
 class WebLogger:
@@ -30,9 +30,10 @@ class WebLogger:
         if self._writer is not None:
             return
         # Open persistent log file (append mode, line-buffered)
-        log_dir = get_data_dir()
+        log_dir = get_logs_dir()
         os.makedirs(log_dir, exist_ok=True)
-        self._log_file = open(os.path.join(log_dir, 'proxyhub.log'), 'a', buffering=1)
+        log_name = datetime.now().strftime('%Y-%m-%d_%H%M%S.log')
+        self._log_file = open(os.path.join(log_dir, log_name), 'a', buffering=1)
         self._writer = LogWriter(self, sys.__stdout__, 'info')
         self._err_writer = LogWriter(self, sys.__stderr__, 'error')
         sys.stdout = self._writer
