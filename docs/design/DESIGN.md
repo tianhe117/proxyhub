@@ -35,7 +35,16 @@ ProxyHub/
 ├── setup.sh                 # 一键部署脚本
 ├── run.py                   # 应用入口
 ├── requirements.txt         # Python 依赖
-├── DESIGN.md                # 本设计文档
+│
+├── docs/                    # 项目文档
+│   ├── design/              # 设计文档
+│   │   ├── DESIGN.md        # 本设计文档
+│   │   ├── failover.md      # 出站节点自动故障切换
+│   │   └── fallback-node.md # Pool 首节点备选机制
+│   └── todo/                # 待优化项
+│       ├── failover-phase3-optimization.md
+│       ├── log-optimization.md
+│       └── health-check-refactor.md
 │
 ├── app/
 │   ├── __init__.py          # Flask 应用工厂
