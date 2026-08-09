@@ -46,4 +46,5 @@ if __name__ == '__main__':
     app = create_app()
     with app.app_context():
         port = int(get_setting('web_port') or 8080)
-    app.run(debug=True, host='0.0.0.0', port=port)
+    debug = os.getenv('DEBUG', 'TRUE') == 'TRUE'
+    app.run(debug=debug, host='0.0.0.0', port=port)
