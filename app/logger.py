@@ -1,13 +1,17 @@
 """Web-accessible log collector (§17).
 
 Captures all stdout/stderr output into an in-memory deque and exposes it
-via `get_logs(since)` for the /api/logs endpoint.
+via `get_logs(since)` for the /api/logs endpoint.  Also persists every log
+line to data/proxyhub.log so logs survive restarts.
 """
 
+import os
 import sys
 import threading
 from datetime import datetime
 from collections import deque
+
+from app.settings import get_data_dir
 
 
 class WebLogger:
@@ -19,11 +23,16 @@ class WebLogger:
         self._stdout = sys.stdout
         self._stderr = sys.stderr
         self._writer = None
+        self._log_file = None
 
     def install(self):
         """Replace sys.stdout / sys.stderr with a LogWriter that feeds us."""
         if self._writer is not None:
             return
+        # Open persistent log file (append mode, line-buffered)
+        log_dir = get_data_dir()
+        os.makedirs(log_dir, exist_ok=True)
+        self._log_file = open(os.path.join(log_dir, 'proxyhub.log'), 'a', buffering=1)
         self._writer = LogWriter(self, sys.__stdout__, 'info')
         self._err_writer = LogWriter(self, sys.__stderr__, 'error')
         sys.stdout = self._writer
@@ -37,16 +46,24 @@ class WebLogger:
         sys.stderr = self._stderr
         self._writer = None
         self._err_writer = None
+        if self._log_file:
+            self._log_file.close()
+            self._log_file = None
 
     def add(self, level, module, message):
-        """Push one log entry into the buffer."""
+        """Push one log entry into the buffer and persist to file."""
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        msg = message.strip() if message else ''
         with self.lock:
             self.logs.append({
-                'time':    datetime.now().strftime('%H:%M:%S'),
+                'time':    ts[-8:],   # HH:MM:SS for frontend
                 'level':   level,
                 'module':  module,
-                'message': message.strip() if message else '',
+                'message': msg,
             })
+        # Persist to file (outside lock — file is line-buffered, OS handles interleaving)
+        if self._log_file:
+            self._log_file.write(f'[{ts}] [{level.upper()}] [{module}] {msg}\n')
 
     def get_logs(self, since=0):
         """Return log entries whose index >= *since*."""
