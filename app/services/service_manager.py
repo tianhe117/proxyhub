@@ -159,7 +159,7 @@ def _switch_to_node(outbound_id, node_id, caller='failover'):
     # Update failover state
     state['current_node_id'] = node_id
     state['fail_count'] = 0
-    state['last_preferred_check'] = 0
+    state['last_preferred_check'] = time.time()
 
     if failed:
         state['interval'] = _get_fail_fast_interval()
