@@ -14,7 +14,7 @@ DEFAULT_SETTINGS = {
     'check_interval_failover': '30',
     'tcp_timeout':          '3',
     'curl_timeout':         '5',
-    'test_url':             'http://www.gstatic.com/generate_204',
+    'test_url':             'https://www.gstatic.com/generate_204',
     'web_port':             '8080',
     'web_username':         'admin',
     'web_password':         '',
