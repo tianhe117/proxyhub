@@ -34,5 +34,8 @@ Thumbs.db
 .env
 .env.local
 
+# --- Docker Compose override (per-deployment port mappings) ---
+docker-compose.override.yml
+
 # --- Temp files ---
 temp

@@ -10,7 +10,7 @@ services:
     volumes:
       - .:/opt/proxyhub
     ports:
-      # Web UI
+      # Web UI（固定端口）
       - "8080:8080"
-      # inbound 端口：根据你在面板中的配置添加
-      # - "1080:1080"
+      # inbound 端口映射请放到 docker-compose.override.yml 中
+      # 参考 docker-compose.override.example.yml

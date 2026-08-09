@@ -1,0 +1,11 @@
+# 示例：入站端口映射
+# 复制此文件为 docker-compose.override.yml 并修改为你的实际端口
+# docker-compose.override.yml 已在 .gitignore 中，不会被 Git 跟踪
+#
+# Docker Compose 会自动合并 override 文件，无需 -f 参数指定
+
+services:
+  proxyhub:
+    ports:
+      # --- 示例：根据你在面板中配置的入站端口添加 ---
+      # - "666:666"
