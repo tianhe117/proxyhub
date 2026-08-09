@@ -13,7 +13,7 @@ from datetime import datetime
 
 from app.models.node import get_by_id, update_latency, list_all
 from app.models.setting import get_setting
-from app.settings import get_bin_dir, get_config_dir
+from app.settings import get_bin_dir, get_config_dir, DEFAULT_SETTINGS
 from app.checker.script import tcp_ping, url_test
 from app.logger import log
 
@@ -84,7 +84,7 @@ def _run_checks(task_id, nodes, results, check_type):
     """Background thread: run checks on each node."""
     tcp_timeout = int(get_setting('tcp_timeout') or 3)
     curl_timeout = int(get_setting('curl_timeout') or 5)
-    test_url = get_setting('test_url') or 'http://www.gstatic.com/generate_204'
+    test_url = get_setting('test_url') or DEFAULT_SETTINGS['test_url']
 
     try:
         for node in nodes:

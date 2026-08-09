@@ -16,6 +16,7 @@ from app.models.service import (
 from app.models.outbound import get_by_id as get_outbound, get_pool_nodes
 from app.models.node import get_by_id as get_node, update_latency
 from app.models.setting import get_setting
+from app.settings import DEFAULT_SETTINGS
 from app.process.manager import (
     start_process, stop_service as stop_service_processes,
     stop_all_processes as stop_all_bin_processes,
@@ -80,7 +81,7 @@ def _check_node_health(node, tag):
     """
     tcp_timeout = int(get_setting('tcp_timeout') or 3)
     curl_timeout = int(get_setting('curl_timeout') or 5)
-    test_url = get_setting('test_url') or 'http://www.gstatic.com/generate_204'
+    test_url = get_setting('test_url') or DEFAULT_SETTINGS['test_url']
 
     # TCP ping
     tcp_res = tcp_ping(node['address'], node['port'], tcp_timeout, tag)
