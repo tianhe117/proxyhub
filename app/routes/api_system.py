@@ -91,7 +91,30 @@ def process_count():
 def shutdown():
     """Shutdown the application. Docker will auto-restart if configured."""
     log('warn', 'system', 'Shutdown requested — shutting down')
-    # Use os._exit() so process exits regardless of PID 1 semantics.
+
+    def _do_shutdown():
+        # 1. Stop health-check daemon
+        try:
+            stop_health_check_daemon()
+        except Exception:
+            pass
+        # 2. Close log file
+        try:
+            from app.logger import web_logger
+            web_logger.restore()
+        except Exception:
+            pass
+        # 3. Checkpoint WAL and close DB connections
+        try:
+            from app.models.database import close_db, get_db
+            db = get_db()
+            db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+            db.commit()
+            close_db()
+        except Exception:
+            pass
+        os._exit(0)
+
     # Timer ensures the HTTP response is sent before the process dies.
-    threading.Timer(0.5, lambda: os._exit(0)).start()
+    threading.Timer(0.5, _do_shutdown).start()
     return Response('{"status":"shutting_down"}', status=200, mimetype='application/json')
