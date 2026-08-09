@@ -228,8 +228,9 @@ url_test() {
     # Cleanup
     cleanup_process_tree "$pid_file" "$tag" "$config_path"
 
-    # Success: HTTP 2xx, 3xx
-    if [[ "$http_code" =~ ^(200|204|301|302|307|308)$ ]]; then
+    # Success: any HTTP response (non-"000") means the proxy relayed traffic successfully.
+    # Datacenter IPs often get 403 from gstatic.com — the status code is irrelevant.
+    if [ "$http_code" != "000" ]; then
         json_ok "$elapsed_ms" "$http_code"
     else
         $PYTHON -c "import json,sys; json.dump({'success':False,'error':'HTTP $http_code','http_code':$http_code,'latency_ms':$elapsed_ms}, sys.stdout)"
