@@ -106,7 +106,7 @@ def _check_node_health(node, tag):
             url_res = url_test(config_path, bin_type, bin_path,
                                local_port, test_url, curl_timeout, tag)
             curl_ok = url_res.get('success', False)
-            curl_lat = url_res.get('latency_ms', -1)
+            curl_lat = url_res.get('latency_ms', -1) if curl_ok else -1
         except Exception:
             curl_ok = False
         finally:
