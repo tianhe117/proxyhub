@@ -4,10 +4,35 @@ Each API route handler must be ≤ 10 lines (§8.1).
 """
 
 import os
+import signal
+import threading
 
 from flask import Flask, redirect, url_for, session, jsonify, request
 
 from app.services.auth_service import is_authenticated
+
+
+def _shutdown():
+    """Graceful shutdown: stop daemon, flush WAL to DB file."""
+    try:
+        from app.services.service_manager import stop_health_check_daemon
+        stop_health_check_daemon()
+    except Exception:
+        pass
+    try:
+        from app.models.database import get_db, close_db
+        get_db()
+        close_db()
+    except Exception:
+        pass
+    print('[shutdown] done')
+
+
+def _on_sigterm(_signum, _frame):
+    t = threading.Thread(target=_shutdown, daemon=True)
+    t.start()
+    t.join(timeout=5)
+    os._exit(0)
 
 
 def create_app():
@@ -35,7 +60,7 @@ def create_app():
     web_logger.install()
 
     # Initialize database
-    from app.models.database import init_db
+    from app.models.database import init_db, close_db
     with app.app_context():
         init_db()
 
@@ -52,6 +77,13 @@ def create_app():
     from app.services.service_manager import start_auto_start_daemon, start_health_check_daemon
     start_auto_start_daemon(app)
     start_health_check_daemon(app)
+
+    # Close DB connections after each request (prevents lingering WAL readers)
+    app.teardown_appcontext(lambda exc: close_db())
+
+    # Register SIGTERM handler for graceful docker stop
+    signal.signal(signal.SIGTERM, _on_sigterm)
+    signal.signal(signal.SIGINT, _on_sigterm)
 
     return app
 

@@ -28,9 +28,16 @@ def get_db():
 
 
 def close_db():
-    """Close the thread-local connection if it is open."""
+    """Close the thread-local connection if it is open.
+
+    Checkpoints WAL before closing so that -wal/-shm files are cleaned up.
+    """
     db = getattr(_local, 'db', None)
     if db is not None:
+        try:
+            db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
         db.close()
         _local.db = None
 
