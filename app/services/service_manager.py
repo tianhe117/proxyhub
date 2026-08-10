@@ -37,7 +37,7 @@ from app.logger import log
 _failover_state = {}  # {outbound_id: {fail_count, current_node_id, last_check, interval, all_dead_count}}
 
 FAILOVER_CHECK_INTERVAL = 15       # seconds between health check ticks
-FAIL_THRESHOLD = 2                 # consecutive failures before switching
+FAIL_THRESHOLD = 3                 # consecutive failures before switching
 ALL_DEAD_INTERVALS = [5*60, 10*60, 15*60, 30*60]  # 递增等待
 PREFERRED_RECOVERY_INTERVAL = 180   # 优先节点恢复检查间隔（秒）
 PORT_RELEASE_WAIT = 1              # kill 后等待端口释放的时间（秒）

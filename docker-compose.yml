@@ -9,7 +9,6 @@ services:
       - 223.6.6.6
     environment:
       - TZ=Asia/Shanghai
-      - DEBUG=FALSE
     volumes:
       - .:/opt/proxyhub
     ports:
