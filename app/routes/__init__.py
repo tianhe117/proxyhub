@@ -4,6 +4,7 @@ Each API route handler must be ≤ 10 lines (§8.1).
 """
 
 import os
+import re
 import signal
 import threading
 
@@ -115,6 +116,30 @@ def register_blueprints(app):
     app.register_blueprint(api_upgrade)
     app.register_blueprint(api_logs)
     app.register_blueprint(api_system)
+
+
+def is_mobile_device():
+    """Detect mobile device from User-Agent header (§ mobile).
+
+    Query-parameter override takes precedence:
+      ?mobile=0 → force desktop (persisted in session)
+      ?mobile=1 → force mobile  (persisted in session)
+
+    Fallback: regex match against User-Agent.
+    """
+    mobile_param = request.args.get('mobile')
+    if mobile_param == '0':
+        session['force_desktop'] = True
+        return False
+    if mobile_param == '1':
+        session.pop('force_desktop', None)
+        return True
+    if session.get('force_desktop'):
+        return False
+    ua = request.headers.get('User-Agent', '')
+    pattern = (r'(Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|'
+               r'Opera Mini|Mobile|CriOS|FxiOS|Silk)')
+    return bool(re.search(pattern, ua, re.IGNORECASE))
 
 
 def auth_required(f):

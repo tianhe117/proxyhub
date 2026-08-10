@@ -1,0 +1,205 @@
+{% extends "mobile/base.html" %}
+{% block title %}ProxyHub — Inbounds{% endblock %}
+
+{% block topbar_title %}Inbounds{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-sm btn-primary" onclick="openInModal()">+ New</button>
+{% endblock %}
+
+{% block content %}
+<div id="inboundsList"></div>
+<div class="empty-state" id="inboundsEmpty" style="display:none;">No inbounds. Create a local listener to accept connections.</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Inbound Modal -->
+<div class="modal-overlay" id="inModal">
+    <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+            <span class="modal-title" id="inModalTitle">New Inbound</span>
+            <button class="modal-close" onclick="closeModal('inModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="inName"></div>
+            <div class="field"><label>Protocol</label><select class="input" id="inProtocol" onchange="onInProtoChange()"><option value="http">HTTP</option><option value="socks">SOCKS</option><option value="ss">Shadowsocks</option><option value="vmess">VMess</option></select></div>
+            <div class="field"><label>Port</label><input class="input" type="number" id="inPort" inputmode="numeric"></div>
+            <div id="inProtoFields"></div>
+            <input type="hidden" id="inEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('inModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveIn()">Save</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var inbounds = [];
+var CACHE_KEY = 'inbound_data';
+
+function gel(id) { var e = document.getElementById(id); return e ? e.value : ''; }
+function gelSet(id, val) { var e = document.getElementById(id); if (e) e.value = val; }
+
+async function loadData(skipCache) {
+    // 1. Show cached immediately (first load only)
+    if (!skipCache) {
+        var cached = AppCache.get(CACHE_KEY);
+        if (cached) { inbounds = cached; renderInbounds(); }
+    }
+    // 2. Fetch fresh in background
+    try {
+        var resp = await fetch('/api/inbounds');
+        inbounds = await resp.json();
+        AppCache.set(CACHE_KEY, inbounds);
+        renderInbounds();
+    } catch(e) { if (!skipCache) { /* already showed cache */ } else { showToast('Load failed: ' + e, 'error'); } }
+}
+
+function renderInbounds() {
+    var list = document.getElementById('inboundsList');
+    if (!inbounds.length) { list.innerHTML = ''; document.getElementById('inboundsEmpty').style.display = 'block'; return; }
+    document.getElementById('inboundsEmpty').style.display = 'none';
+
+    list.innerHTML = inbounds.map(function(i) {
+        var rows = '<div class="row">Port: <span>' + i.port + '</span></div>';
+        try {
+            var p = typeof i.params_json === 'string' ? JSON.parse(i.params_json) : i.params_json;
+            if (p) {
+                if (i.protocol === 'http' || i.protocol === 'socks') {
+                    if (p.username) rows += '<div class="row">Username: <span>' + escapeHtml(p.username) + '</span></div>';
+                    if (p.password) rows += '<div class="row">Password: <span>••••••</span></div>';
+                } else if (i.protocol === 'ss') {
+                    if (p.method) rows += '<div class="row">Method: <span>' + escapeHtml(p.method) + '</span></div>';
+                    if (p.password) rows += '<div class="row">Password: <span>••••••</span></div>';
+                } else if (i.protocol === 'vmess') {
+                    if (p.uuid) rows += '<div class="row">UUID: <span>' + escapeHtml(p.uuid) + '</span></div>';
+                    if (p.alterId !== undefined) rows += '<div class="row">alterId: <span>' + p.alterId + '</span></div>';
+                    if (p.network) {
+                        rows += '<div class="row">Network: <span>' + escapeHtml(p.network) + '</span></div>';
+                        if (p.ws_path) rows += '<div class="row">WS Path: <span>' + escapeHtml(p.ws_path) + '</span></div>';
+                        if (p.h2_path) rows += '<div class="row">H2 Path: <span>' + escapeHtml(p.h2_path) + '</span></div>';
+                        if (p.grpc_service_name) rows += '<div class="row">gRPC Service: <span>' + escapeHtml(p.grpc_service_name) + '</span></div>';
+                    }
+                }
+            }
+        } catch(e) {}
+
+        var btns = '<button class="btn btn-sm" onclick="openInModal(' + i.id + ')">&#9998;</button>' +
+            '<button class="btn btn-sm btn-danger" onclick="confirmDelete(' + i.id + ')">&#10005;</button>';
+
+        return '<div class="card">' +
+            '<div class="card-header" style="cursor:default;" onclick="toggleCard(this)">' +
+                '<span class="flex-row gap-8"><span class="tag">' + escapeHtml(i.protocol) + '</span><strong>' + escapeHtml(i.name) + '</strong></span>' +
+                '<span style="font-size:12px;color:var(--text-secondary);">&#9660;</span>' +
+            '</div>' +
+            '<div class="card-body">' +
+                rows +
+                '<div class="flex-row gap-4" style="margin-top:8px;justify-content:flex-end;">' + btns + '</div>' +
+            '</div>' +
+            '</div>';
+    }).join('');
+}
+
+function onInProtoChange() {
+    var proto = document.getElementById('inProtocol').value;
+    var div = document.getElementById('inProtoFields');
+    if (proto === 'http' || proto === 'socks') {
+        div.innerHTML = '<div class="field"><label>Username</label><input class="input" id="inf_user"></div><div class="field"><label>Password</label><input class="input" id="inf_pass"></div>';
+    } else if (proto === 'ss') {
+        div.innerHTML = '<div class="field"><label>Method</label><select class="input" id="inf_method"><option value="aes-256-gcm">aes-256-gcm</option><option value="chacha20-ietf-poly1305">chacha20-ietf-poly1305</option></select></div><div class="field"><label>Password</label><input class="input" id="inf_pass"></div>';
+    } else if (proto === 'vmess') {
+        div.innerHTML = '<div class="field"><label>UUID</label><input class="input" id="inf_uuid"></div><div class="field"><label>alterId</label><input class="input" type="number" id="inf_alterId" value="0"></div><div class="field"><label>Network</label><select class="input" id="inf_network" onchange="onInNetChange()"><option value="">TCP</option><option value="ws">WebSocket</option><option value="h2">HTTP/2</option><option value="grpc">gRPC</option></select></div><div id="inNetFields"></div>';
+    } else div.innerHTML = '';
+}
+
+function onInNetChange() {
+    var net = document.getElementById('inf_network').value;
+    var div = document.getElementById('inNetFields');
+    if (net === 'ws') div.innerHTML = '<div class="field"><label>Path</label><input class="input" id="inf_ws_path" value="/"></div>';
+    else if (net === 'h2') div.innerHTML = '<div class="field"><label>Path</label><input class="input" id="inf_h2_path" value="/"></div>';
+    else if (net === 'grpc') div.innerHTML = '<div class="field"><label>Service Name</label><input class="input" id="inf_grpc_svc"></div>';
+    else div.innerHTML = '';
+}
+
+function collectInParams() {
+    var proto = document.getElementById('inProtocol').value;
+    var p = {};
+    if (proto === 'http' || proto === 'socks') { p.username = gel('inf_user'); p.password = gel('inf_pass'); }
+    else if (proto === 'ss') { p.method = gel('inf_method'); p.password = gel('inf_pass'); }
+    else if (proto === 'vmess') {
+        p.uuid = gel('inf_uuid'); p.alterId = parseInt(gel('inf_alterId'))||0;
+        var net = gel('inf_network'); if (net) { p.network = net;
+            if (net === 'ws') p.ws_path = gel('inf_ws_path');
+            else if (net === 'h2') p.h2_path = gel('inf_h2_path');
+            else if (net === 'grpc') p.grpc_service_name = gel('inf_grpc_svc');
+        }
+    }
+    return JSON.stringify(p);
+}
+
+function openInModal(editId) {
+    document.getElementById('inEditId').value = editId || '';
+    document.getElementById('inModalTitle').textContent = editId ? 'Edit Inbound' : 'New Inbound';
+    document.getElementById('inName').value = ''; document.getElementById('inPort').value = '';
+    onInProtoChange();
+    if (editId) {
+        var i = inbounds.find(function(x) { return x.id == editId; });
+        if (i) {
+            document.getElementById('inName').value = i.name;
+            document.getElementById('inProtocol').value = i.protocol;
+            document.getElementById('inPort').value = i.port;
+            onInProtoChange();
+            try {
+                var p = typeof i.params_json === 'string' ? JSON.parse(i.params_json) : i.params_json;
+                setTimeout(function() {
+                    if (p.username) gelSet('inf_user', p.username);
+                    if (p.password) gelSet('inf_pass', p.password);
+                    if (p.method) gelSet('inf_method', p.method);
+                    if (p.uuid) gelSet('inf_uuid', p.uuid);
+                    if (p.alterId !== undefined) gelSet('inf_alterId', p.alterId);
+                    if (p.network) { gelSet('inf_network', p.network); onInNetChange(); }
+                    if (p.ws_path) gelSet('inf_ws_path', p.ws_path);
+                    if (p.h2_path) gelSet('inf_h2_path', p.h2_path);
+                    if (p.grpc_service_name) gelSet('inf_grpc_svc', p.grpc_service_name);
+                }, 50);
+            } catch(e) {}
+        }
+    }
+    document.getElementById('inModal').classList.add('show');
+}
+
+async function saveIn() {
+    var editId = document.getElementById('inEditId').value;
+    var port = parseInt(document.getElementById('inPort').value);
+    if (!port || port < 1 || port > 65535) { showToast('Invalid port', 'warn'); return; }
+    var payload = {
+        name: document.getElementById('inName').value,
+        protocol: document.getElementById('inProtocol').value,
+        port: port,
+        params_json: collectInParams()
+    };
+    if (!payload.name) { showToast('Name is required', 'warn'); return; }
+    var url = '/api/inbounds' + (editId ? '/' + editId : '');
+    var method = editId ? 'PUT' : 'POST';
+    try {
+        var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        var data = await resp.json();
+        closeModal('inModal');
+        showToast(data.message || '', data.success ? 'ok' : 'error');
+        loadData(true);
+    } catch(e) { showToast('Save failed: ' + e, 'error'); }
+}
+
+function confirmDelete(id) {
+    showConfirm('Delete Inbound', 'Delete inbound #' + id + '?', async function() {
+        try { await fetch('/api/inbounds/' + id, { method: 'DELETE' }); loadData(true); showToast('Inbound deleted', 'ok'); } catch(e) {}
+    }, 'Delete');
+}
+
+loadData();
+</script>
+{% endblock %}

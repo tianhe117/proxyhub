@@ -1,0 +1,354 @@
+{% extends "mobile/base.html" %}
+{% block title %}ProxyHub — Outbounds{% endblock %}
+
+{% block topbar_title %}Outbounds{% endblock %}
+
+{% block topbar_actions %}
+<button class="btn btn-sm btn-primary" onclick="openObModal()">+ New</button>
+{% endblock %}
+
+{% block content %}
+<div id="outboundsList"></div>
+<div class="empty-state" id="outboundsEmpty" style="display:none;">No outbounds. Create one to proxy traffic.</div>
+{% endblock %}
+
+{% block modals %}
+<!-- Outbound Modal -->
+<div class="modal-overlay" id="obModal">
+    <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+            <span class="modal-title" id="obModalTitle">New Outbound</span>
+            <button class="modal-close" onclick="closeModal('obModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>Name</label><input class="input" id="obName"></div>
+            <div class="field"><label>Type</label><select class="input" id="obType" onchange="onObTypeChange()"><option value="single">single</option><option value="auto">auto switch</option><option value="direct">direct</option></select></div>
+            <div class="field" id="obNodeField"><label>Nodes</label>
+                <input class="input" id="obNodeFilter" placeholder="Filter nodes..." oninput="filterObNodes()" style="margin-bottom:6px;">
+                <div id="obNodeList" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;"></div>
+            </div>
+            <input type="hidden" id="obEditId">
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('obModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveOb()">Save</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var outbounds = [], allNodes = [], services = [], currentNodeMap = {};
+var _selectedNodes = [];  // ordered node IDs for the modal picker
+var CACHE_KEY = 'ob_data';
+
+function applyData(data) {
+    allNodes = data.allNodes; outbounds = data.outbounds;
+    services = data.services; currentNodeMap = data.currentNodeMap;
+    renderOutbounds();
+}
+
+async function fetchAll() {
+    var results = await Promise.all([
+        fetch('/api/nodes/').then(function(r) { return r.json(); }),
+        fetch('/api/outbounds').then(function(r) { return r.json(); }),
+        fetch('/api/services').then(function(r) { return r.json(); }),
+        fetch('/api/services/current-nodes').then(function(r) { return r.json(); })
+    ]);
+    var nodes = results[0], obs = results[1], svcs = results[2], cnData = results[3];
+    var cnMap = {};
+    svcs.forEach(function(s) {
+        if (cnData[s.id] && cnData[s.id].node_id) {
+            cnMap[s.outbound_id] = cnData[s.id].node_id;
+        }
+    });
+    return { allNodes: nodes, outbounds: obs, services: svcs, currentNodeMap: cnMap };
+}
+
+async function loadData(skipCache) {
+    // 1. Show cached immediately (first load only)
+    if (!skipCache) {
+        var cached = AppCache.get(CACHE_KEY);
+        if (cached) applyData(cached);
+    }
+    // 2. Fetch fresh in background
+    try {
+        var data = await fetchAll();
+        AppCache.set(CACHE_KEY, data);
+        applyData(data);
+    } catch(e) { if (!skipCache) { /* already showed cache */ } else { showToast('Load failed: ' + e, 'error'); } }
+}
+
+var OB_LS_KEY = 'proxyhub_ob_collapsed_m';
+
+function isObCollapsed(obId) {
+    try {
+        var saved = JSON.parse(localStorage.getItem(OB_LS_KEY) || '{}');
+        if (saved.hasOwnProperty(String(obId))) return saved[String(obId)];
+    } catch(e) {}
+    return false;
+}
+
+function toggleObCollapse(obId) {
+    var body = document.getElementById('obBody_' + obId);
+    var hdr = document.getElementById('obHdr_' + obId);
+    var show = !body.classList.contains('show');
+    if (show) { body.classList.add('show'); hdr.classList.remove('collapsed'); }
+    else { body.classList.remove('show'); hdr.classList.add('collapsed'); }
+    try {
+        var saved = JSON.parse(localStorage.getItem(OB_LS_KEY) || '{}');
+        saved[String(obId)] = !show;
+        localStorage.setItem(OB_LS_KEY, JSON.stringify(saved));
+    } catch(e) {}
+}
+
+function renderOutbounds() {
+    var list = document.getElementById('outboundsList');
+    if (!outbounds.length) { list.innerHTML = ''; document.getElementById('outboundsEmpty').style.display = 'block'; return; }
+    document.getElementById('outboundsEmpty').style.display = 'none';
+
+    var html = '';
+    outbounds.forEach(function(o) {
+        var typeLabel = o.type === 'single' ? 'single' : (o.type === 'direct' ? 'direct' : 'auto switch');
+        if (o.type === 'direct') {
+            html += '<div class="card">' +
+                '<div class="card-header">' +
+                    '<span class="flex-row gap-8"><span class="tag">direct</span><strong>' + escapeHtml(o.name) + '</strong></span>' +
+                    '<span class="flex-row gap-4">' +
+                        '<button class="btn btn-sm" onclick="event.stopPropagation();openObModal(' + o.id + ')">&#9998;</button>' +
+                        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();confirmDeleteOb(' + o.id + ')">&#10005;</button>' +
+                    '</span>' +
+                '</div></div>';
+        } else if (o.type === 'single') {
+            var cfg = typeof o.config_json === 'string' ? JSON.parse(o.config_json) : o.config_json;
+            var nd = allNodes.find(function(n) { return n.id === cfg.node_id; });
+            var rows = nd
+                ? '<div class="row">Node: <span>' + escapeHtml(nd.name) + '</span></div>' +
+                  '<div class="row">Address: <span>' + escapeHtml(nd.address) + ':' + nd.port + '</span></div>' +
+                  '<div class="row">TCP: <span>' + (nd.tcp_latency !== null ? (nd.tcp_latency < 0 ? '<span class="text-red">fail</span>' : nd.tcp_latency + 'ms') : '—') + '</span>  Curl: <span>' + (nd.curl_latency !== null ? (nd.curl_latency < 0 ? '<span class="text-red">fail</span>' : nd.curl_latency + 'ms') : '—') + '</span></div>'
+                : '<div class="row">No node selected</div>';
+            html += '<div class="card">' +
+                '<div class="card-header" onclick="toggleCard(this)">' +
+                    '<span class="flex-row gap-8"><span class="tag">single</span><strong>' + escapeHtml(o.name) + '</strong></span>' +
+                    '<span style="font-size:12px;color:var(--text-secondary);">&#9660;</span>' +
+                '</div>' +
+                '<div class="card-body">' + rows +
+                    '<div class="flex-row gap-4" style="margin-top:8px;justify-content:flex-end;">' +
+                        '<button class="btn btn-sm btn-ok" onclick="checkSingleNode(' + (nd ? nd.id : 0) + ')">&#8635; Check</button>' +
+                        '<button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button>' +
+                        '<button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button>' +
+                    '</div>' +
+                '</div></div>';
+        } else {
+            // auto switch
+            var pool = o.pool || [];
+            var activeNodeId = currentNodeMap[o.id] || (pool.length ? pool[0].node_id : 0);
+            var collapsed = isObCollapsed(o.id);
+
+            var poolRows = pool.map(function(p, i) {
+                var isActive = p.node_id === activeNodeId;
+                var rowCls = isActive ? 'text-green' : '';
+                var switchBtn = isActive
+                    ? '<button class="btn btn-sm btn-ok" disabled>&#10003;</button>'
+                    : '<button class="btn btn-sm btn-primary" onclick="confirmSwitchNode(' + o.id + ',' + p.pool_id + ',\'' + escapeHtml(p.name) + '\')">&#8644;</button>';
+                return '<div class="flex-row flex-wrap gap-4" style="padding:6px 0;border-bottom:1px solid var(--border);' + (isActive ? 'background:rgba(25,118,210,0.08);' : '') + '">' +
+                    '<span style="flex:1;" class="' + rowCls + '">' + escapeHtml(p.name) + '</span>' +
+                    '<span style="font-size:11px;color:var(--text-secondary);">TCP:' + (p.tcp_latency !== null ? (p.tcp_latency < 0 ? '<span class="text-red">fail</span>' : p.tcp_latency + 'ms') : '—') + '</span>' +
+                    '<span class="flex-row gap-2">' + switchBtn +
+                        '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',-1)"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
+                        '<button class="btn btn-sm btn-ghost" onclick="movePoolNode(' + o.id + ',' + p.pool_id + ',1)"' + (i === pool.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
+                        '<button class="btn btn-sm btn-ghost btn-danger" onclick="removePoolNode(' + o.id + ',' + p.pool_id + ')">&#10005;</button>' +
+                    '</span></div>';
+            }).join('');
+
+            html += '<div class="card">' +
+                '<div class="card-header' + (collapsed ? ' collapsed' : '') + '" onclick="toggleObCollapse(' + o.id + ')" id="obHdr_' + o.id + '">' +
+                    '<span class="flex-row gap-8"><span class="tag">auto</span><strong>' + escapeHtml(o.name) + '</strong></span>' +
+                    '<span style="font-size:12px;color:var(--text-secondary);">' + pool.length + ' nodes</span>' +
+                '</div>' +
+                '<div class="card-body' + (collapsed ? '' : ' show') + '" id="obBody_' + o.id + '">' +
+                    poolRows +
+                    '<div class="flex-row gap-4" style="margin-top:8px;justify-content:flex-end;">' +
+                        '<button class="btn btn-sm" onclick="openObModal(' + o.id + ')">&#9998;</button>' +
+                        '<button class="btn btn-sm btn-danger" onclick="confirmDeleteOb(' + o.id + ')">&#10005;</button>' +
+                    '</div>' +
+                '</div></div>';
+        }
+    });
+    list.innerHTML = html;
+}
+
+/* -- Node selection modal -- */
+function onObTypeChange() {
+    var type = document.getElementById('obType').value;
+    var nodeField = document.getElementById('obNodeField');
+    if (type === 'single' && _selectedNodes.length > 1) {
+        _selectedNodes = [_selectedNodes[0]];
+    }
+    nodeField.style.display = type === 'direct' ? 'none' : '';
+    if (type === 'direct') _selectedNodes = [];
+    renderNodeList();
+}
+
+function openObModal(editId) {
+    document.getElementById('obEditId').value = editId || '';
+    document.getElementById('obModalTitle').textContent = editId ? 'Edit Outbound' : 'New Outbound';
+    document.getElementById('obName').value = '';
+    document.getElementById('obType').value = 'single';
+    document.getElementById('obNodeFilter').value = '';
+    _selectedNodes = [];
+    if (editId) {
+        var o = outbounds.find(function(x) { return x.id == editId; });
+        if (o) {
+            document.getElementById('obName').value = o.name;
+            document.getElementById('obType').value = o.type;
+            if (o.type === 'single') {
+                var cfg = typeof o.config_json === 'string' ? JSON.parse(o.config_json) : o.config_json;
+                if (cfg.node_id) _selectedNodes = [cfg.node_id];
+            } else if (o.type === 'auto') {
+                _selectedNodes = (o.pool || []).map(function(p) { return p.node_id; });
+            }
+        }
+    }
+    onObTypeChange();
+    document.getElementById('obModal').classList.add('show');
+}
+
+function renderNodeList() {
+    var kw = (document.getElementById('obNodeFilter').value || '').toLowerCase();
+    var isSingle = document.getElementById('obType').value === 'single';
+    var container = document.getElementById('obNodeList');
+    var filtered = allNodes.filter(function(n) {
+        return !kw || n.name.toLowerCase().indexOf(kw) !== -1;
+    });
+    container.innerHTML = filtered.map(function(n) {
+        var sel = _selectedNodes.indexOf(n.id) !== -1;
+        var style = sel ? 'opacity:0.5;' : 'cursor:pointer;';
+        var check = sel ? ' ✓' : '';
+        return '<div style="padding:10px 12px;border-bottom:1px solid var(--border);' + style + 'min-height:var(--tap-target);display:flex;align-items:center;" onclick="onNodeClick(' + n.id + ')">' + escapeHtml(n.name) + ' (' + escapeHtml(n.protocol) + ')' + '<span style="margin-left:auto;color:var(--accent);">' + check + '</span></div>';
+    }).join('') || '<div style="padding:12px;text-align:center;color:var(--text-secondary);">No nodes found</div>';
+}
+
+function onNodeClick(nodeId) {
+    var isSingle = document.getElementById('obType').value === 'single';
+    var idx = _selectedNodes.indexOf(nodeId);
+    if (isSingle) {
+        _selectedNodes = (idx !== -1) ? [] : [nodeId];
+    } else {
+        if (idx !== -1) { _selectedNodes.splice(idx, 1); }
+        else { _selectedNodes.push(nodeId); }
+    }
+    renderNodeList();
+}
+
+function filterObNodes() { renderNodeList(); }
+
+async function saveOb() {
+    var editId = document.getElementById('obEditId').value;
+    var obType = document.getElementById('obType').value;
+    var config = {};
+    if (obType === 'single') {
+        if (!_selectedNodes.length) { showToast('Please select a node', 'warn'); return; }
+        config.node_id = _selectedNodes[0];
+    } else if (obType === 'auto') {
+        if (!_selectedNodes.length) { showToast('Please select at least one node', 'warn'); return; }
+    }
+    var name = document.getElementById('obName').value;
+    if (!name) { showToast('Name is required', 'warn'); return; }
+    var payload = { name: name, type: obType, config_json: JSON.stringify(config) };
+    var url = '/api/outbounds' + (editId ? '/' + editId : '');
+    var method = editId ? 'PUT' : 'POST';
+    try {
+        var resp = await fetch(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        var data = await resp.json();
+        if (data.success && obType === 'auto') {
+            var obId = editId || data.outbound_id;
+            if (obId && _selectedNodes.length) {
+                await fetch('/api/outbounds/' + obId + '/nodes/sync', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({node_ids: _selectedNodes})
+                });
+            }
+        }
+        closeModal('obModal');
+        showToast(data.message || '', data.success ? 'ok' : 'error');
+        loadData(true);
+    } catch(e) { showToast('Save failed: ' + e, 'error'); }
+}
+
+async function removePoolNode(obId, poolId) {
+    try {
+        await fetch('/api/outbounds/' + obId + '/nodes/' + poolId, { method: 'DELETE' });
+        showToast('Node removed from pool', 'ok');
+        loadData(true);
+    } catch(e) { showToast('Remove failed: ' + e, 'error'); }
+}
+
+async function movePoolNode(obId, poolId, dir) {
+    var ob = outbounds.find(function(x) { return x.id == obId; });
+    if (!ob || !ob.pool) return;
+    var order = ob.pool.map(function(p) { return p.pool_id; });
+    var idx = order.indexOf(poolId);
+    if (idx < 0) return;
+    var newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= order.length) return;
+    order.splice(idx, 1); order.splice(newIdx, 0, poolId);
+    try {
+        await fetch('/api/outbounds/' + obId + '/nodes/reorder', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({order: order})
+        });
+        showToast('Pool reordered', 'ok');
+        loadData(true);
+    } catch(e) { showToast('Reorder failed: ' + e, 'error'); }
+}
+
+function confirmSwitchNode(obId, poolId, nodeName) {
+    showConfirm('Switch Node', 'Switch to "' + nodeName + '"? Running services will be restarted.', async function() {
+        try {
+            var resp = await fetch('/api/outbounds/' + obId + '/switch-node', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({node_id: parseInt(poolId)})
+            });
+            var data = await resp.json();
+            showToast(data.message || '', data.success ? 'ok' : 'error');
+            if (data.success) loadData(true);
+        } catch(e) { showToast('Switch failed: ' + e, 'error'); }
+    }, 'Switch');
+}
+
+async function checkSingleNode(id) {
+    if (!id) return;
+    try {
+        var resp = await fetch('/api/nodes/check', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({node_ids:[id], check_type:'both'})
+        });
+        var data = await resp.json();
+        if (data.task_id) { showToast('Check started for node #' + id, 'info'); pollCheck(data.task_id); }
+        else { showToast(data.message || 'Check rejected', 'warn'); }
+    } catch(e) {}
+}
+
+function pollCheck(taskId) {
+    var iv = setInterval(async function() {
+        try {
+            var resp = await fetch('/api/nodes/check/' + taskId + '/status');
+            var data = await resp.json();
+            if (!data.running) { clearInterval(iv); loadData(true); showToast('Check completed', 'ok'); }
+        } catch(e) { clearInterval(iv); }
+    }, 1500);
+}
+
+function confirmDeleteOb(id) {
+    showConfirm('Delete Outbound', 'Delete outbound #' + id + '?', async function() {
+        try { await fetch('/api/outbounds/' + id, { method: 'DELETE' }); loadData(true); showToast('Outbound deleted', 'ok'); } catch(e) {}
+    }, 'Delete');
+}
+
+loadData();
+</script>
+{% endblock %}

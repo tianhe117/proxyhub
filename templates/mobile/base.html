@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{% block title %}ProxyHub{% endblock %}</title>
+    <style>
+        /* ================================================================
+           Mobile Design System — dark terminal theme
+           ================================================================ */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-body:        #fafafa;
+            --bg-card:        #fff;
+            --bg-card-hover:  #f0f0f0;
+            --bg-input:       #fafafa;
+            --bg-modal:       #fff;
+            --border:         #e0e0e0;
+            --border-active:  #999;
+            --text:           #333;
+            --text-secondary: #888888;
+            --text-disabled:  #bbbbbb;
+            --accent:         #1976d2;
+            --green:          #4caf50;
+            --red:            #e53935;
+            --orange:         #ffa726;
+            --font:           'Consolas', 'Monaco', 'Courier New', monospace;
+            --font-size:      13px;
+            --radius:         6px;
+            --tap-target:     44px;
+        }
+
+        body {
+            font-family: var(--font);
+            font-size: var(--font-size);
+            background: var(--bg-body);
+            color: var(--text);
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* ---- Top Bar ---- */
+        .top-bar {
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            padding-top: env(safe-area-inset-top);
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            z-index: 100;
+        }
+        .top-bar .brand { font-size: 14px; font-weight: bold; color: var(--accent); }
+        .top-bar .title { font-size: 13px; color: var(--text-secondary); }
+        .top-bar .actions { display: flex; gap: 6px; align-items: center; }
+
+        /* ---- Content ---- */
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 8px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* ---- Tab Bar ---- */
+        .tab-bar {
+            height: 56px;
+            padding-bottom: env(safe-area-inset-bottom);
+            display: flex;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+            z-index: 100;
+        }
+        .tab-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 10px;
+            min-height: var(--tap-target);
+            border-top: 2px solid transparent;
+            gap: 3px;
+        }
+        .tab-item.active {
+            color: var(--accent);
+            border-top-color: var(--accent);
+        }
+        .tab-item .tab-icon { font-size: 18px; line-height: 1; }
+        .tab-item .tab-label { font-size: 10px; }
+
+        /* ---- Cards ---- */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            min-height: var(--tap-target);
+            cursor: pointer;
+            gap: 8px;
+            background: var(--bg-card);
+        }
+        .card-header:active { background: var(--bg-card-hover); }
+        .card-header.collapsed { background: #eee; }
+        .card-body {
+            padding: 0 12px 12px 12px;
+            display: none;
+        }
+        .card-body.show { display: block; }
+        .card-body .row {
+            padding: 4px 0;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .card-body .row span { color: var(--text); }
+
+        /* ---- Stats Row ---- */
+        .stats-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .stat-card {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 8px;
+            text-align: center;
+        }
+        .stat-card .stat-val {
+            font-size: 20px;
+            font-weight: bold;
+            color: var(--accent);
+        }
+        .stat-card .stat-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* ---- Tags ---- */
+        .tag {
+            display: inline-block;
+            padding: 2px 6px;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            font-size: 11px;
+            color: var(--accent);
+        }
+
+        /* ---- Status Dot ---- */
+        .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .dot-ok    { background: var(--green); }
+        .dot-error { background: var(--red); }
+        .dot-idle  { background: var(--text-disabled); }
+
+        /* ---- Buttons ---- */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: var(--tap-target);
+            min-width: var(--tap-target);
+            padding: 0 14px;
+            font-size: 13px;
+            font-family: var(--font);
+            cursor: pointer;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            color: var(--text);
+            white-space: nowrap;
+        }
+        .btn:active { background: var(--bg-card-hover); }
+        .btn:disabled { color: var(--text-disabled); opacity: 0.4; }
+        .btn-sm { min-height: 36px; min-width: 36px; padding: 0 8px; font-size: 12px; }
+        .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: bold; }
+        .btn-primary:active { opacity: 0.8; }
+        .btn-danger { color: var(--red); border-color: var(--red); }
+        .btn-danger:active { background: rgba(239,83,80,0.15); }
+        .btn-ok { color: var(--green); border-color: var(--green); }
+        .btn-ok:active { background: rgba(129,199,132,0.15); }
+        .btn-ghost { border: none; color: var(--text-secondary); min-width: auto; padding: 0 4px; }
+        .btn-block { width: 100%; }
+
+        /* ---- Forms ---- */
+        .input {
+            font-family: var(--font);
+            font-size: 13px;
+            min-height: var(--tap-target);
+            padding: 0 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-input);
+            color: var(--text);
+            width: 100%;
+        }
+        .input:focus { outline: none; border-color: var(--border-active); }
+        select.input { appearance: auto; }
+        textarea.input { min-height: 80px; padding: 8px 12px; line-height: 1.6; resize: vertical; }
+        .field { margin: 10px 0; }
+        .field label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .field-row { display: flex; gap: 8px; }
+        .field-row > * { flex: 1; }
+
+        /* ---- Toggle Switch ---- */
+        .toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+            min-height: var(--tap-target);
+        }
+        .toggle input { display: none; }
+        .toggle .toggle-track {
+            width: 44px; height: 24px;
+            border-radius: 12px;
+            background: var(--border);
+            position: relative;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        .toggle .toggle-track::after {
+            content: '';
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            transition: transform 0.2s, background 0.2s;
+        }
+        .toggle input:checked + .toggle-track { background: var(--accent); }
+        .toggle input:checked + .toggle-track::after {
+            transform: translateX(20px);
+            background: #fff;
+        }
+
+        /* ---- Toast ---- */
+        #toastContainer {
+            position: fixed;
+            top: 48px;
+            left: 0; right: 0;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 4px 8px;
+            pointer-events: none;
+        }
+        .toast {
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            font-size: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text);
+            pointer-events: auto;
+            word-break: break-word;
+            animation: toastIn 0.25s ease-out;
+        }
+        .toast-ok    { border-left: 3px solid var(--green); }
+        .toast-error { border-left: 3px solid var(--red); }
+        .toast-warn  { border-left: 3px solid var(--orange); }
+        .toast-info  { border-left: 3px solid var(--accent); }
+        .toast-out   { animation: toastOut 0.25s ease-in forwards; }
+
+        @keyframes toastIn  { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+
+        /* ---- Modal (bottom sheet) ---- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            z-index: 1000;
+            justify-content: center;
+            align-items: flex-end;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-sheet {
+            background: var(--bg-modal);
+            border-radius: 12px 12px 0 0;
+            width: 100%;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: slideUp 0.2s ease-out;
+        }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .modal-handle {
+            width: 36px; height: 4px;
+            border-radius: 2px;
+            background: var(--text-disabled);
+            margin: 8px auto 0 auto;
+            flex-shrink: 0;
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .modal-header .modal-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--text);
+        }
+        .modal-close {
+            cursor: pointer;
+            font-size: 20px;
+            color: var(--text-secondary);
+            background: none; border: none;
+            padding: 4px 8px; line-height: 1;
+            min-width: var(--tap-target); min-height: var(--tap-target);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-body {
+            padding: 16px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-body .field { margin: 10px 0; }
+        .modal-body .field:first-child { margin-top: 0; }
+        .modal-body .field:last-child { margin-bottom: 0; }
+        .modal-footer {
+            display: flex;
+            gap: 8px;
+            padding: 12px 16px;
+            padding-bottom: calc(12px + env(safe-area-inset-bottom));
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .modal-footer .btn { flex: 1; }
+
+        /* ---- Empty State ---- */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+            font-style: italic;
+            font-size: 13px;
+        }
+
+        /* ---- Misc ---- */
+        .text-green { color: var(--green); }
+        .text-red   { color: var(--red); }
+        .text-muted { color: var(--text-secondary); }
+        .flex-row   { display: flex; align-items: center; gap: 8px; }
+        .flex-between { display: flex; align-items: center; justify-content: space-between; }
+        .flex-wrap  { flex-wrap: wrap; }
+        .gap-4 { gap: 4px; }
+        .gap-8 { gap: 8px; }
+        .mb-8 { margin-bottom: 8px; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <span class="brand">ProxyHub</span>
+        <span class="title">{% block topbar_title %}{% endblock %}</span>
+        <div class="actions">
+            {% block topbar_actions %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content" id="content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+        {% set tabs = [
+            ('dashboard', '/dashboard', '&#9679;'),
+            ('inbounds', '/inbounds', '&#8651;'),
+            ('outbounds', '/outbounds', '&#8660;'),
+        ] %}
+        {% for p, url, icon in tabs %}
+        <a href="{{ url }}" class="tab-item{% if page == p %} active{% endif %}">
+            <span class="tab-icon">{{ icon | safe }}</span>
+            <span class="tab-label">{{ p }}</span>
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
+
+    <!-- Global Modals -->
+    <!-- Confirm Modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+                <span class="modal-title" id="confirmTitle">Confirm</span>
+                <button class="modal-close" onclick="closeModal('confirmModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage" style="line-height:1.6;color:var(--text);"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('confirmModal')">Cancel</button>
+                <button class="btn btn-primary" id="confirmOkBtn">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal -->
+    <div class="modal-overlay" id="messageModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+                <span class="modal-title">Notice</span>
+                <button class="modal-close" onclick="closeModal('messageModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="messageText" style="line-height:1.6;color:var(--text);"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal('messageModal')">OK</button>
+            </div>
+        </div>
+    </div>
+
+    {% block modals %}{% endblock %}
+
+    <!-- Global JavaScript -->
+    <script>
+        /* ---- Toast ---- */
+        var TOAST_MAX = 3;
+        function showToast(msg, level) {
+            level = level || 'info';
+            var container = document.getElementById('toastContainer');
+            while (container.children.length >= TOAST_MAX) {
+                container.firstChild.remove();
+            }
+            var t = document.createElement('div');
+            t.className = 'toast toast-' + level;
+            t.textContent = msg;
+            container.appendChild(t);
+            setTimeout(function() {
+                t.classList.add('toast-out');
+                setTimeout(function() { if (t.parentNode) t.remove(); }, 250);
+            }, 3000);
+        }
+
+        /* ---- Modal ---- */
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('show');
+        }
+
+        function showMessage(msg) {
+            document.getElementById('messageText').textContent = msg;
+            document.getElementById('messageModal').classList.add('show');
+        }
+
+        function showConfirm(title, msg, onConfirm, confirmLabel) {
+            document.getElementById('confirmTitle').textContent = title || 'Confirm';
+            document.getElementById('confirmMessage').textContent = msg;
+            var btn = document.getElementById('confirmOkBtn');
+            btn.textContent = confirmLabel || 'OK';
+            btn.onclick = function() {
+                closeModal('confirmModal');
+                if (onConfirm) onConfirm();
+            };
+            document.getElementById('confirmModal').classList.add('show');
+        }
+
+        /* ---- HTML Escaping ---- */
+        function escapeHtml(text) {
+            if (!text) return '';
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        /* ---- Data Cache (memory + localStorage) ---- */
+        var AppCache = {
+            _data: {},
+            _ts: {},
+            TTL: 5000,         // 5s in-memory dedup (same page)
+            STORAGE_TTL: 30000, // 30s localStorage cross-page persistence
+            _prefix: 'ph_',
+
+            _key: function(k) { return this._prefix + k; },
+
+            get: function(key) {
+                // In-memory first (fastest, intra-page dedup)
+                if (this._data[key] && (Date.now() - this._ts[key]) < this.TTL) return this._data[key];
+                // Fall back to localStorage (cross-page persistence)
+                try {
+                    var raw = localStorage.getItem(this._key(key));
+                    if (raw) {
+                        var s = JSON.parse(raw);
+                        if (s.ts && (Date.now() - s.ts) < this.STORAGE_TTL) {
+                            this._data[key] = s.data;
+                            this._ts[key] = s.ts;
+                            return s.data;
+                        }
+                    }
+                } catch(e) {}
+                return null;
+            },
+
+            set: function(key, val) {
+                var now = Date.now();
+                this._data[key] = val;
+                this._ts[key] = now;
+                try {
+                    localStorage.setItem(this._key(key), JSON.stringify({ts: now, data: val}));
+                } catch(e) {}
+            },
+
+            invalidate: function(key) {
+                if (key) {
+                    delete this._data[key]; delete this._ts[key];
+                    try { localStorage.removeItem(this._key(key)); } catch(e) {}
+                } else {
+                    this._data = {}; this._ts = {};
+                    try {
+                        var pfx = this._prefix;
+                        Object.keys(localStorage).forEach(function(k) {
+                            if (k.indexOf(pfx) === 0) localStorage.removeItem(k);
+                        });
+                    } catch(e) {}
+                }
+            }
+        };
+
+        async function cachedFetch(key, url) {
+            var cached = AppCache.get(key);
+            if (cached) return cached;
+            var resp = await fetch(url);
+            var data = await resp.json();
+            AppCache.set(key, data);
+            return data;
+        }
+
+        /* ---- Card expand/collapse ---- */
+        function toggleCard(header) {
+            var body = header.nextElementSibling;
+            if (!body || !body.classList.contains('card-body')) return;
+            body.classList.toggle('show');
+        }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
