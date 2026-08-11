@@ -88,11 +88,11 @@ cleanup() {
         fi
     fi
 
-    [ -n "$tag" ] && hits=$(pgrep -af "$tag" 2>/dev/null | grep -v 'test\.sh' | awk '{print $1}' || true)
+    [ -n "$tag" ] && hits=$(pgrep -af "$tag" 2>/dev/null | grep -v 'proxy_url_check\.sh' | awk '{print $1}' || true)
     [ -n "${hits:-}" ] && echo "$hits" | xargs kill -KILL 2>/dev/null || true
 
     name=$(basename "${config:-}" 2>/dev/null) || name=
-    [ -n "$name" ] && hits=$(pgrep -af "$name" 2>/dev/null | grep -v 'test\.sh' | awk '{print $1}' || true)
+    [ -n "$name" ] && hits=$(pgrep -af "$name" 2>/dev/null | grep -v 'proxy_url_check\.sh' | awk '{print $1}' || true)
     [ -n "${hits:-}" ] && echo "$hits" | xargs kill -KILL 2>/dev/null || true
 
     rm -f "$pid_file"
