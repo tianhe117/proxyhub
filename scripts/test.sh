@@ -1,271 +1,143 @@
 #!/bin/bash
-# ProxyHub — Node connectivity test script (Linux)
-# Usage:
-#   ./test.sh tcp_ping <address> <port> <timeout> <tag>
-#   echo '{...}' | ./test.sh url_test
+# ============================================================================
+# ProxyHub — URL reachability test via proxy
+# ============================================================================
 #
-# Output: JSON line to stdout. Exit 0 on success, 1 on error.
-
+# Starts a proxy binary, waits for it to listen, curls a test URL through
+# its SOCKS5 port, then tears everything down.  Pure bash — no Python.
+#
+# Usage:
+#   ./test.sh <config> <type> <bin> <port> <url> <timeout> [tag]
+#
+#   config    absolute path to proxy config JSON
+#   type      proxy type: xray | sslocal | sing-box
+#   bin       absolute path to proxy binary
+#   port      SOCKS5 port the proxy will listen on
+#   url       test URL to curl through the proxy
+#   timeout   curl --max-time (seconds)
+#   tag       optional label for process cleanup (default: unknown)
+#
+# Flow:
+#   1. Validate inputs — config exists, binary exists & is executable
+#   2. Resolve run command per proxy type
+#   3. Start proxy in its own process group (setsid) → write pidfile
+#   4. wait_port — poll /dev/tcp until proxy accepts connections (max 15 s)
+#   5. curl the test URL via SOCKS5, with smart retry on fast HTTP 000
+#      (proxy may accept SOCKS5 handshake before outbound link is ready)
+#   6. cleanup — three-layer kill: PGID → pgrep by tag → pgrep by config name
+#   7. Output one JSON line, exit 0/1/2
+#
+# Output:
+#   {"latency_ms":<ms>,"http_code":"<code>","error":"HTTP <code>"}
+#   - On success, http_code is "204" and exit code is 0.
+#   - On upstream failure, http_code is not "204" and exit code is 1.
+#
+# Exit codes:
+#   0   HTTP 204 — proxy working, upstream reachable
+#   1   proxy started but upstream test failed (HTTP != 204)
+#   2   internal error — binary/config missing, proxy didn't start, etc.
+# ============================================================================
 set -euo pipefail
 
-# Detect python command (try python3 first, fall back to python)
-PYTHON=""
-for py in python3 python; do
-    if command -v "$py" >/dev/null 2>&1; then
-        $py -c "import json" 2>/dev/null && PYTHON="$py" && break
-    fi
-done
-if [ -z "$PYTHON" ]; then
-    echo '{"success": false, "error": "python not found"}'
-    exit 1
-fi
+# ---- config ----
 
-# ============================================================
-# JSON output helpers
-# ============================================================
+PORT_WAIT_MAX=15      # max seconds to wait for proxy to listen
+CURL_RETRY_MAX=3      # max curl attempts
+CURL_RETRY_DELAY=1    # seconds between retries
 
-json_ok() {
-    local latency_ms="$1" http_code="${2:-}"
-    if [ -n "$http_code" ]; then
-        $PYTHON -c "import json,sys; json.dump({'success':True,'http_code':$http_code,'latency_ms':$latency_ms}, sys.stdout)"
-    else
-        $PYTHON -c "import json,sys; json.dump({'success':True,'latency_ms':$latency_ms}, sys.stdout)"
-    fi
-}
+# ---- helpers ----
 
-json_err() {
+die() {
     local msg="$1"
-    $PYTHON -c "import json,sys; json.dump({'success':False,'error':'$msg'}, sys.stdout)"
+    msg="${msg//\\/\\\\}"; msg="${msg//\"/\\\"}"
+    printf '{"latency_ms":-1,"http_code":"0","error":"%s"}\n' "$msg"
+    exit 2
 }
 
-# ============================================================
-# TCP Ping
-# ============================================================
-
-tcp_ping() {
-    local addr="$1" port="$2" timeout="${3:-3}" tag="${4:-unknown}"
-
-    local latency_ms
-    latency_ms=$($PYTHON -c "
-import socket, sys, time
-addr, port, timeout = sys.argv[1], int(sys.argv[2]), float(sys.argv[3])
-try:
-    start = time.time()
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
-    sock.connect((addr, port))
-    elapsed_ms = round((time.time() - start) * 1000)
-    sock.close()
-    print(elapsed_ms)
-except Exception as e:
-    sys.exit(1)
-" "$addr" "$port" "$timeout" 2>/dev/null)
-    local rc=$?
-
-    if [ $rc -eq 0 ]; then
-        json_ok "${latency_ms:-0}"
-    else
-        json_err "connection failed or timed out"
-    fi
+cmd_for() {
+    case "$1" in
+        xray)     printf '%s run -config %s'  "$2" "$3" ;;
+        sslocal)  printf '%s -c %s'           "$2" "$3" ;;
+        sing-box) printf '%s run -c %s'       "$2" "$3" ;;
+        *)        die "unknown bin_type: $1"  ;;
+    esac
 }
 
-# ============================================================
-# URL Test helpers
-# ============================================================
+# ---- port wait (bash /dev/tcp, no deps) ----
 
-wait_for_port() {
-    local port="$1" max_wait="${2:-15}"
-    local waited=0
-    while [ $waited -lt $max_wait ]; do
-        $PYTHON -c "
-import socket, sys
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.settimeout(1)
-try:
-    sock.connect(('127.0.0.1', $port))
-    sock.close()
-except:
-    sys.exit(1)
-" 2>/dev/null && return 0
-        sleep 0.5
-        waited=$((waited + 1))
+wait_port() {
+    local port="$1" i=0
+    while [ $i -lt $((PORT_WAIT_MAX * 2)) ]; do
+        timeout 1 bash -c "echo >/dev/tcp/127.0.0.1/$port" 2>/dev/null && return 0
+        sleep 0.5; i=$((i + 1))
     done
     return 1
 }
 
-cleanup_process_tree() {
-    local pid_file="$1" tag="$2" config_path="$3"
+# ---- cleanup (pgid → tag → config filename) ----
 
-    # Layer 1: kill process group by PGID
+cleanup() {
+    local pid_file="$1" tag="${2:-}" config="${3:-}" pid pgid hits name
+
     if [ -s "$pid_file" ]; then
-        local pid=$(head -n1 "$pid_file" 2>/dev/null)
+        pid=$(head -n1 "$pid_file") || pid=
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            local pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
-            if [ -n "$pgid" ]; then
-                kill -TERM -- -"$pgid" 2>/dev/null || true
-                sleep 0.3
-                kill -KILL -- -"$pgid" 2>/dev/null || true
-            fi
+            pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ') || pgid=
+            [ -n "$pgid" ] && { kill -TERM -- -"$pgid" 2>/dev/null || true; sleep 0.3; kill -KILL -- -"$pgid" 2>/dev/null || true; }
             kill -KILL "$pid" 2>/dev/null || true
         fi
     fi
 
-    # Layer 2: pgrep by tag (exclude self)
-    local matched
-    matched=$(pgrep -af "$tag" 2>/dev/null | grep -v 'test\.sh' | awk '{print $1}' || true)
-    if [ -n "$matched" ]; then
-        echo "$matched" | xargs kill -KILL 2>/dev/null || true
-    fi
+    [ -n "$tag" ] && hits=$(pgrep -af "$tag" 2>/dev/null | grep -v 'test\.sh' | awk '{print $1}' || true)
+    [ -n "${hits:-}" ] && echo "$hits" | xargs kill -KILL 2>/dev/null || true
 
-    # Layer 3: pgrep by config filename
-    local config_file=$(basename "$config_path")
-    matched=$(pgrep -af "$config_file" 2>/dev/null | grep -v 'test\.sh' | awk '{print $1}' || true)
-    if [ -n "$matched" ]; then
-        echo "$matched" | xargs kill -KILL 2>/dev/null || true
-    fi
+    name=$(basename "${config:-}" 2>/dev/null) || name=
+    [ -n "$name" ] && hits=$(pgrep -af "$name" 2>/dev/null | grep -v 'test\.sh' | awk '{print $1}' || true)
+    [ -n "${hits:-}" ] && echo "$hits" | xargs kill -KILL 2>/dev/null || true
 
-    # Cleanup files
-    rm -f "$pid_file" "$config_path"
+    rm -f "$pid_file" "${config:-/nonexistent}"
 }
 
-# ============================================================
-# URL Test
-# ============================================================
+# ---- main ----
 
-url_test() {
-    # Parse JSON from stdin
-    local input
-    input=$(cat)
+CONFIG="$1"; TYPE="$2"; BIN="$3"; PORT="$4"; URL="$5"; TIMEOUT="$6"; TAG="${7:-unknown}"
 
-    local config_path bin_type bin_path local_port test_url curl_timeout tag
-    config_path=$(echo "$input" | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['config_path'])")
-    bin_type=$(echo "$input"    | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['bin_type'])")
-    bin_path=$(echo "$input"    | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['bin_path'])")
-    local_port=$(echo "$input"  | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['local_port'])")
-    test_url=$(echo "$input"    | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['test_url'])")
-    curl_timeout=$(echo "$input"| $PYTHON -c "import json,sys; print(json.load(sys.stdin)['curl_timeout'])")
-    tag=$(echo "$input"         | $PYTHON -c "import json,sys; print(json.load(sys.stdin).get('tag','unknown'))")
+# validate
+[ -f "$CONFIG" ] || die "config not found: $CONFIG"
+[ -f "$BIN" ]     || die "binary not found: $BIN"
+[ -x "$BIN" ]     || chmod +x "$BIN" 2>/dev/null || true
 
-    # Validate paths
-    if [ ! -f "$config_path" ]; then
-        json_err "config file not found: $config_path"
-        exit 1
-    fi
+PIDFILE="${CONFIG}.pid"
+RUN_CMD=$(cmd_for "$TYPE" "$BIN" "$CONFIG")
 
-    # Resolve bin path (relative to project root = scripts/..)
-    local script_dir="$(cd "$(dirname "$0")" && pwd)"
-    local project_dir="$(dirname "$script_dir")"
-    if [[ "$bin_path" != /* ]]; then
-        bin_path="$project_dir/$bin_path"
-    fi
-    # Try without .exe suffix on Linux
-    if [ ! -f "$bin_path" ] && [[ "$bin_path" == *.exe ]]; then
-        bin_path="${bin_path%.exe}"
-    fi
-    if [ ! -f "$bin_path" ]; then
-        json_err "binary not found: $bin_path"
-        exit 1
-    fi
-    if [ ! -x "$bin_path" ]; then
-        chmod +x "$bin_path" 2>/dev/null || true
-    fi
+# start proxy
+BIN_DIR=$(dirname "$BIN")
+PATH="$BIN_DIR:$PATH" setsid $RUN_CMD >/dev/null 2>&1 &
+echo $! > "$PIDFILE"
 
-    # PID file alongside config
-    local pid_file="${config_path}.pid"
+wait_port "$PORT" || { cleanup "$PIDFILE" "$TAG" "$CONFIG"; die "proxy did not start on port $PORT"; }
 
-    # Build run command per bin_type
-    local run_cmd
-    case "$bin_type" in
-        xray)       run_cmd=("$bin_path" "run" "-config" "$config_path") ;;
-        sslocal)    run_cmd=("$bin_path" "-c" "$config_path") ;;
-        sing-box)   run_cmd=("$bin_path" "run" "-c" "$config_path") ;;
-        *)
-            json_err "unknown bin_type: $bin_type"
-            exit 1
-            ;;
-    esac
+# curl with smart retry
+ATTEMPT=1; HTTP=000
+T0=$(date +%s%N)
 
-    # Set up bin directory in PATH (sslocal needs to find obfs-local in same dir)
-    local bin_dir=$(dirname "$bin_path")
-    export PATH="$bin_dir:$PATH"
+while [ $ATTEMPT -le $CURL_RETRY_MAX ]; do
+    HTTP=$(curl -o /dev/null -s -w "%{http_code}" --max-time "$TIMEOUT" \
+        --socks5-hostname "127.0.0.1:$PORT" "$URL" 2>/dev/null || echo "000")
+    [ "$HTTP" = "204" ] && break
 
-    # Start in new process group (setsid = isolate PGID for tree kill)
-    setsid "${run_cmd[@]}" >/dev/null 2>&1 &
-    local proxy_pid=$!
-    echo "$proxy_pid" > "$pid_file"
-
-    # Wait for proxy to listen
-    if ! wait_for_port "$local_port" 15; then
-        cleanup_process_tree "$pid_file" "$tag" "$config_path"
-        json_err "proxy did not start listening on port $local_port within 15s"
-        exit 1
-    fi
-
-    # Ensure curl exists
-    if ! command -v curl >/dev/null 2>&1; then
-        cleanup_process_tree "$pid_file" "$tag" "$config_path"
-        json_err "curl not found"
-        exit 1
-    fi
-
-    # Run curl through SOCKS5 proxy with timing.
-    # Retry on fast HTTP 000: the proxy may accept the SOCKS5 connection
-    # before the outbound link is ready to forward traffic.
-    # Timeouts (latency ≈ curl_timeout) and non-zero HTTP codes are
-    # NOT retried — those mean the proxy or upstream is truly broken.
-    local start_ns end_ns http_code elapsed_ms attempt
-    local max_attempts=3 retry_delay=1
-    start_ns=$(date +%s%N 2>/dev/null || echo 0)
-
-    for attempt in $(seq 1 $max_attempts); do
-        http_code=$(curl -o /dev/null -s -w "%{http_code}" \
-            --max-time "${curl_timeout}" \
-            --socks5-hostname "127.0.0.1:${local_port}" \
-            "${test_url}" 2>/dev/null || echo "000")
-
-        [ "$http_code" = "204" ] && break
-
-        # Only retry rapid HTTP 000 — proxy accepted the connection
-        # but the outbound link is not yet forwarding traffic.
-        elapsed_ms=$(( ($(date +%s%N 2>/dev/null || echo 0) - start_ns) / 1000000 ))
-        if [ "$http_code" = "000" ] && [ "$elapsed_ms" -lt 2000 ]; then
-            [ "$attempt" -lt "$max_attempts" ] && sleep "$retry_delay"
-        else
-            break
-        fi
-    done
-
-    end_ns=$(date +%s%N 2>/dev/null || echo 0)
-    elapsed_ms=0
-    if [ "$start_ns" -gt 0 ] && [ "$end_ns" -gt 0 ]; then
-        elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
-    fi
-
-    # Cleanup
-    cleanup_process_tree "$pid_file" "$tag" "$config_path"
-
-    # Success: only HTTP 204 means the proxy relayed traffic successfully.
-    # Timeout, non-204 codes, and connection failures are all treated as failure.
-    if [ "$http_code" = "204" ]; then
-        json_ok "$elapsed_ms" "$http_code"
+    NOW=$(date +%s%N); LAT=$(( (NOW - T0) / 1000000 ))
+    if [ "$HTTP" = "000" ] && [ "$LAT" -lt 2000 ] && [ "$ATTEMPT" -lt "$CURL_RETRY_MAX" ]; then
+        sleep "$CURL_RETRY_DELAY"
     else
-        $PYTHON -c "import json,sys; json.dump({'success':False,'error':'HTTP $http_code','http_code':$http_code,'latency_ms':$elapsed_ms}, sys.stdout)"
+        break
     fi
-}
+    ATTEMPT=$((ATTEMPT + 1))
+done
 
-# ============================================================
-# Dispatch
-# ============================================================
+T1=$(date +%s%N); LAT=$(( (T1 - T0) / 1000000 ))
 
-case "${1:-}" in
-    tcp_ping)
-        tcp_ping "${2:-}" "${3:-}" "${4:-3}" "${5:-unknown}"
-        ;;
-    url_test)
-        url_test
-        ;;
-    *)
-        json_err "unknown action: ${1:-}"
-        exit 1
-        ;;
-esac
+cleanup "$PIDFILE" "$TAG" "$CONFIG"
+
+printf '{"latency_ms":%d,"http_code":"%s","error":"HTTP %s"}\n' "$LAT" "$HTTP" "$HTTP"
+[ "$HTTP" = "204" ] && exit 0 || exit 1
