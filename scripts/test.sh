@@ -208,19 +208,35 @@ url_test() {
         exit 1
     fi
 
-    # Run curl through SOCKS5 proxy with timing
-    local start_ns end_ns
+    # Run curl through SOCKS5 proxy with timing.
+    # Retry on fast HTTP 000: the proxy may accept the SOCKS5 connection
+    # before the outbound link is ready to forward traffic.
+    # Timeouts (latency ≈ curl_timeout) and non-zero HTTP codes are
+    # NOT retried — those mean the proxy or upstream is truly broken.
+    local start_ns end_ns http_code elapsed_ms attempt
+    local max_attempts=3 retry_delay=1
     start_ns=$(date +%s%N 2>/dev/null || echo 0)
 
-    local http_code
-    http_code=$(curl -o /dev/null -s -w "%{http_code}" \
-        --connect-timeout 3 --max-time "${curl_timeout}" \
-        --socks5-hostname "127.0.0.1:${local_port}" \
-        "${test_url}" 2>/dev/null || echo "000")
+    for attempt in $(seq 1 $max_attempts); do
+        http_code=$(curl -o /dev/null -s -w "%{http_code}" \
+            --max-time "${curl_timeout}" \
+            --socks5-hostname "127.0.0.1:${local_port}" \
+            "${test_url}" 2>/dev/null || echo "000")
+
+        [ "$http_code" = "204" ] && break
+
+        # Only retry rapid HTTP 000 — proxy accepted the connection
+        # but the outbound link is not yet forwarding traffic.
+        elapsed_ms=$(( ($(date +%s%N 2>/dev/null || echo 0) - start_ns) / 1000000 ))
+        if [ "$http_code" = "000" ] && [ "$elapsed_ms" -lt 2000 ]; then
+            [ "$attempt" -lt "$max_attempts" ] && sleep "$retry_delay"
+        else
+            break
+        fi
+    done
 
     end_ns=$(date +%s%N 2>/dev/null || echo 0)
-
-    local elapsed_ms=0
+    elapsed_ms=0
     if [ "$start_ns" -gt 0 ] && [ "$end_ns" -gt 0 ]; then
         elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
     fi
