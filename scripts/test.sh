@@ -95,7 +95,7 @@ cleanup() {
     [ -n "$name" ] && hits=$(pgrep -af "$name" 2>/dev/null | grep -v 'test\.sh' | awk '{print $1}' || true)
     [ -n "${hits:-}" ] && echo "$hits" | xargs kill -KILL 2>/dev/null || true
 
-    rm -f "$pid_file" "${config:-/nonexistent}"
+    rm -f "$pid_file"
 }
 
 # ---- main ----

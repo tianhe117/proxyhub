@@ -38,5 +38,8 @@ Thumbs.db
 # --- Docker Compose override (per-deployment port mappings) ---
 docker-compose.override.yml
 
+# --- Test ---
+test/
+
 # --- Temp files ---
 temp
