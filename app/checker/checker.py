@@ -1,27 +1,17 @@
-"""Node health checking — TCP + URL detection for proxy nodes.
+"""Low-level checker primitives — pure stdlib, zero project dependencies.
 
-Public API
-----------
-check_node(node_ids, timeout=6)  → {node_id: CheckResult}
-batch_check(node_list, timeout=6) → [CheckResult]          (* lower-level, no DB *)
-
-Lower-level helpers (no DB dependency)
----------------------------------------
-tcp_check(address, port, timeout=3)  → CheckResult
-url_check(node_dict, port, url, timeout, tag) → CheckResult
-allocate_ports(n) → list[int]
+CheckResult
+allocate_ports(n)                           → list[int]
+tcp_check(address, port, timeout=3)         → CheckResult
+url_check(config, type, bin, port, url, timeout, tag) → CheckResult
 """
 
 import json
 import os
 import socket
 import subprocess
-import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-
-from app.engine import build_outbound_config
 
 _PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SCRIPTS_DIR = os.path.join(_PROJECT_DIR, 'scripts')
@@ -142,76 +132,3 @@ def url_check(config_path: str, bin_type: str, bin_path: str,
     except json.JSONDecodeError:
         return CheckResult(success=False, url_latency_ms=-1, tcp_latency_ms=-1,
                    http_code='0', error='Invalid JSON from proxy_url_check.sh')
-
-
-def _check_url_one(node: dict, port: int, test_url: str, timeout: int, tag: str) -> CheckResult:
-    """Generate temp config → url_check → cleanup."""
-    config, _ = build_outbound_config(node, port)
-    fd, path = tempfile.mkstemp(prefix='ph_check_', suffix='.json', dir='/tmp')
-    with os.fdopen(fd, 'w') as f:
-        json.dump(config, f)
-    try:
-        bin_path = os.path.join(_SCRIPTS_DIR, '..', 'bin', node['bin_type'])
-        return url_check(path, node['bin_type'], bin_path, port, test_url, timeout, tag)
-    finally:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
-
-# ============================================================================
-# batch_check — low-level, no DB dependency
-# ============================================================================
-
-def batch_check(nodes: list[dict], test_url: str = '',
-                tcp_timeout: int = 3, curl_timeout: int = 6,
-                strict: bool = True) -> list[CheckResult]:
-    """Run TCP→URL on a list of node dicts in parallel.
-
-    *strict*: when True, skip URL for nodes that fail TCP.
-    """
-    n = len(nodes)
-    if not n:
-        return []
-
-    # ---- phase 1: TCP (all parallel) ----
-    tcp_results = [None] * n
-    with ThreadPoolExecutor(max_workers=n) as ex:
-        futures = {
-            ex.submit(tcp_check, nd['address'], nd['port'], tcp_timeout): i
-            for i, nd in enumerate(nodes)
-        }
-        for fut in as_completed(futures):
-            tcp_results[futures[fut]] = fut.result()
-
-    # ---- phase 2: URL (skip TCP failures) ----
-    url_items = [(i, nd) for i, nd in enumerate(nodes)
-                 if not strict or tcp_results[i].success]
-    url_results = {i: None for i, _ in url_items}
-    if url_items:
-        ports = allocate_ports(len(url_items))
-        with ThreadPoolExecutor(max_workers=len(url_items)) as ex:
-            futures = {}
-            for (i, nd), port in zip(url_items, ports):
-                tag = f'ph_{nd["id"]}'
-                fut = ex.submit(_check_url_one, nd, port, test_url, curl_timeout, tag)
-                futures[fut] = i
-            for fut in as_completed(futures):
-                i = futures[fut]
-                url_results[i] = fut.result()
-
-    # ---- merge ----
-    out = []
-    for i, nd in enumerate(nodes):
-        tcp = tcp_results[i]
-        url = url_results.get(i)
-        if url is None:
-            out.append(CheckResult(success=tcp.success, url_latency_ms=-1,
-                           tcp_latency_ms=tcp.tcp_latency_ms,
-                           http_code='0', error=tcp.error))
-        else:
-            out.append(CheckResult(success=url.success, url_latency_ms=url.url_latency_ms,
-                           tcp_latency_ms=tcp.tcp_latency_ms,
-                           http_code=url.http_code, error=url.error))
-    return out
