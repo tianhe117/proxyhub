@@ -9,10 +9,10 @@ import os
 import random
 import socket
 
-from app.models.service import get_by_id as get_service
-from app.models.inbound import get_by_id as get_inbound
-from app.models.outbound import get_by_id as get_outbound, get_pool_nodes
-from app.models.node import get_by_id as get_node
+from app.db.service import get_by_id as get_service
+from app.db.inbound import get_by_id as get_inbound
+from app.db.outbound import get_by_id as get_outbound, get_pool_nodes
+from app.db.node import get_by_id as get_node
 from app.engine import build_outbound_config, get_exe
 from app.engine.xray import build_xray_inbound
 from app.settings import SOCKS_PORT_START, SOCKS_PORT_END

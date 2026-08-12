@@ -9,12 +9,12 @@ import threading
 import time
 from datetime import datetime
 
-from app.models.service import (
+from app.db.service import (
     get_by_id as get_service, get_auto_start_services,
     list_all, update_status,
 )
-from app.models.outbound import get_by_id as get_outbound, get_pool_nodes
-from app.models.node import get_by_id as get_node, update_latency
+from app.db.outbound import get_by_id as get_outbound, get_pool_nodes
+from app.db.node import get_by_id as get_node, update_latency
 from app.settings import DEFAULT_SETTINGS, get_setting
 from app.process.manager import (
     start_process, stop_service as stop_service_processes,
@@ -298,7 +298,7 @@ def _start_service_with_node(service_id, node_id):
         time.sleep(PORT_RELEASE_WAIT)  # let ports release before re-binding
 
     # Generate config with node override
-    from app.models.inbound import get_by_id as get_inbound
+    from app.db.inbound import get_by_id as get_inbound
     inbound = get_inbound(svc['inbound_id'])
     outbound = get_outbound(svc['outbound_id'])
     if not inbound or not outbound:

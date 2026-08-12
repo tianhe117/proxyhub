@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.models.node import list_all, list_grouped, list_by_sub, get_by_id
+from app.db.node import list_all, list_grouped, list_by_sub, get_by_id
 from app.services.node_service import (
     create_custom_node, update_node, delete_node, clear_all_nodes,
 )

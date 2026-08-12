@@ -24,7 +24,7 @@ from app.checker.checker import (
 )
 from app.checker import check_node, _check_url_one
 from app.engine import build_outbound_config
-from app.models.node import get_by_id
+from app.db.node import get_by_id
 
 TEST_URL = 'https://www.gstatic.com/generate_204'
 

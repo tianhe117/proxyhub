@@ -21,7 +21,7 @@ def _shutdown():
     except Exception:
         pass
     try:
-        from app.models.database import get_db, close_db
+        from app.db.database import get_db, close_db
         get_db()
         close_db()
     except Exception:
@@ -61,7 +61,7 @@ def create_app():
     web_logger.install()
 
     # Initialize database
-    from app.models.database import init_db, close_db
+    from app.db.database import init_db, close_db
     with app.app_context():
         init_db()
 

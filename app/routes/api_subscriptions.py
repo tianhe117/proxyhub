@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.models.subscription import (
+from app.db.subscription import (
     list_all, get_by_id, create, update, delete,
 )
 from app.services.subscription_service import refresh_subscription
@@ -16,7 +16,7 @@ api_subscriptions = Blueprint('api_subscriptions', __name__, url_prefix='/api/su
 def list_subscriptions():
     subs = list_all()
     # Count nodes per subscription for the list view
-    from app.models.node import list_by_sub
+    from app.db.node import list_by_sub
     result = []
     for s in subs:
         d = dict(s)

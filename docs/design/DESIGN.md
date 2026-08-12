@@ -804,8 +804,8 @@ echo "Then open http://<server-ip>:8080"
 1. `app/settings.py` — 配置常量
 2. `app/utils/` — 工具函数
 3. `app/logger.py` — 日志系统
-4. `app/models/database.py` — 数据库连接 + 初始化 + 迁移
-5. `app/models/*.py` — 各表 CRUD
+4. `app/db/database.py` — 数据库连接 + 初始化 + 迁移
+5. `app/db/*.py` — 各表 CRUD
 
 ### Phase 2: 核心服务
 6. `app/services/auth_service.py` — 认证

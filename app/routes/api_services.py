@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.models.service import (
+from app.db.service import (
     list_all, get_by_id, create, update, delete,
 )
 from app.services.service_manager import (

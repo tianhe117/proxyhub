@@ -2,12 +2,12 @@
 
 import json
 
-from app.models.outbound import (
+from app.db.outbound import (
     create as create_ob, update as update_ob, delete as delete_ob,
     get_by_id as get_ob, add_pool_node, remove_pool_node, reorder_pool_nodes,
     get_pool_nodes, sync_pool_nodes,
 )
-from app.models.node import get_by_id as get_node
+from app.db.node import get_by_id as get_node
 
 
 def create_outbound(name, out_type, config_json=None):

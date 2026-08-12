@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.models.inbound import list_all, get_by_id, create, update, delete
+from app.db.inbound import list_all, get_by_id, create, update, delete
 from . import auth_required
 
 api_inbounds = Blueprint('api_inbounds', __name__, url_prefix='/api/inbounds')

@@ -13,7 +13,7 @@ from app.process.manager import get_version, stop_all_processes, count_processes
 from app.services.service_manager import (
     start_service, stop_health_check_daemon, restart_health_check_daemon,
 )
-from app.models.service import get_auto_start_services, list_all, update_status
+from app.db.service import get_auto_start_services, list_all, update_status
 from app.logger import log
 from . import auth_required
 

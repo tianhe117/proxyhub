@@ -2,13 +2,13 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.models.outbound import list_all, get_by_id
+from app.db.outbound import list_all, get_by_id
 from app.services.outbound_service import (
     create_outbound, update_outbound, delete_outbound,
     remove_node_from_pool, reorder_pool, sync_pool,
 )
 from app.services.service_manager import switch_node
-from app.models.outbound import get_pool_nodes
+from app.db.outbound import get_pool_nodes
 from . import auth_required
 
 api_outbounds = Blueprint('api_outbounds', __name__, url_prefix='/api/outbounds')
