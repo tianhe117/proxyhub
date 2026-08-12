@@ -1,15 +1,46 @@
 """Node API routes (§4.6)."""
 
+import threading
+import uuid
+from datetime import datetime
+
 from flask import Blueprint, request, jsonify
 
-from app.db.node import list_all, list_grouped, list_by_sub, get_by_id
+from app.db.node import list_all, list_grouped, list_by_sub, get_by_id, update_latency
 from app.services.node_service import (
     create_custom_node, update_node, delete_node, clear_all_nodes,
 )
-from app.checker import check_nodes, get_check_status
+from app.checker import check_node
 from . import auth_required
 
 api_nodes = Blueprint('api_nodes', __name__, url_prefix='/api/nodes')
+
+
+# ---------------------------------------------------------------------------
+# Health-check task state (in-memory, async wrapper over check_node)
+# ---------------------------------------------------------------------------
+
+_check_lock = threading.Lock()
+_check_tasks = {}
+
+
+def _run_check_task(task_id, nodes):
+    """Run check_node in the background, then persist latency to DB."""
+    try:
+        results = check_node(nodes)
+        for nd, res in zip(nodes, results):
+            _check_tasks[task_id]['nodes'][nd['id']] = {
+                'tcp': {'success': res.tcp_latency_ms >= 0,
+                        'latency_ms': res.tcp_latency_ms},
+                'url': {'success': res.success,
+                        'latency_ms': res.url_latency_ms},
+            }
+            _check_tasks[task_id]['checked'] += 1
+            update_latency(nd['id'], res.tcp_latency_ms,
+                           res.url_latency_ms, datetime.now().isoformat())
+    finally:
+        _check_tasks[task_id]['running'] = False
+        _check_lock.release()
 
 
 @api_nodes.route('/', methods=['GET'])
@@ -77,12 +108,34 @@ def clear_nodes_handler():
 def check_nodes_handler():
     data = request.get_json(force=True) or {}
     node_ids = data.get('node_ids')
-    ctype = data.get('check_type', 'both')
-    result = check_nodes(node_ids, ctype)
-    return jsonify(result), 200 if result.get('success') else 409
+
+    if not _check_lock.acquire(blocking=False):
+        return jsonify({'success': False, 'message': 'A check task is already running'}), 409
+
+    if node_ids:
+        nodes = [n for n in (get_by_id(nid) for nid in node_ids) if n]
+    else:
+        nodes = list_all()
+
+    if not nodes:
+        _check_lock.release()
+        return jsonify({'success': False, 'message': 'No nodes to check'}), 409
+
+    task_id = str(uuid.uuid4())[:8]
+    _check_tasks[task_id] = {
+        'running': True,
+        'total': len(nodes),
+        'checked': 0,
+        'nodes': {n['id']: {'tcp': None, 'url': None} for n in nodes},
+    }
+
+    threading.Thread(target=_run_check_task, args=(task_id, nodes), daemon=True).start()
+
+    return jsonify({'success': True, 'task_id': task_id,
+                    'message': f'Check started for {len(nodes)} nodes'})
 
 
 @api_nodes.route('/check/<task_id>/status', methods=['GET'])
 @auth_required
 def check_status_handler(task_id):
-    return jsonify(get_check_status(task_id))
+    return jsonify(_check_tasks.get(task_id, {'running': False, 'message': 'Task not found'}))

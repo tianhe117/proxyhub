@@ -24,8 +24,7 @@ from app.process.manager import (
 from app.services.config_service import (
     generate_service_config, save_service_config, get_outbound_node,
 )
-from app.checker import generate_temp_config, find_temp_port
-from app.checker.script import tcp_ping, url_test
+from app.checker import check_node
 from app.logger import log
 
 
@@ -72,56 +71,17 @@ def _get_failover_state(outbound_id):
     return _failover_state[outbound_id]
 
 
-def _check_node_health(node, tag):
-    """Check a single node's health via TCP ping + URL test.
+def _check_node_health(node):
+    """Check a single node's health via TCP + URL test.
 
     Returns:
         dict: {healthy: bool, tcp_latency: int, curl_latency: int}
     """
-    tcp_timeout = int(get_setting('tcp_timeout') or 3)
-    curl_timeout = int(get_setting('curl_timeout') or 5)
-    test_url = get_setting('test_url') or DEFAULT_SETTINGS['test_url']
-
-    # TCP ping
-    tcp_res = tcp_ping(node['address'], node['port'], tcp_timeout, tag)
-    tcp_ok = tcp_res.get('success', False)
-    tcp_lat = tcp_res.get('latency_ms', -1)
-
-    curl_lat = -1
-    if tcp_ok:
-        # URL test — generate temp config, test, cleanup
-        config_path = None
-        try:
-            local_port = find_temp_port()
-            config_path = generate_temp_config(node, local_port)
-            bin_type = node['bin_type']
-            bin_key = f'bin_path_{bin_type if bin_type != "sing-box" else "singbox"}'
-            bin_path = get_setting(bin_key) or ''
-            if bin_path and not os.path.isabs(bin_path):
-                bin_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(
-                        os.path.abspath(__file__)))), bin_path
-                )
-
-            url_res = url_test(config_path, bin_type, bin_path,
-                               local_port, test_url, curl_timeout, tag)
-            curl_ok = url_res.get('success', False)
-            curl_lat = url_res.get('latency_ms', -1) if curl_ok else -1
-        except Exception:
-            curl_ok = False
-        finally:
-            if config_path and os.path.exists(config_path):
-                try:
-                    os.remove(config_path)
-                except Exception:
-                    pass
-    else:
-        curl_ok = False
-
+    res = check_node([node])[0]
     return {
-        'healthy': tcp_ok and curl_ok,
-        'tcp_latency': tcp_lat,
-        'curl_latency': curl_lat,
+        'healthy': res.success,
+        'tcp_latency': res.tcp_latency_ms,
+        'curl_latency': res.url_latency_ms,
     }
 
 
@@ -194,7 +154,6 @@ def _do_failover(outbound_id, pool, current_node_id):
     """
     outbound = get_outbound(outbound_id)
     ob_name = outbound['name'] if outbound else f'#{outbound_id}'
-    tag = f'failover_{outbound_id}_{int(time.time())}'
     fallback_node_id = pool[0]['node_id']
 
     if current_node_id != fallback_node_id:
@@ -213,7 +172,7 @@ def _do_failover(outbound_id, pool, current_node_id):
             node = get_node(nid)
             if not node:
                 continue
-            health = _check_node_health(node, tag)
+            health = _check_node_health(node)
             update_latency(nid, health['tcp_latency'], health['curl_latency'],
                            datetime.now().isoformat())
             if health['healthy']:
@@ -246,7 +205,7 @@ def _do_failover(outbound_id, pool, current_node_id):
             node = get_node(nid)
             if not node:
                 continue
-            health = _check_node_health(node, tag)
+            health = _check_node_health(node)
             update_latency(nid, health['tcp_latency'], health['curl_latency'],
                            datetime.now().isoformat())
             if health['healthy']:
@@ -581,8 +540,7 @@ def start_health_check_daemon(app):
                             state['fail_count'] = 0
                             current_node = get_node(state['current_node_id'])
 
-                        tag = f'failover_{outbound_id}_{int(now)}'
-                        health = _check_node_health(current_node, tag)
+                        health = _check_node_health(current_node)
 
                         # Update DB latency for current node
                         update_latency(
@@ -628,7 +586,7 @@ def start_health_check_daemon(app):
                                     n = get_node(entry['node_id'])
                                     if not n:
                                         continue
-                                    h = _check_node_health(n, tag)
+                                    h = _check_node_health(n)
                                     update_latency(
                                         entry['node_id'],
                                         h['tcp_latency'], h['curl_latency'],
