@@ -1,4 +1,20 @@
-"""Node CRUD operations."""
+"""Node CRUD operations.
+
+Node dict structure (sqlite3.Row → dict):
+    id          int       primary key
+    sub_id      int       subscription id, 0 = custom
+    name        str       display name
+    protocol    str       vless / vmess / trojan / ss / hysteria2 / tuic / direct
+    address     str       remote server address
+    port         int        remote server port
+    config_json str       JSON string, protocol-specific config
+    bin_type    str       xray / sslocal / sing-box
+
+Deprecated fields (still in DB but being phased out):
+    tcp_latency   int     TCP handshake latency in ms
+    curl_latency  int     URL test latency in ms
+    last_check_at str     ISO timestamp of last health check
+"""
 
 import json
 from .database import get_db
