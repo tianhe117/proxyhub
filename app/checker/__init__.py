@@ -41,7 +41,7 @@ def _check_url_one(node: dict, port: int) -> CheckResult:
         return CheckResult(success=False, url_latency_ms=-1, tcp_latency_ms=-1,
                            http_code='0', error=f'config generation failed: {e}')
 
-    fd, path = tempfile.mkstemp(prefix='ph_check_', suffix='.json', dir='/tmp')
+    fd, path = tempfile.mkstemp(prefix=f'ph_check_{port}_', suffix='.json', dir='/tmp')
     with os.fdopen(fd, 'w') as f:
         json.dump(config, f)
     try:
