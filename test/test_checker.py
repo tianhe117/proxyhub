@@ -121,7 +121,7 @@ print('=' * 60)
 print('4. check_node')
 print('=' * 60)
 
-nodes = [US, V240, V227]
+nodes = [US, V240, V227,US, V240, V227,US, V240, V227,US, V240, V227]
 
 t0 = time.time()
 results = check_node(nodes)
