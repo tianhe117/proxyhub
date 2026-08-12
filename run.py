@@ -1,7 +1,7 @@
 """ProxyHub application entry point."""
 
 from app.routes import create_app
-from app.models.setting import get_setting
+from app.settings import get_setting
 
 if __name__ == '__main__':
     app = create_app()

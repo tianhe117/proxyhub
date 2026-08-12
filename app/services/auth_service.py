@@ -2,7 +2,7 @@
 
 from flask import session
 
-from app.models.setting import get_setting
+from app.settings import get_setting
 
 
 def is_authenticated():

@@ -50,7 +50,7 @@ def _check_url_one(node: dict, port: int) -> CheckResult:
 
 ```
 checker.py   ← stdlib only (socket, subprocess, json, time, ...)
-__init__.py  ← checker.py + engine + models.setting + settings
+__init__.py  ← checker.py + engine + settings
 ```
 
 `checker.py` 是最底层，不含任何项目内部依赖。`__init__.py` 在它之上做 settings 读取和 config 生成。

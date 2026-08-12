@@ -10,8 +10,7 @@ import signal
 import subprocess
 import time
 
-from app.settings import BIN_REGISTRY, get_bin_dir
-from app.models.setting import get_setting
+from app.settings import BIN_REGISTRY, get_bin_dir, get_setting
 from app.logger import log
 
 

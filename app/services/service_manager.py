@@ -15,8 +15,7 @@ from app.models.service import (
 )
 from app.models.outbound import get_by_id as get_outbound, get_pool_nodes
 from app.models.node import get_by_id as get_node, update_latency
-from app.models.setting import get_setting
-from app.settings import DEFAULT_SETTINGS
+from app.settings import DEFAULT_SETTINGS, get_setting
 from app.process.manager import (
     start_process, stop_service as stop_service_processes,
     stop_all_processes as stop_all_bin_processes,

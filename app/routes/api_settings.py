@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.models.setting import get_all_settings, update_settings, reset_to_defaults
+from app.settings import get_all_settings, update_settings, reset_to_defaults
 from . import auth_required
 
 api_settings = Blueprint('api_settings', __name__, url_prefix='/api/settings')

@@ -9,8 +9,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.engine import build_outbound_config
-from app.models.setting import get_setting
-from app.settings import DEFAULT_SETTINGS, get_bin_dir
+from app.settings import DEFAULT_SETTINGS, get_bin_dir, get_setting
 from app.checker.checker import CheckResult, allocate_ports, tcp_check, url_check
 
 __all__ = ['check_node', 'CheckResult']

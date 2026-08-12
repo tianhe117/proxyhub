@@ -66,7 +66,7 @@ def create_app():
         init_db()
 
         # Fixed secret key (persists across restarts)
-        from app.models.setting import get_setting, set_setting
+        from app.settings import get_setting, set_setting
         secret = get_setting('secret_key')
         if not secret:
             import secrets
