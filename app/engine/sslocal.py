@@ -3,15 +3,14 @@
 Produces the flat JSON format expected by shadowsocks-rust's sslocal binary.
 """
 
-import json
 
-
-def generate_sslocal_config(node, local_port):
+def generate_sslocal_config(node, local_port, cfg):
     """Generate sslocal config JSON.
 
     Args:
-        node: dict/row with address, port, config_json
+        node: dict with address, port, protocol
         local_port: int — local SOCKS5 listen port
+        cfg:   parsed config_json dict
 
     Returns:
         JSON-serialisable dict
@@ -19,17 +18,11 @@ def generate_sslocal_config(node, local_port):
     Raises:
         ValueError: node.protocol is not 'ss'
     """
-    protocol = node['protocol'] 
+    protocol = node['protocol']
     if protocol != 'ss':
         raise ValueError(f'sslocal only supports ss protocol, got: {protocol}')
 
-    cfg = node['config_json'] 
-    if isinstance(cfg, str):
-        cfg = json.loads(cfg)
-    elif cfg is None:
-        cfg = {}
-
-    address = node['address'] 
+    address = node['address']
     port = int(node['port'])
 
     config = {

@@ -7,19 +7,19 @@ import json
 # Outbound config (SOCKS5 in → protocol out to remote)
 # ---------------------------------------------------------------------------
 
-def build_xray_outbound(node, local_port):
+def build_xray_outbound(node, local_port, cfg):
     """Build a complete Xray config with SOCKS5 inbound + remote outbound.
 
     Args:
-        node: dict/row with protocol, address, port, config_json
+        node: dict with protocol, address, port
         local_port: int — SOCKS5 listen port
+        cfg:   parsed config_json dict
 
     Returns:
         JSON-serialisable dict
     """
-    cfg = _get_config(node)
-    protocol = node['protocol'] 
-    address = node['address'] 
+    protocol = node['protocol']
+    address = node['address']
     port = int(node['port'])
 
     outbound = _build_outbound(protocol, address, port, cfg)
@@ -37,14 +37,6 @@ def build_xray_outbound(node, local_port):
         }],
         'outbounds': [outbound],
     }
-
-
-def _get_config(node):
-    """Normalise node config_json to a dict."""
-    cfg = node['config_json'] 
-    if isinstance(cfg, str):
-        return json.loads(cfg)
-    return cfg or {}
 
 
 def _build_outbound(protocol, address, port, cfg):

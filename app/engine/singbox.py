@@ -8,20 +8,19 @@ Key differences from Xray:
 - 'tls.insecure' instead of 'tlsSettings.allowInsecure'
 """
 
-import json
 
-
-def generate_singbox_config(node, local_port):
+def generate_singbox_config(node, local_port, cfg):
     """Generate sing-box config JSON.
 
     Args:
-        node: dict/row with protocol, address, port, config_json
+        node: dict with protocol, address, port
         local_port: int — local SOCKS5 listen port
+        cfg:   parsed config_json dict
 
     Returns:
         JSON-serialisable dict
     """
-    protocol = node['protocol'] 
+    protocol = node['protocol']
     # Protocol aliases: hysteria2 / hy2 / hysteria all map to hysteria2
     if protocol in ('hysteria2', 'hy2', 'hysteria'):
         sing_type = 'hysteria2'
@@ -30,14 +29,8 @@ def generate_singbox_config(node, local_port):
     else:
         raise ValueError(f'sing-box does not support protocol: {protocol}')
 
-    address = node['address'] 
+    address = node['address']
     port = int(node['port'])
-
-    cfg = node['config_json'] 
-    if isinstance(cfg, str):
-        cfg = json.loads(cfg)
-    elif cfg is None:
-        cfg = {}
 
     outbound = _build_outbound(sing_type, address, port, cfg)
 

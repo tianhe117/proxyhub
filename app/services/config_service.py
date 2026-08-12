@@ -122,7 +122,7 @@ def generate_service_config(service_id):
     xray_in = build_xray_inbound(inbound, socks_port)
 
     # Build outbound config
-    outbound_config, _filename = build_outbound_config(node, socks_port)
+    outbound_config = build_outbound_config(node, socks_port)
     bin_type = node['bin_type']
 
     service_name = svc['name']

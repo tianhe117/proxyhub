@@ -30,7 +30,7 @@ def _check_url_one(node: dict, port: int) -> CheckResult:
     tag = f'ph_{node["id"]}'
 
     try:
-        config, _ = build_outbound_config(node, port)
+        config = build_outbound_config(node, port)
     except Exception as e:
         return CheckResult(success=False, url_latency_ms=-1, tcp_latency_ms=-1,
                            http_code='0', error=f'config generation failed: {e}')

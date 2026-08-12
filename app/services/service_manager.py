@@ -320,7 +320,7 @@ def _start_service_with_node(service_id, node_id):
 
     socks_port = find_available_port()
     xray_in = build_xray_inbound(inbound, socks_port)
-    outbound_config, _ = build_outbound_config(node, socks_port)
+    outbound_config = build_outbound_config(node, socks_port)
     bin_type = node['bin_type']
 
     xray_in_path, out_path = save_service_config(
