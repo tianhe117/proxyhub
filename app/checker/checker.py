@@ -13,8 +13,9 @@ import subprocess
 import time
 from dataclasses import dataclass
 
-_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SCRIPTS_DIR = os.path.join(_PROJECT_DIR, 'scripts')
+from app.settings import BASE_DIR, SOCKS_PORT_START, SOCKS_PORT_END
+
+_SCRIPTS_DIR = os.path.join(BASE_DIR, 'scripts')
 
 
 # ============================================================================
@@ -34,35 +35,36 @@ class CheckResult:
 # port allocation
 # ============================================================================
 
-_PORT_MIN = 50000
-_PORT_MAX = 60000
-_cursor   = _PORT_MIN
+_cursor = SOCKS_PORT_START
 
 
 def allocate_ports(n: int) -> list[int]:
     """Return *n* available ports starting from the last-used cursor.
 
-    The cursor wraps to _PORT_MIN when it reaches _PORT_MAX so
+    The cursor wraps to SOCKS_PORT_START when it reaches SOCKS_PORT_END so
     consecutive calls don't reuse recently-freed ports.
     """
     global _cursor
 
     ports = []
-    for port in range(_cursor, _PORT_MAX):
+    for port in range(_cursor, SOCKS_PORT_END):
         if len(ports) >= n: break
         if _try_port(port): ports.append(port)
 
     if len(ports) < n:
-        for port in range(_PORT_MIN, _cursor):
+        for port in range(SOCKS_PORT_START, _cursor):
             if len(ports) >= n: break
             if _try_port(port): ports.append(port)
 
     if len(ports) < n:
-        raise RuntimeError(f'Need {n} ports in [{_PORT_MIN},{_PORT_MAX}), only {len(ports)} available')
+        raise RuntimeError(
+            f'Need {n} ports in [{SOCKS_PORT_START},{SOCKS_PORT_END}), '
+            f'only {len(ports)} available'
+        )
 
     _cursor = ports[-1] + 1
-    if _cursor >= _PORT_MAX:
-        _cursor = _PORT_MIN
+    if _cursor >= SOCKS_PORT_END:
+        _cursor = SOCKS_PORT_START
     return ports
 
 

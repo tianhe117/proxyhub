@@ -10,13 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.engine import build_outbound_config
 from app.models.setting import get_setting
-from app.settings import DEFAULT_SETTINGS
-from app.checker.checker import (
-    CheckResult, allocate_ports, tcp_check, url_check,
-)
-
-_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SCRIPTS_DIR = os.path.join(_PROJECT_DIR, 'scripts')
+from app.settings import DEFAULT_SETTINGS, get_bin_dir
+from app.checker.checker import CheckResult, allocate_ports, tcp_check, url_check
 
 __all__ = ['check_node', 'CheckResult']
 
@@ -45,7 +40,7 @@ def _check_url_one(node: dict, port: int) -> CheckResult:
     with os.fdopen(fd, 'w') as f:
         json.dump(config, f)
     try:
-        bin_path = os.path.join(_SCRIPTS_DIR, '..', 'bin', node['bin_type'])
+        bin_path = os.path.join(get_bin_dir(), node['bin_type'])
         return url_check(path, node['bin_type'], bin_path, port,
                          test_url, curl_to, tag)
     finally:
