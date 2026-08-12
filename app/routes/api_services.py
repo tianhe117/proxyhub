@@ -9,16 +9,10 @@ from app.services.service_manager import (
     start_service, stop_service, restart_service,
     get_current_node,
 )
-from app.process.manager import is_service_running, get_all_processes
+from app.process.manager import is_service_running, get_all_processes, has_in_and_out
 from . import auth_required
 
 api_services = Blueprint('api_services', __name__, url_prefix='/api/services')
-
-
-def _has_in_and_out(procs):
-    """Check a service process dict has both in and out."""
-    keys = procs.keys() if isinstance(procs, dict) else set()
-    return any('_in' in k for k in keys) and any('_out' in k for k in keys)
 
 
 @api_services.route('/', methods=['GET'])
@@ -30,7 +24,7 @@ def list_services():
     for s in list_all():
         data = dict(s)
         svc_procs = all_procs.get(data['name'], {})
-        data['status'] = 'running' if _has_in_and_out(svc_procs) else 'stopped'
+        data['status'] = 'running' if has_in_and_out(svc_procs) else 'stopped'
         result.append(data)
     return jsonify(result)
 

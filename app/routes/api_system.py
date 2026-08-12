@@ -32,8 +32,7 @@ def system_info():
 
     bins = {}
     for name in BIN_REGISTRY:
-        display_name = name if name != 'sing-box' else 'sing-box'
-        bins[name] = get_version(display_name)
+        bins[name] = get_version(name)
 
     return jsonify({
         'platform': platform.platform(),

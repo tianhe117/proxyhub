@@ -15,7 +15,7 @@ def get_bins_status():
     result = {}
     for name in BIN_REGISTRY:
         result[name] = {
-            'version': get_version(name if name != 'sing-box' else name),
+            'version': get_version(name),
             'exe': BIN_REGISTRY[name]['exe'],
         }
     return jsonify(result)

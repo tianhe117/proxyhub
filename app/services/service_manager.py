@@ -19,7 +19,7 @@ from app.settings import DEFAULT_SETTINGS, get_setting
 from app.process.manager import (
     start_process, stop_service as stop_service_processes,
     stop_all_processes as stop_all_bin_processes,
-    get_service_processes
+    get_service_processes, has_in_and_out,
 )
 from app.services.config_service import (
     generate_service_config, save_service_config, get_outbound_node,
@@ -535,9 +535,7 @@ def start_health_check_daemon(app):
                         # At least one service on this outbound must be running
                         service_name = svc['name']
                         procs = get_service_processes(service_name)
-                        has_in = any('_in' in k for k in procs)
-                        has_out = any('_out' in k for k in procs)
-                        if not (procs and has_in and has_out):
+                        if not (procs and has_in_and_out(procs)):
                             continue
 
                         checked_outbound_ids.add(outbound_id)

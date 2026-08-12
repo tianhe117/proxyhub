@@ -10,7 +10,7 @@ import signal
 import subprocess
 import time
 
-from app.settings import BIN_REGISTRY, get_bin_dir, get_setting
+from app.settings import BIN_REGISTRY, BASE_DIR, get_bin_dir, get_setting
 from app.logger import log
 
 
@@ -44,8 +44,7 @@ def _get_bin_path(bin_type):
     key = f'bin_path_{bin_type if bin_type != "sing-box" else "singbox"}'
     path = get_setting(key) or ''
     if path and not os.path.isabs(path):
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))), path)
+        path = os.path.join(BASE_DIR, path)
     return path
 
 
@@ -189,16 +188,19 @@ def get_all_processes():
     return result
 
 
+def has_in_and_out(procs):
+    """Check a service process dict has both an 'in' and an 'out' role."""
+    keys = procs.keys() if isinstance(procs, dict) else set()
+    return any('_in' in k for k in keys) and any('_out' in k for k in keys)
+
+
 def is_service_running(service_name):
     """Check if a service is fully running (both in and out processes alive).
 
     Returns:
         bool: True if service has at least one 'in' and one 'out' process running.
     """
-    procs = get_service_processes(service_name)
-    has_in = any('_in' in k for k in procs)
-    has_out = any('_out' in k for k in procs)
-    return has_in and has_out
+    return has_in_and_out(get_service_processes(service_name))
 
 
 def count_processes():

@@ -15,7 +15,7 @@ from app.db.outbound import get_by_id as get_outbound, get_pool_nodes
 from app.db.node import get_by_id as get_node
 from app.engine import build_outbound_config, get_exe
 from app.engine.xray import build_xray_inbound
-from app.settings import SOCKS_PORT_START, SOCKS_PORT_END
+from app.settings import SOCKS_PORT_START, SOCKS_PORT_END, BASE_DIR
 from app.logger import log
 
 
@@ -126,10 +126,7 @@ def generate_service_config(service_id):
     bin_type = node['bin_type']
 
     service_name = svc['name']
-    config_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        'config', service_name
-    )
+    config_dir = os.path.join(BASE_DIR, 'config', service_name)
 
     return {
         'success':        True,
@@ -151,10 +148,7 @@ def save_service_config(service_name, xray_in, outbound_bin, outbound_config):
         config/<service_name>/xray_in.json
         config/<service_name>/<bin_type>_out.json
     """
-    config_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        'config', service_name
-    )
+    config_dir = os.path.join(BASE_DIR, 'config', service_name)
     os.makedirs(config_dir, exist_ok=True)
 
     # Xray inbound config
