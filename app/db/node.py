@@ -1,64 +1,41 @@
 """Node CRUD operations."""
 
 import json
-from dataclasses import dataclass, asdict
 from .database import get_db
 
 
-@dataclass
-class Node:
-    id: int
-    name: str
-    address: str
-    port: int
-    protocol: str
-    bin_type: str
-    config_json: str = '{}'
-    sub_id: int = 0
-
-    def __getitem__(self, key):
-        return getattr(self, key)
-
-    def get(self, key, default=None):
-        return getattr(self, key, default)
-
-    def to_dict(self):
-        return asdict(self)
-
-
-def _row_to_node(row) -> Node:
-    return Node(
-        id=row['id'],
-        name=row['name'],
-        address=row['address'],
-        port=row['port'],
-        protocol=row['protocol'],
-        bin_type=row['bin_type'],
-        config_json=row['config_json'],
-        sub_id=row['sub_id'],
-    )
-
-
 def list_all():
+    """Return every node ordered by sub_id, id."""
     db = get_db()
-    return [_row_to_node(r) for r in
-            db.execute('SELECT * FROM nodes ORDER BY sub_id, id').fetchall()]
+    return db.execute('SELECT * FROM nodes ORDER BY sub_id, id').fetchall()
 
 
 def list_by_sub(sub_id):
+    """Return nodes for a specific subscription (or custom nodes when sub_id=0)."""
     db = get_db()
-    return [_row_to_node(r) for r in
-            db.execute('SELECT * FROM nodes WHERE sub_id = ? ORDER BY id', (sub_id,)).fetchall()]
+    return db.execute(
+        'SELECT * FROM nodes WHERE sub_id = ? ORDER BY id', (sub_id,)
+    ).fetchall()
 
 
 def list_grouped():
+    """Return nodes grouped by subscription.
+
+    Returns a list of dicts:
+        {sub: subscription_row | None, nodes: [node_row, ...], count: int}
+    Custom nodes (sub_id=0) appear as sub=None.
+    """
     from .subscription import list_all as list_all_subs
+    db = get_db()
 
     groups = []
+
+    # Custom nodes first (sub_id = 0)
     custom_nodes = list_by_sub(0)
     if custom_nodes:
         groups.append({'sub': None, 'nodes': custom_nodes, 'count': len(custom_nodes)})
 
+    # Then each subscription
     for sub in list_all_subs():
         nodes = list_by_sub(sub['id'])
         groups.append({'sub': sub, 'nodes': nodes, 'count': len(nodes)})
@@ -67,15 +44,16 @@ def list_grouped():
 
 
 def get_by_id(node_id):
+    """Return a node by id, or None."""
     db = get_db()
-    row = db.execute('SELECT * FROM nodes WHERE id = ?', (node_id,)).fetchone()
-    return _row_to_node(row) if row else None
+    return db.execute('SELECT * FROM nodes WHERE id = ?', (node_id,)).fetchone()
 
 
 def create(sub_id, name, protocol, address, port, config_json, bin_type='xray'):
+    """Insert a node and return its id."""
+    db = get_db()
     if isinstance(config_json, dict):
         config_json = json.dumps(config_json)
-    db = get_db()
     cur = db.execute(
         '''INSERT INTO nodes
            (sub_id, name, protocol, address, port, config_json, bin_type)
@@ -87,7 +65,9 @@ def create(sub_id, name, protocol, address, port, config_json, bin_type='xray'):
 
 
 def update(node_id, **fields):
-    allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}
+    """Update mutable fields on a node."""
+    allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type',
+               'tcp_latency', 'curl_latency', 'last_check_at'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if 'config_json' in updates and isinstance(updates['config_json'], dict):
         updates['config_json'] = json.dumps(updates['config_json'])
@@ -101,18 +81,21 @@ def update(node_id, **fields):
 
 
 def delete(node_id):
+    """Delete a single node."""
     db = get_db()
     db.execute('DELETE FROM nodes WHERE id = ?', (node_id,))
     db.commit()
 
 
 def delete_all():
+    """Delete every node from the database."""
     db = get_db()
     db.execute('DELETE FROM nodes')
     db.commit()
 
 
 def update_latency(node_id, tcp_latency, curl_latency, check_time):
+    """Update latency fields and last_check_at for a node."""
     db = get_db()
     db.execute(
         'UPDATE nodes SET tcp_latency=?, curl_latency=?, last_check_at=? WHERE id=?',
