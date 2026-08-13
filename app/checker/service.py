@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.engine import build_outbound_config
 from app.settings import DEFAULT_SETTINGS, get_bin_dir, get_setting
 from app.checker.checker import tcp_check, url_check
-from app.checker.model import CheckResult
+from app.utils import CheckResult
 from app.utils import allocate_ports
 
 

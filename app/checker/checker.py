@@ -11,7 +11,7 @@ import subprocess
 import time
 
 from app.settings import BASE_DIR
-from app.checker.model import CheckResult
+from app.utils import CheckResult
 
 _SCRIPTS_DIR = os.path.join(BASE_DIR, 'scripts')
 

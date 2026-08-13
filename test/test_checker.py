@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.checker import check_node
 from app.checker.checker import tcp_check, url_check
-from app.checker.model import CheckResult
+from app.utils import CheckResult
 from app.checker.service import _check_url_one
 from app.engine import build_outbound_config
 from app.db.node import get_by_id

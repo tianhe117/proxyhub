@@ -1,4 +1,4 @@
-"""CheckResult — result type for health checks."""
+"""Shared data structures (公用结构体)."""
 
 from dataclasses import dataclass
 

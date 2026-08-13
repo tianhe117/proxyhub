@@ -9,6 +9,7 @@ from .validators import (
 )
 from .port import allocate_ports, is_port_available
 from .logger import log, web_logger
+from .schemas import CheckResult
 
 __all__ = [
     'sha256',
@@ -22,4 +23,5 @@ __all__ = [
     'is_port_available',
     'log',
     'web_logger',
+    'CheckResult',
 ]
