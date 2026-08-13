@@ -11,7 +11,7 @@ from app.db.service import get_by_id as get_service
 from app.db.inbound import get_by_id as get_inbound
 from app.db.outbound import get_by_id as get_outbound, get_pool_nodes
 from app.db.node import get_by_id as get_node
-from app.engine import build_outbound_config, get_exe
+from app.engine import build_outbound_config
 from app.engine.xray import build_xray_inbound
 from app.settings import BASE_DIR
 from app.utils import is_port_available, allocate_ports, log
