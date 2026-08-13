@@ -3,7 +3,7 @@
 import json
 
 from app.db.node import (
-    create, update, delete, get_by_id, list_all as list_nodes,
+    create, update, delete, delete_all, get_by_id, list_all as list_nodes,
     list_grouped, list_by_sub,
 )
 from app.utils.validators import is_valid_protocol, is_valid_port
@@ -61,6 +61,5 @@ def delete_node(node_id):
 
 def clear_all_nodes():
     """Delete all nodes."""
-    from app.db.node import delete_all
     delete_all()
     return {'success': True, 'message': 'All nodes cleared'}
