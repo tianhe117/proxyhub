@@ -1,15 +1,11 @@
 """Protocol, port, and bin_type validators."""
 
-from app.settings import PROTOCOL_BIN_MAP, VALID_INBOUND_PROTOCOLS
-
-
-VALID_PROTOCOLS = frozenset(list(PROTOCOL_BIN_MAP.keys()) + ['ss'])
-VALID_BIN_TYPES_SET = frozenset(['xray', 'sslocal', 'sing-box'])
+from app.settings import PROTOCOL_BIN_MAP, VALID_INBOUND_PROTOCOLS, BIN_REGISTRY
 
 
 def is_valid_protocol(protocol):
     """Return True if *protocol* is a recognised proxy protocol string."""
-    return protocol in VALID_PROTOCOLS
+    return protocol in PROTOCOL_BIN_MAP
 
 
 def is_valid_inbound_protocol(protocol):
@@ -27,5 +23,5 @@ def is_valid_port(port):
 
 
 def is_valid_bin_type(bin_type):
-    """Return True if *bin_type* is one of the three supported engines."""
-    return bin_type in VALID_BIN_TYPES_SET
+    """Return True if *bin_type* is one of the supported engines."""
+    return bin_type in BIN_REGISTRY

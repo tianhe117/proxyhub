@@ -289,8 +289,8 @@ def _parse_ss_link(line):
             method, password, address, port = match.groups()
             port = int(port)
 
-        # Determine bin_type
-        bin_type = 'sslocal' if plugin and 'obfs' in plugin else 'xray'
+        # Determine bin_type — ss always uses sslocal
+        bin_type = 'sslocal'
 
         config = {
             'method':   method,
@@ -389,7 +389,6 @@ def _parse_clash_ss(name, server, port, p):
         'method':   p.get('cipher', 'aes-256-gcm'),
         'password': p.get('password', ''),
     }
-    bin_type = 'xray'
     plugin = p.get('plugin', '')
     if plugin == 'obfs':
         popts = p.get('plugin-opts', {})
@@ -399,11 +398,10 @@ def _parse_clash_ss(name, server, port, p):
         config['plugin_opts'] = f'obfs={mode}'
         if host:
             config['plugin_opts'] += f';obfs-host={host}'
-        bin_type = 'sslocal'
     return {
         'name': name, 'protocol': 'ss',
         'address': server, 'port': port,
-        'config_json': json.dumps(config), 'bin_type': bin_type,
+        'config_json': json.dumps(config), 'bin_type': 'sslocal',
     }
 
 
@@ -581,8 +579,6 @@ def _apply_filters(nodes, filter_keywords, exclude_keywords):
 # ---------------------------------------------------------------------------
 
 def assign_bin_type(protocol, plugin=''):
-    """Determine bin_type from protocol and optional plugin info."""
-    if protocol == 'ss' and plugin and 'obfs' in plugin:
-        return 'sslocal'
+    """Determine bin_type from protocol."""
     from app.settings import PROTOCOL_BIN_MAP
     return PROTOCOL_BIN_MAP.get(protocol, 'xray')

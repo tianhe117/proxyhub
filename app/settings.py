@@ -81,6 +81,7 @@ PROTOCOL_BIN_MAP = {
     'vmess':     'xray',
     'vless':     'xray',
     'trojan':    'xray',
+    'ss':        'sslocal',
     'ssr':       'xray',
     'anytls':    'xray',
     'hysteria':  'sing-box',
@@ -92,19 +93,6 @@ PROTOCOL_BIN_MAP = {
 # Valid inbound protocols
 # ---------------------------------------------------------------------------
 VALID_INBOUND_PROTOCOLS = ('http', 'socks', 'ss', 'vmess')
-
-# ---------------------------------------------------------------------------
-# Valid bin_types per protocol (for frontend dropdown filtering)
-# ---------------------------------------------------------------------------
-VALID_BIN_TYPES = {
-    'vmess':     ['xray'],
-    'vless':     ['xray'],
-    'trojan':    ['xray'],
-    'ss':        ['xray', 'sslocal'],
-    'ssr':       ['xray'],
-    'hysteria2': ['sing-box'],
-    'tuic':      ['sing-box'],
-}
 
 # ---------------------------------------------------------------------------
 # SOCKS5 intermediate port range
