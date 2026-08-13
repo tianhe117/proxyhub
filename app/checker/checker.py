@@ -1,6 +1,5 @@
 """Low-level checker primitives — pure stdlib, zero project dependencies.
 
-CheckResult
 tcp_check(address, port, timeout=3)         → CheckResult
 url_check(config, type, bin, port, url, timeout, tag) → CheckResult
 """
@@ -10,24 +9,11 @@ import os
 import socket
 import subprocess
 import time
-from dataclasses import dataclass
 
 from app.settings import BASE_DIR
+from app.checker.model import CheckResult
 
 _SCRIPTS_DIR = os.path.join(BASE_DIR, 'scripts')
-
-
-# ============================================================================
-# CheckResult
-# ============================================================================
-
-@dataclass
-class CheckResult:
-    success: bool
-    tcp_latency_ms: int       # TCP handshake latency (-1 if failed)
-    url_latency_ms: int       # URL latency (-1 if not done)
-    http_code: str            # URL HTTP code ("0" if not done)
-    error: str
 
 
 # ============================================================================
