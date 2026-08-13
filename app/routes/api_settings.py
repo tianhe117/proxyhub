@@ -3,6 +3,7 @@
 from flask import Blueprint, request, jsonify
 
 from app.settings import get_all_settings, update_settings, reset_to_defaults
+from app.utils import sha256
 from . import auth_required
 
 api_settings = Blueprint('api_settings', __name__, url_prefix='/api/settings')
@@ -22,9 +23,10 @@ def get_settings():
 @auth_required
 def update_settings_handler():
     data = request.get_json(force=True) or {}
-    # Don't update password if masked value sent
-    if data.get('web_password') == '******':
-        data.pop('web_password', None)
+    # Hash the password if a non-empty plaintext password is provided
+    # (empty string = clear password = disable auth)
+    if 'web_password' in data and data['web_password']:
+        data['web_password'] = sha256(data['web_password'])
     update_settings(data)
     return jsonify({'success': True})
 

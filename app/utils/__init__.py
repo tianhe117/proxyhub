@@ -9,6 +9,7 @@ from .validators import (
     is_valid_bin_type,
 )
 from .port import allocate_ports, is_port_available
+from .crypto import sha256
 from .logger import log, web_logger
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     'is_valid_bin_type',
     'allocate_ports',
     'is_port_available',
+    'sha256',
     'log',
     'web_logger',
 ]

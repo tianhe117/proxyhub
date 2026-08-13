@@ -3,6 +3,7 @@
 from flask import session
 
 from app.settings import get_setting
+from app.utils import sha256
 
 
 def is_authenticated():
@@ -22,7 +23,7 @@ def login(username, password):
     cfg_user = get_setting('web_username') or 'admin'
     cfg_pass = get_setting('web_password') or ''
 
-    if username == cfg_user and password == cfg_pass:
+    if username == cfg_user and sha256(password) == cfg_pass:
         session.permanent = True
         session['authenticated'] = True
         return True, ''
