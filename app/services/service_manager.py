@@ -25,7 +25,7 @@ from app.services.config_service import (
     generate_service_config, save_service_config, get_outbound_node,
 )
 from app.checker import check_node
-from app.logger import log
+from app.utils import log, allocate_ports
 
 
 # ---------------------------------------------------------------------------
@@ -270,14 +270,14 @@ def _start_service_with_node(service_id, node_id):
     from app.engine import build_outbound_config
     from app.engine.xray import build_xray_inbound
     from app.services.config_service import (
-        check_inbound_port, find_available_port, save_service_config,
+        check_inbound_port, save_service_config,
     )
 
     ok, err = check_inbound_port(inbound['port'])
     if not ok:
         return {'success': False, 'message': err}
 
-    socks_port = find_available_port()
+    socks_port = allocate_ports('service')[0]
     xray_in = build_xray_inbound(inbound, socks_port)
     outbound_config = build_outbound_config(node, socks_port)
     bin_type = node['bin_type']

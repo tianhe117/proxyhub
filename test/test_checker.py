@@ -20,11 +20,12 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.checker.checker import (
-    CheckResult, allocate_ports, tcp_check, url_check,
+    CheckResult, tcp_check, url_check,
 )
 from app.checker import check_node, _check_url_one
 from app.engine import build_outbound_config
 from app.db.node import get_by_id
+from app.utils import allocate_ports
 
 TEST_URL = 'https://www.gstatic.com/generate_204'
 
@@ -74,7 +75,7 @@ print('=' * 60)
 print('2. url_check')
 print('=' * 60)
 
-ports = allocate_ports(3)
+ports = allocate_ports('test', 3)
 
 for nd, port in zip([US, V240, V227], ports):
     config, _ = build_outbound_config(nd, port)
@@ -106,7 +107,7 @@ print('=' * 60)
 print('3. _check_url_one')
 print('=' * 60)
 
-ports = allocate_ports(3)
+ports = allocate_ports('test', 3)
 for nd, port in zip([US, V240, V227], ports):
     r = _check_url_one(nd, port)
     print_row(nd['name'][:14], r)

@@ -6,8 +6,6 @@ JSON config files for the proxy binaries.
 
 import json
 import os
-import random
-import socket
 
 from app.db.service import get_by_id as get_service
 from app.db.inbound import get_by_id as get_inbound
@@ -15,33 +13,8 @@ from app.db.outbound import get_by_id as get_outbound, get_pool_nodes
 from app.db.node import get_by_id as get_node
 from app.engine import build_outbound_config, get_exe
 from app.engine.xray import build_xray_inbound
-from app.settings import SOCKS_PORT_START, SOCKS_PORT_END, BASE_DIR
-from app.logger import log
-
-
-def is_port_available(port, host='127.0.0.1'):
-    """Check if a TCP port is available by attempting to bind."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, port))
-        s.close()
-        return True
-    except OSError:
-        return False
-
-
-def find_available_port(start=SOCKS_PORT_START, end=SOCKS_PORT_END, exclude=None):
-    """Randomly find an available port in [start, end], avoiding *exclude*."""
-    exclude = exclude or set()
-    attempts = 100
-    for _ in range(attempts):
-        port = random.randint(start, end)
-        if port in exclude:
-            continue
-        if is_port_available(port):
-            return port
-    raise RuntimeError(f'No available port found in range {start}-{end}')
+from app.settings import BASE_DIR
+from app.utils import is_port_available, allocate_ports, log
 
 
 def check_inbound_port(port):
@@ -116,7 +89,7 @@ def generate_service_config(service_id):
         return {'success': False, 'message': err}
 
     # Allocate SOCKS5 port
-    socks_port = find_available_port()
+    socks_port = allocate_ports('service')[0]
 
     # Build Xray inbound config
     xray_in = build_xray_inbound(inbound, socks_port)

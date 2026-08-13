@@ -14,7 +14,7 @@ import zipfile
 
 from app.settings import BIN_REPOS, get_bin_dir
 from app.process.manager import get_version
-from app.logger import log
+from app.utils import log
 
 
 def check_upgrade(bin_name):

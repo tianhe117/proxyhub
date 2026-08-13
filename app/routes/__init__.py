@@ -57,7 +57,7 @@ def create_app():
     register_blueprints(app)
 
     # Install the web logger (intercept stdout/stderr)
-    from app.logger import web_logger
+    from app.utils import web_logger
     web_logger.install()
 
     # Initialize database

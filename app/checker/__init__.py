@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.engine import build_outbound_config
 from app.settings import DEFAULT_SETTINGS, get_bin_dir, get_setting
-from app.checker.checker import CheckResult, allocate_ports, tcp_check, url_check
+from app.checker.checker import CheckResult, tcp_check, url_check
+from app.utils import allocate_ports
 
 __all__ = ['check_node', 'CheckResult']
 
@@ -82,7 +83,7 @@ def check_node(nodes: list[dict], timeout=None) -> list[CheckResult]:
     url_items = [(i, nd) for i, nd in enumerate(nodes) if tcp_results[i].success]
     url_results = {i: None for i, _ in url_items}
     if url_items:
-        ports = allocate_ports(len(url_items))
+        ports = allocate_ports('test', len(url_items))
         with ThreadPoolExecutor(max_workers=len(url_items)) as ex:
             futures = {}
             for (i, nd), port in zip(url_items, ports):

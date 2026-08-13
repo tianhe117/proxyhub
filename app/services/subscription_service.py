@@ -11,7 +11,7 @@ from datetime import datetime
 import yaml
 
 from app.db.subscription import get_by_id, update, clear_nodes, batch_insert_nodes, sync_nodes
-from app.logger import log
+from app.utils import log
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +552,7 @@ def _apply_clash_transport(config, p, network):
 
 def _apply_filters(nodes, filter_keywords, exclude_keywords):
     """Filter nodes by keyword matching (OR logic)."""
-    from app.utils.helpers import split_keywords
+    from app.utils import split_keywords
 
     f_kw = split_keywords(filter_keywords)
     e_kw = split_keywords(exclude_keywords)

@@ -1,7 +1,6 @@
 """Low-level checker primitives — pure stdlib, zero project dependencies.
 
 CheckResult
-allocate_ports(n)                           → list[int]
 tcp_check(address, port, timeout=3)         → CheckResult
 url_check(config, type, bin, port, url, timeout, tag) → CheckResult
 """
@@ -13,7 +12,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 
-from app.settings import BASE_DIR, SOCKS_PORT_START, SOCKS_PORT_END
+from app.settings import BASE_DIR
 
 _SCRIPTS_DIR = os.path.join(BASE_DIR, 'scripts')
 
@@ -29,53 +28,6 @@ class CheckResult:
     url_latency_ms: int       # URL latency (-1 if not done)
     http_code: str            # URL HTTP code ("0" if not done)
     error: str
-
-
-# ============================================================================
-# port allocation
-# ============================================================================
-
-_cursor = SOCKS_PORT_START
-
-
-def allocate_ports(n: int) -> list[int]:
-    """Return *n* available ports starting from the last-used cursor.
-
-    The cursor wraps to SOCKS_PORT_START when it reaches SOCKS_PORT_END so
-    consecutive calls don't reuse recently-freed ports.
-    """
-    global _cursor
-
-    ports = []
-    for port in range(_cursor, SOCKS_PORT_END):
-        if len(ports) >= n: break
-        if _try_port(port): ports.append(port)
-
-    if len(ports) < n:
-        for port in range(SOCKS_PORT_START, _cursor):
-            if len(ports) >= n: break
-            if _try_port(port): ports.append(port)
-
-    if len(ports) < n:
-        raise RuntimeError(
-            f'Need {n} ports in [{SOCKS_PORT_START},{SOCKS_PORT_END}), '
-            f'only {len(ports)} available'
-        )
-
-    _cursor = ports[-1] + 1
-    if _cursor >= SOCKS_PORT_END:
-        _cursor = SOCKS_PORT_START
-    return ports
-
-
-def _try_port(port: int) -> bool:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(('127.0.0.1', port))
-        s.close()
-        return True
-    except OSError:
-        return False
 
 
 # ============================================================================

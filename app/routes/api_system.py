@@ -14,7 +14,7 @@ from app.services.service_manager import (
     start_service, stop_health_check_daemon, restart_health_check_daemon,
 )
 from app.db.service import get_auto_start_services, list_all, update_status
-from app.logger import log
+from app.utils import log
 from . import auth_required
 
 api_system = Blueprint('api_system', __name__, url_prefix='/api/system')
@@ -27,7 +27,7 @@ def system_info():
     db_path = get_db_path()
     if os.path.exists(db_path):
         size = os.path.getsize(db_path)
-        from app.utils.helpers import format_size
+        from app.utils import format_size
         db_size = format_size(size)
 
     bins = {}

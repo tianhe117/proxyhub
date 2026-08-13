@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 
-from app.logger import web_logger
+from app.utils import web_logger
 from . import auth_required
 
 api_logs = Blueprint('api_logs', __name__, url_prefix='/api/logs')

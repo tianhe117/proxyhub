@@ -110,7 +110,10 @@ VALID_BIN_TYPES = {
 # SOCKS5 intermediate port range
 # ---------------------------------------------------------------------------
 SOCKS_PORT_START = 50000
-SOCKS_PORT_END   = 60000
+SOCKS_PORT_END   = 55000
+
+TEST_PORT_START  = 55000
+TEST_PORT_END    = 60000
 
 # ---------------------------------------------------------------------------
 # Runtime path helpers

@@ -11,7 +11,7 @@ import subprocess
 import time
 
 from app.settings import BIN_REGISTRY, BASE_DIR, get_bin_dir, get_setting
-from app.logger import log
+from app.utils import log
 
 
 # ---------------------------------------------------------------------------
