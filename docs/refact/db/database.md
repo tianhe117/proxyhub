@@ -31,13 +31,15 @@ from .database import get_db, close_db, init_db
 
 `SCHEMA_VERSION = 1` 定义了但 `init_db` 里硬编码 `if current < 1` / `VALUES (1)`，常量从未被引用。
 
-这与「latency 移内存」时定的迁移策略**自相矛盾**：我们已选「外部一次性脚本迁移」（`scripts/migrate_latency.py`），不引入运行时 `_migrate_v2`。但 `init_db` 里仍残留一套 `_schema` 版本表 + 版本判断骨架。
+这与「latency 移内存」时定的迁移策略**自相矛盾**：我们已选「外部一次性脚本迁移」（`scripts/migrate_db.py`），不引入运行时 `_migrate_v2`。但 `init_db` 里仍残留一套 `_schema` 版本表 + 版本判断骨架。
 
 而 `_create_v1` 全部 `CREATE TABLE IF NOT EXISTS`，本身幂等 —— 这套版本机制当前**没驱动任何东西**，是纯残留。
 
-### 2. `_seed_settings` 位置偏了
+### 2. `_seed_settings` 与 `settings` 表是死代码
 
-`_seed_settings` 放在 `if current < 1` 之外，**每次启动都跑一遍** `INSERT OR IGNORE`。语义上「seed」应在首次建库时做（虽然 `OR IGNORE` 幂等、当前无害）。
+`settings` 表的真实存储已在 `app/settings.py`（`data/setting.json` + 内存 `_store`）。全项目搜 `settings` 表的 SQL，只有 `_seed_settings` 一处 `INSERT OR IGNORE` 写，**没有任何 `SELECT / UPDATE / DELETE FROM settings`** —— 该表是死表，`_seed_settings` 是往死表写数据的死代码。
+
+**方案**：连同 `settings` 表定义一起删。`_create_tables` 去掉 `CREATE TABLE settings`，删 `_seed_settings` 函数，`database.py` 顶部 import 去掉 `DEFAULT_SETTINGS`（仅它用）。
 
 ### 3. `db/__init__.py` 的导出是死代码
 
@@ -57,27 +59,28 @@ from .database import get_db, close_db, init_db
 
 ### `database.py` 精简
 
-删掉版本机制残留，`init_db` 退化为「幂等建表 + seed」，`_create_v1` 改名 `_create_tables`（名字不再暗示版本序列）：
+删掉版本机制与 settings 死表，`init_db` 退化为「幂等建表」，`_create_v1` 改名 `_create_tables`（名字不再暗示版本序列）：
 
 ```python
 def init_db():
-    """Create tables (idempotent) and seed default settings."""
+    """Create tables (idempotent)."""
     db = get_db()
     _create_tables(db)
-    _seed_settings(db)
 
 def _create_tables(db):
     """Create all tables (§3.1)."""
-    db.executescript('''... 7 张表 ...''')
+    db.executescript('''... 6 张表 ...''')
 ```
 
 删除：
 
 - `SCHEMA_VERSION = 1` 常量
 - `_schema` 表相关逻辑（`CREATE TABLE IF NOT EXISTS _schema`、`SELECT MAX(version)`、`if current < 1`、`INSERT OR REPLACE`）
-- 改名 `_create_v1` → `_create_tables`（函数体不变，7 张表仍全部 `IF NOT EXISTS`）
+- `_seed_settings` 函数 + `settings` 表定义（`CREATE TABLE settings`）
+- 顶部 import 的 `DEFAULT_SETTINGS`（仅 `_seed_settings` 用）
+- 改名 `_create_v1` → `_create_tables`（函数体不变，剩余 6 张表仍全部 `IF NOT EXISTS`）
 
-`_seed_settings` 保持幂等（`INSERT OR IGNORE`）留在 `init_db` 末尾，语义从「每次启动补缺」变为「建库后补默认值」，两者等价。
+`init_db` 不再 seed，settings 统一走 `app/settings.py` 的 JSON 存储。
 
 ### `db/__init__.py` 改纯 docstring
 
@@ -93,17 +96,17 @@ def _create_tables(db):
 
 理由：db 层「一表一模块」的 `list_all` / `get_by_id` / `create` / `update` / `delete` 在 6 个文件里全部重名，扁平聚合会互相覆盖，无法也无需包级导出。与 `app/services/__init__.py`（现为一行 docstring）对齐。
 
-### 遗留 `_schema` 表清理（可选）
+### 遗留死表清理（可选）
 
-旧库 `data/proxyhub.db` 中已存在 `_schema` 表。`_create_v1` 不再建它后，旧表仍在但无害。可在 `scripts/migrate_latency.py` 中顺手追加 `DROP TABLE IF EXISTS _schema`，一次性清掉。
+旧库 `data/proxyhub.db` 中已存在 `_schema` 和 `settings` 表。`_create_tables` 不再建它们后，旧表仍在但无害。可在 `scripts/migrate_db.py` 中顺手追加 `DROP TABLE IF EXISTS _schema` / `DROP TABLE IF EXISTS settings`，一次性清掉。
 
 ## 改动清单
 
 | 文件 | 改动 |
 |------|------|
-| `app/db/database.py` | 删 `SCHEMA_VERSION`、`_schema` 版本逻辑；`_create_v1` 改名 `_create_tables`；`init_db` 精简为 `_create_tables` + `_seed_settings` |
+| `app/db/database.py` | 删 `SCHEMA_VERSION`、`_schema` 版本逻辑、`_seed_settings`、`settings` 表、`DEFAULT_SETTINGS` import；`_create_v1` 改名 `_create_tables`；`init_db` 精简为 `_create_tables` |
 | `app/db/__init__.py` | 删 `from .database import ...`，改为纯 docstring |
-| `scripts/migrate_latency.py`（可选） | 追加 `DROP TABLE IF EXISTS _schema` |
+| `scripts/migrate_db.py`（可选） | 追加 `DROP TABLE IF EXISTS _schema` / `DROP TABLE IF EXISTS settings` |
 
 ## 验证
 
@@ -116,12 +119,12 @@ print('init_db OK')
 "
 
 # 无残留引用（应无输出）
-grep -rn "SCHEMA_VERSION\|_schema\|from app.db import" app/ scripts/
+grep -rn "SCHEMA_VERSION\|_schema\|_seed_settings\|from app.db import" app/ scripts/
 
 # 全应用 import 冒烟
 python3 -c "import app.routes"
 
-# 现有 7 张表数据完好
+# 现有表数据完好（settings/_schema 已清）
 python3 -c "
 import sqlite3
 c = sqlite3.connect('data/proxyhub.db')

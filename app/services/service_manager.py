@@ -11,7 +11,7 @@ from datetime import datetime
 
 from app.db.service import (
     get_by_id as get_service, get_auto_start_services,
-    list_all, update_status,
+    list_all,
 )
 from app.db.outbound import get_by_id as get_outbound, get_pool_nodes
 from app.db.node import get_by_id as get_node
@@ -19,7 +19,7 @@ from app.settings import DEFAULT_SETTINGS, get_setting
 from app.process.manager import (
     start_process, stop_service as stop_service_processes,
     stop_all_processes as stop_all_bin_processes,
-    get_service_processes, has_in_and_out,
+    get_service_processes, has_in_and_out, is_service_running,
 )
 from app.services.config_service import (
     generate_service_config, save_service_config, get_outbound_node,
@@ -106,7 +106,7 @@ def _switch_to_node(outbound_id, node_id, caller='failover'):
     for svc in list_all():
         if svc['outbound_id'] != outbound_id:
             continue
-        if svc['status'] != 'running':
+        if not is_service_running(svc['name']):
             continue
         result = _start_service_with_node(svc['id'], node_id)
         if result['success']:
@@ -289,13 +289,11 @@ def _start_service_with_node(service_id, node_id):
     try:
         out_pid = start_process(service_name, bin_type, out_path, role='out')
         in_pid = start_process(service_name, 'xray', xray_in_path, role='in')
-        update_status(service_id, 'running')
         log('ok', 'service', f'Service {service_name} started '
             f'(in:{in_pid} out:{out_pid} → {node["name"]})')
         return {'success': True, 'message': f'Service {service_name} started'}
     except Exception as e:
         stop_service_processes(service_name)
-        update_status(service_id, 'error')
         log('error', 'service', f'Failed to start {service_name}: {e}')
         return {'success': False, 'message': str(e)}
 
@@ -347,7 +345,6 @@ def start_service(service_id):
         # 2. Start Xray inbound
         in_pid = start_process(service_name, 'xray', xray_in_path, role='in')
 
-        update_status(service_id, 'running')
         log('ok', 'service', f'Service {service_name} started '
             f'(in:{in_pid} out:{out_pid} → {gen["node_name"]})')
 
@@ -358,7 +355,6 @@ def start_service(service_id):
     except Exception as e:
         # Rollback — stop both processes
         stop_service_processes(service_name)
-        update_status(service_id, 'error')
         log('error', 'service', f'Failed to start {service_name}: {e}')
         return {'success': False, 'message': str(e)}
 
@@ -373,7 +369,6 @@ def stop_service(service_id):
     result = stop_service_processes(service_name)
 
     if result['success']:
-        update_status(service_id, 'stopped')
         log('info', 'service', f'Service {service_name} stopped')
     else:
         log('error', 'service', f'Service {service_name} stop failed: {result["message"]}')
@@ -429,8 +424,7 @@ def restart_health_check_daemon():
 def start_health_check_daemon(app):
     """Launch background thread that monitors services and auto-restarts.
 
-    If a service has DB status='running' but its in/out processes
-    are missing, kill leftovers and restart it.
+    If a service's in/out processes are missing, kill leftovers and restart it.
     """
     global _health_thread, _health_app
     if _health_thread is not None:
@@ -445,7 +439,7 @@ def start_health_check_daemon(app):
                 with app.app_context():
                     # Phase 1: Process alive check (all running services)
                     for svc in list_all():
-                        if svc['status'] != 'running':
+                        if not is_service_running(svc['name']):
                             continue
 
                         service_name = svc['name']
@@ -480,7 +474,7 @@ def start_health_check_daemon(app):
                     now = time.time()
                     checked_outbound_ids = set()
                     for svc in list_all():
-                        if svc['status'] != 'running':
+                        if not is_service_running(svc['name']):
                             continue
 
                         outbound_id = svc['outbound_id']

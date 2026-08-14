@@ -75,7 +75,7 @@ from .latency import get_latency, update_latency
 
 数据量极少（nodes 105 行、全表合计 <200 行），不引入 `SCHEMA_VERSION` 递增 / `_migrate_v2` 运行时迁移逻辑，改由一个一次性脚本直接改 db 文件。
 
-新增 `scripts/migrate_latency.py`（幂等，列不存在时跳过）：
+新增 `scripts/migrate_db.py`（幂等，列不存在时跳过）：
 
 ```python
 #!/usr/bin/env python3
@@ -139,7 +139,7 @@ import 从 `from app.db.node import update_latency` 改为 `from app.utils impor
 
 1. 新建 `app/utils/latency.py`（读 `CheckResult|None`、写 `CheckResult`）
 2. `utils/__init__.py` 导出 `get_latency` / `update_latency`
-3. 新建 `scripts/migrate_latency.py`，对现有 `data/proxyhub.db` 执行删列（一次性、幂等）
+3. 新建 `scripts/migrate_db.py`，对现有 `data/proxyhub.db` 执行删列（一次性、幂等）
 4. `db/database.py` 的 `_create_v1` 去掉 latency 三列；`db/node.py` / `db/outbound.py` 移除 latency 读写
 5. `service_manager.py:17` import 去掉 `update_latency`（唯一必改点，其余不动）
 6. `api_nodes.py` / `api_outbounds.py` 序列化 merge + 写接口改传 CheckResult
@@ -149,7 +149,7 @@ import 从 `from app.db.node import update_latency` 改为 `from app.utils impor
 
 ```bash
 # 执行一次性迁移脚本，然后确认三列消失
-python3 scripts/migrate_latency.py
+python3 scripts/migrate_db.py
 python3 -c "import sqlite3; c=sqlite3.connect('data/proxyhub.db'); print([r[1] for r in c.execute('PRAGMA table_info(nodes)')])"
 
 # 读无记录返回 None、写后返回 CheckResult

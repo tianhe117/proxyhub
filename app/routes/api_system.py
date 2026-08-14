@@ -13,7 +13,7 @@ from app.process.manager import get_version, stop_all_processes, count_processes
 from app.services.service_manager import (
     start_service, stop_health_check_daemon, restart_health_check_daemon,
 )
-from app.db.service import get_auto_start_services, list_all, update_status
+from app.db.service import get_auto_start_services
 from app.utils import log
 from . import auth_required
 
@@ -50,10 +50,6 @@ def stop_all():
     stop_health_check_daemon()
     # Stop all proxy processes
     killed = stop_all_processes()
-    # Reset all services to stopped
-    for svc in list_all():
-        if svc['status'] != 'stopped':
-            update_status(svc['id'], 'stopped')
     log('info', 'system', f'StAll: stopped {killed} process(es), health daemon paused')
     return jsonify({'success': True, 'killed': killed})
 

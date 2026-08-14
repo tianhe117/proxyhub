@@ -1,15 +1,12 @@
-"""SQLite connection management, initialisation, and migrations (§3.1)."""
+"""SQLite connection management and table initialisation (§3.1)."""
 
 import sqlite3
 import os
 import threading
 
-from app.settings import get_db_path, DEFAULT_SETTINGS
+from app.settings import get_db_path
 
 _local = threading.local()
-
-# Current schema version — increment when tables change
-SCHEMA_VERSION = 1
 
 # ---------------------------------------------------------------------------
 # Connection management
@@ -47,37 +44,14 @@ def close_db():
 # ---------------------------------------------------------------------------
 
 def init_db():
-    """Create tables and seed default settings if the database is fresh."""
+    """Create tables (idempotent)."""
     db = get_db()
-
-    # Create schema version table
-    db.execute('''
-        CREATE TABLE IF NOT EXISTS _schema (
-            version INTEGER PRIMARY KEY
-        )
-    ''')
-
-    cur = db.execute('SELECT MAX(version) FROM _schema')
-    row = cur.fetchone()
-    current = row[0] if row and row[0] is not None else 0
-
-    if current < 1:
-        _create_v1(db)
-        db.execute('INSERT OR REPLACE INTO _schema (version) VALUES (1)')
-        db.commit()
-
-    # Seed default settings for any missing keys
-    _seed_settings(db)
+    _create_tables(db)
 
 
-def _create_v1(db):
-    """Create all v1 tables (§3.1)."""
+def _create_tables(db):
+    """Create all tables (§3.1)."""
     db.executescript('''
-        CREATE TABLE IF NOT EXISTS settings (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS subscriptions (
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
             name             TEXT NOT NULL,
@@ -130,18 +104,7 @@ def _create_v1(db):
             name        TEXT NOT NULL,
             inbound_id  INTEGER NOT NULL,
             outbound_id INTEGER NOT NULL,
-            status      TEXT DEFAULT 'stopped',
             auto_start  INTEGER DEFAULT 0,
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
     ''')
-
-
-def _seed_settings(db):
-    """Insert default values for any missing settings keys."""
-    for key, value in DEFAULT_SETTINGS.items():
-        db.execute(
-            'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
-            (key, value)
-        )
-    db.commit()
