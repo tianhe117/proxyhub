@@ -1,4 +1,14 @@
-"""Inbound CRUD operations."""
+"""Inbound CRUD operations.
+
+Inbound dict structure (sqlite3.Row → dict):
+    id          int    primary key
+    name        str    display name
+    protocol    str    inbound listener: http / socks / ss / vmess
+    listen_addr str    listen address, default '0.0.0.0'
+    port        int    listen port
+    params_json str    JSON string, protocol-specific params
+                       (username/password, uuid/alterId, method, network…)
+"""
 
 import json
 from .database import get_db
@@ -36,6 +46,8 @@ def update(in_id, **fields):
     """Update mutable fields on an inbound."""
     allowed = {'name', 'protocol', 'listen_addr', 'port', 'params_json'}
     updates = {k: v for k, v in fields.items() if k in allowed}
+    if 'port' in updates:
+        updates['port'] = int(updates['port'])
     if 'params_json' in updates and isinstance(updates['params_json'], dict):
         updates['params_json'] = json.dumps(updates['params_json'])
     if not updates:

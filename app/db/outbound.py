@@ -1,4 +1,17 @@
-"""Outbound + outbound_nodes CRUD operations."""
+"""Outbound + outbound_nodes CRUD operations.
+
+Outbound dict structure (sqlite3.Row → dict):
+    id          int    primary key
+    name        str    display name
+    type        str    single / auto / direct
+    config_json str    JSON string; single stores node_id, direct stores {}
+
+outbound_nodes (pool entry) structure:
+    id          int    primary key
+    outbound_id int    parent outbound id
+    node_id     int    pooled node id
+    priority    int    lower = higher failover priority
+"""
 
 import json
 from .database import get_db

@@ -1,4 +1,17 @@
-"""Subscription CRUD operations."""
+"""Subscription CRUD operations.
+
+Subscription dict structure (sqlite3.Row → dict):
+    id               int    primary key
+    name             str    display name
+    url              str    subscription source URL
+    filter_keywords  str    include keywords (newline/comma separated)
+    exclude_keywords str    exclude keywords (newline/comma separated)
+    updated_at       str    ISO timestamp of last refresh
+    upload_bytes     int    traffic quota (from Subscription-Userinfo)
+    download_bytes   int    traffic quota
+    total_bytes      int    traffic quota
+    expire_at        int    unix timestamp
+"""
 
 from .database import get_db
 
@@ -83,6 +96,8 @@ def update_node(node_id, **fields):
     """Update fields on a node."""
     allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}
     updates = {k: v for k, v in fields.items() if k in allowed}
+    if 'port' in updates:
+        updates['port'] = int(updates['port'])
     if not updates:
         return
     sets = ', '.join(f'{k} = ?' for k in updates)

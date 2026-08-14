@@ -4,7 +4,8 @@ Node dict structure (sqlite3.Row → dict):
     id          int       primary key
     sub_id      int       subscription id, 0 = custom
     name        str       display name
-    protocol    str       vless / vmess / trojan / ss / hysteria2 / tuic / direct
+    protocol    str       vmess / vless / trojan / ss / ssr / anytls /
+                          hysteria / hysteria2 / tuic / direct
     address     str       remote server address
     port         int        remote server port
     config_json str       JSON string, protocol-specific config
@@ -81,6 +82,8 @@ def update(node_id, **fields):
     """Update mutable fields on a node."""
     allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}
     updates = {k: v for k, v in fields.items() if k in allowed}
+    if 'port' in updates:
+        updates['port'] = int(updates['port'])
     if 'config_json' in updates and isinstance(updates['config_json'], dict):
         updates['config_json'] = json.dumps(updates['config_json'])
     if not updates:
