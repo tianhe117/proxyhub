@@ -10,6 +10,7 @@ from .validators import (
 from .port import allocate_ports, is_port_available
 from .logger import log, web_logger
 from .schemas import CheckResult
+from .latency import get_latency, update_latency
 
 __all__ = [
     'sha256',
@@ -24,4 +25,6 @@ __all__ = [
     'log',
     'web_logger',
     'CheckResult',
+    'get_latency',
+    'update_latency',
 ]
