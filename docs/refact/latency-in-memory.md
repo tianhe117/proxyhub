@@ -71,23 +71,39 @@ from .latency import get_latency, update_latency
 
 调用方统一 `from app.utils import get_latency, update_latency`。
 
-## 迁移：schema v2 删列
+## 迁移：一次性脚本删列（不做运行时 schema 迁移）
 
-SQLite 3.35+ 支持 `DROP COLUMN`（本项目 3.37.2），无需重建表：
+数据量极少（nodes 105 行、全表合计 <200 行），不引入 `SCHEMA_VERSION` 递增 / `_migrate_v2` 运行时迁移逻辑，改由一个一次性脚本直接改 db 文件。
 
-- `db/database.py`：`SCHEMA_VERSION = 2`
-- `init_db()` 加 `if current < 2: _migrate_v2(db)`，`_migrate_v2` 执行
-  ```sql
-  ALTER TABLE nodes DROP COLUMN tcp_latency;
-  ALTER TABLE nodes DROP COLUMN curl_latency;
-  ALTER TABLE nodes DROP COLUMN last_check_at;
-  ```
-- `_create_v1` 保持历史定义不动；全新 DB 走 create v1 → migrate v2，语义正确。
+新增 `scripts/migrate_latency.py`（幂等，列不存在时跳过）：
+
+```python
+#!/usr/bin/env python3
+"""一次性迁移：删除 nodes 表的 latency 三列（可重复执行）。"""
+import os, sqlite3, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.settings import get_db_path
+
+DROP = ('tcp_latency', 'curl_latency', 'last_check_at')
+
+db = sqlite3.connect(get_db_path())
+cols = {r[1] for r in db.execute('PRAGMA table_info(nodes)')}
+for col in DROP:
+    if col in cols:
+        db.execute(f'ALTER TABLE nodes DROP COLUMN {col}')
+db.commit()
+print('done')
+```
+
+SQLite 3.35+ 支持 `DROP COLUMN`（本项目 3.37.2），无需重建表。
+
+`db/database.py` 同步改 `_create_v1` 里 nodes 表定义去掉三列（保证**全新 DB 也不带 latency 列**）；`SCHEMA_VERSION` 保持 1 不动。
 
 ## db 层全删
 
 | 文件 | 改动 |
 |------|------|
+| `app/db/database.py` | `_create_v1` 的 nodes 表 CREATE 去掉 `tcp_latency`/`curl_latency`/`last_check_at` 三列（`SCHEMA_VERSION` 不动） |
 | `app/db/node.py` | 删 `update_latency` 函数；`update()` 的 `allowed` 去掉 `tcp_latency`/`curl_latency`/`last_check_at`；docstring 删「deprecated latency」段落 |
 | `app/db/outbound.py` | `get_pool_nodes` 的 SELECT 去掉 `n.tcp_latency, n.curl_latency` |
 
@@ -123,8 +139,8 @@ import 从 `from app.db.node import update_latency` 改为 `from app.utils impor
 
 1. 新建 `app/utils/latency.py`（读 `CheckResult|None`、写 `CheckResult`）
 2. `utils/__init__.py` 导出 `get_latency` / `update_latency`
-3. `db/database.py` schema v2 迁移删列
-4. `db/node.py` / `db/outbound.py` 移除 latency 读写
+3. 新建 `scripts/migrate_latency.py`，对现有 `data/proxyhub.db` 执行删列（一次性、幂等）
+4. `db/database.py` 的 `_create_v1` 去掉 latency 三列；`db/node.py` / `db/outbound.py` 移除 latency 读写
 5. `service_manager.py:17` import 去掉 `update_latency`（唯一必改点，其余不动）
 6. `api_nodes.py` / `api_outbounds.py` 序列化 merge + 写接口改传 CheckResult
 7. 验证
@@ -132,7 +148,8 @@ import 从 `from app.db.node import update_latency` 改为 `from app.utils impor
 ## 验证
 
 ```bash
-# 迁移：旧库启动后三列消失
+# 执行一次性迁移脚本，然后确认三列消失
+python3 scripts/migrate_latency.py
 python3 -c "import sqlite3; c=sqlite3.connect('data/proxyhub.db'); print([r[1] for r in c.execute('PRAGMA table_info(nodes)')])"
 
 # 读无记录返回 None、写后返回 CheckResult
