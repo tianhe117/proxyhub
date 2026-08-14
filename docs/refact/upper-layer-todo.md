@@ -43,6 +43,20 @@
 
 > 排序语义不变（都是改 `priority` 影响 failover 顺序），只是从「增量 UPDATE pool_id」改为「全量 sync node_id」。
 
+## 5. fallback 独立表：快速切换节点
+
+**底层待实现**：新增 `outbound_fallback` 表（`outbound_id` 主键 + `node_id`），fallback 节点独立于 `outbound_nodes` 候选池。db 层需新增 `get_fallback_node(outbound_id)` / `set_fallback_node(outbound_id, node_id)` 接口。
+
+**待适配（上层重写时）**：
+
+| 文件 | 待改 |
+|------|------|
+| `services/service_manager.py` | failover 从「`pool[0]`=fallback、`pool[1:]`=候选」隐式切片，改为显式 `get_fallback_node()` + `get_pool_nodes()` 两个变量 |
+| `routes/api_outbounds.py` | 新增 set/get fallback 路由 |
+| 前端 `outbounds.html` | 新增 fallback 选择器（候选池与切换节点分开选择） |
+
+> 语义：fallback 是独立的快速切换节点，不在候选池里；A 挂了先切到 fallback，再扫候选池找可用节点。
+
 ---
 
 ## 约定

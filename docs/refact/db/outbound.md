@@ -38,11 +38,18 @@ outbounds (
     name TEXT NOT NULL
 )
 
+-- 候选节点（1:N，priority 纯排序，不含切换节点）
 outbound_nodes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     outbound_id INTEGER NOT NULL,
     node_id     INTEGER NOT NULL,
     priority    INTEGER DEFAULT 0
+)
+
+-- 快速切换节点（1:1，每出站至多一个，独立于候选池）
+outbound_fallback (
+    outbound_id INTEGER PRIMARY KEY,   -- 主键 = 出站 id，天然保证唯一
+    node_id     INTEGER NOT NULL
 )
 
 services (
@@ -61,8 +68,28 @@ services (
 |------|------|
 | direct 直连 | `service.outbound_id = 0` |
 | 未配置出站 | outbound 存在但 `outbound_nodes` 无关联节点（应用层兜底报错） |
-| single | outbound 关联 **1** 个节点 |
-| auto（failover） | outbound 关联 **≥2** 个节点 |
+| single | outbound 关联 **1** 个候选节点，无 fallback |
+| auto（failover） | outbound 关联 **≥2** 个候选节点，可选配 1 个 fallback |
+
+### fallback 独立表（快速切换节点）
+
+切换节点 m 独立于候选池，不在 `outbound_nodes` 里：
+
+- **互斥**：fallback 节点不参与候选竞争，两者不重叠
+- **唯一**：`outbound_id` 作主键，DB 层天然保证每出站至多 1 个切换节点
+- **读侧显式**：`get_fallback_node(outbound_id)` 与 `get_pool_nodes(outbound_id)` 分开，应用一眼分清切换节点和候选
+
+> 命名：此处 `fallback` 指「切换用节点」（实体）；`failover` 指「故障切换机制」（逻辑）。
+> 两者易混，上层重写时计划给 failover 相关命名另起更清晰的名字（见 upper-layer-todo）。
+
+db 层只需两个接口：
+
+```python
+def get_fallback_node(outbound_id) -> Row | None:  # 返回 {outbound_id, node_id}
+def set_fallback_node(outbound_id, node_id):       # upsert（node_id 传 0 表示清除）
+```
+
+failover 逻辑（上层重写时）从「`pool[0]`=fallback、`pool[1:]`=候选」的隐式切片，改为显式读两个变量。
 
 ### `outbound_id = 0` 表示 direct 的正当性
 
@@ -80,15 +107,15 @@ services (
 
 | 层 | 文件 | 改动 |
 |----|------|------|
-| schema | `db/database.py` | outbounds 删 `type`/`config_json` 列 |
+| schema | `db/database.py` | outbounds 删 `type`/`config_json` 列；新增 `outbound_fallback` 表 |
 | 迁移 | `scripts/migrate_db.py` | outbounds 删 `type`/`config_json`；存量 `type='direct'` 的 outbound 若被 service 引用，把该 service 的 `outbound_id` 改 0、删掉该 outbound 行；存量 single 的 `config_json.node_id` 迁移成 `outbound_nodes` 一行 |
-| db 层 | `db/outbound.py` | `create(name)` 去掉 type/config_json 参数；`list_single_outbounds_by_node` 改 `SELECT ... WHERE node_id=?`（遍历 outbound_nodes）；`update` allowed 只留 name |
+| db 层 | `db/outbound.py` | `create(name)` 去掉 type/config_json 参数；`list_single_outbounds_by_node` 改 `SELECT ... WHERE node_id=?`（遍历 outbound_nodes）；`update` allowed 只留 name；新增 `get_fallback_node` / `set_fallback_node` |
 | db 层 | `db/service.py` | `create/update` 允许 `outbound_id=0`（direct） |
 | service 层 | `outbound_service.py` | `create_outbound(name)` 去 type/config_json；删 direct/single/auto 校验 |
 | service 层 | `config_service.py` | `get_outbound_node` 改：`outbound_id==0` → 合成 direct 节点；否则按 outbound 关联节点数（1→取它，≥2→pool[0] 或 failover 覆盖） |
-| service 层 | `service_manager.py` | `outbound['type']=='auto'` 判断改「关联节点数 ≥2」；`=='direct'` 判断改 `outbound_id==0` |
-| routes | `api_outbounds.py` | create/update 去 type/config_json；`TYPE_ORDER` 排序删（或改为按 id/名称） |
-| 前端 | `outbounds.html` / `dashboard.html` | outbound 表单去 type 下拉、节点单选改池多选；service 下拉加 Direct 选项 |
+| service 层 | `service_manager.py` | `outbound['type']=='auto'` 判断改「关联节点数 ≥2」；`=='direct'` 判断改 `outbound_id==0`；failover 从 `pool[0]` 切片改显式读 fallback + candidates |
+| routes | `api_outbounds.py` | create/update 去 type/config_json；`TYPE_ORDER` 排序删（或改为按 id/名称）；新增 set/get fallback 路由 |
+| 前端 | `outbounds.html` / `dashboard.html` | outbound 表单去 type 下拉、节点单选改池多选；service 下拉加 Direct 选项；fallback 选择器 |
 
 ## 关键迁移逻辑（scripts/migrate_db.py）
 
