@@ -97,6 +97,11 @@ def _create_tables(db):
             priority    INTEGER DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS outbound_fallback (
+            outbound_id INTEGER PRIMARY KEY,
+            node_id     INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS services (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL,

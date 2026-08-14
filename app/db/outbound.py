@@ -10,10 +10,17 @@ outbound_nodes (pool entry) structure:
     node_id     int    pooled node id
     priority    int    lower = higher failover priority
 
+outbound_fallback structure:
+    outbound_id int    primary key (at most one per outbound)
+    node_id     int    quick-switch fallback node id
+
 Semantics are derived from data, no type enum:
     direct  → service.outbound_id = 0
     single  → outbound with 1 pool node
     auto    → outbound with >=2 pool nodes (failover)
+
+Note: "fallback" = the quick-switch node (entity); "failover" = the
+switching mechanism (logic).  The two are separate concerns.
 """
 
 from .database import get_db
@@ -132,5 +139,31 @@ def sync_pool_nodes(outbound_id, node_ids):
         db.execute(
             'INSERT INTO outbound_nodes (outbound_id, node_id, priority) VALUES (?, ?, ?)',
             (outbound_id, nid, pri + 1)
+        )
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Outbound fallback (quick-switch node)
+# ---------------------------------------------------------------------------
+
+def get_fallback_node(outbound_id):
+    """Return the fallback node for an outbound, or None."""
+    db = get_db()
+    return db.execute(
+        'SELECT * FROM outbound_fallback WHERE outbound_id = ?', (outbound_id,)
+    ).fetchone()
+
+
+def set_fallback_node(outbound_id, node_id):
+    """Set (or clear, when node_id=0) the fallback node for an outbound."""
+    db = get_db()
+    if node_id == 0:
+        db.execute('DELETE FROM outbound_fallback WHERE outbound_id = ?', (outbound_id,))
+    else:
+        db.execute(
+            '''INSERT INTO outbound_fallback (outbound_id, node_id) VALUES (?, ?)
+               ON CONFLICT(outbound_id) DO UPDATE SET node_id = excluded.node_id''',
+            (outbound_id, node_id)
         )
     db.commit()
