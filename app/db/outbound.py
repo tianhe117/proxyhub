@@ -33,6 +33,23 @@ def get_by_id(out_id):
     return db.execute('SELECT * FROM outbounds WHERE id = ?', (out_id,)).fetchone()
 
 
+def list_single_outbounds_by_node(node_id):
+    """Return single-type outbounds whose config_json.node_id matches *node_id*."""
+    db = get_db()
+    rows = db.execute("SELECT * FROM outbounds WHERE type = 'single'").fetchall()
+    result = []
+    for row in rows:
+        cfg = row['config_json']
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except (json.JSONDecodeError, TypeError):
+                cfg = {}
+        if isinstance(cfg, dict) and cfg.get('node_id') == node_id:
+            result.append(row)
+    return result
+
+
 def create(name, out_type, config_json=None):
     """Insert an outbound and return its id."""
     if config_json is None:

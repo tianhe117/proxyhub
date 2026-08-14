@@ -78,7 +78,7 @@ async function loadNodes() {
         groups = await resp.json();
         renderNodes();
         var total = 0;
-        groups.forEach(function(g) { total += g.count; });
+        groups.forEach(function(g) { total += g.nodes.length; });
         document.getElementById('nodeCount').textContent = total + ' nodes';
     } catch(e) {}
 }
@@ -117,7 +117,7 @@ function renderNodes() {
         var hdrClass = collapsed ? 'collapse-header section-title collapsed' : 'collapse-header section-title';
         var bodyClass = collapsed ? 'collapse-body' : 'collapse-body show';
         var colStyle = collapsed ? ' style="display:none;font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;"' : ' style="font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border);padding:4px 0;"';
-        return '<div class="section"><div class="' + hdrClass + '" data-group="' + gi + '" onclick="toggleCollapse(this)">' + subName + ' &middot; ' + g.count + ' nodes <button class="btn btn-sm" style="float:right;" onclick="event.stopPropagation();confirmCheckGroup(' + gi + ')">Check Group</button></div>' +
+        return '<div class="section"><div class="' + hdrClass + '" data-group="' + gi + '" onclick="toggleCollapse(this)">' + subName + ' &middot; ' + g.nodes.length + ' nodes <button class="btn btn-sm" style="float:right;" onclick="event.stopPropagation();confirmCheckGroup(' + gi + ')">Check Group</button></div>' +
             '<div class="row-flex"' + colStyle + '>' +
                 '<span style="flex:2;padding-left:8px;">Name</span>' +
                 '<span style="flex:1">Protocol</span>' +

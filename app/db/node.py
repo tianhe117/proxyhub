@@ -36,23 +36,23 @@ def list_grouped():
     """Return nodes grouped by subscription.
 
     Returns a list of dicts:
-        {sub: subscription_row | None, nodes: [node_row, ...], count: int}
-    Custom nodes (sub_id=0) appear as sub=None.
+        {sub: subscription_row | None, nodes: [node_row, ...]}
+    Custom nodes (sub_id=0) appear as sub=None. Empty groups are omitted.
     """
     from .subscription import list_all as list_all_subs
-    db = get_db()
 
     groups = []
 
     # Custom nodes first (sub_id = 0)
     custom_nodes = list_by_sub(0)
     if custom_nodes:
-        groups.append({'sub': None, 'nodes': custom_nodes, 'count': len(custom_nodes)})
+        groups.append({'sub': None, 'nodes': custom_nodes})
 
     # Then each subscription
     for sub in list_all_subs():
         nodes = list_by_sub(sub['id'])
-        groups.append({'sub': sub, 'nodes': nodes, 'count': len(nodes)})
+        if nodes:
+            groups.append({'sub': sub, 'nodes': nodes})
 
     return groups
 
@@ -96,8 +96,9 @@ def update(node_id, **fields):
 
 
 def delete(node_id):
-    """Delete a single node."""
+    """Delete a single node and its outbound pool references."""
     db = get_db()
+    db.execute('DELETE FROM outbound_nodes WHERE node_id = ?', (node_id,))
     db.execute('DELETE FROM nodes WHERE id = ?', (node_id,))
     db.commit()
 

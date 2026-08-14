@@ -2,10 +2,8 @@
 
 import json
 
-from app.db.node import (
-    create, update, delete, delete_all, get_by_id, list_all as list_nodes,
-    list_grouped, list_by_sub,
-)
+from app.db.node import create, update, delete, delete_all, get_by_id
+from app.db.outbound import list_single_outbounds_by_node
 from app.utils.validators import is_valid_protocol, is_valid_port
 
 
@@ -51,10 +49,17 @@ def update_node(node_id, **fields):
 
 
 def delete_node(node_id):
-    """Delete a node."""
+    """Delete a node, refusing if a single-type outbound references it."""
     node = get_by_id(node_id)
     if not node:
         return {'success': False, 'message': 'Node not found'}
+
+    refs = list_single_outbounds_by_node(node_id)
+    if refs:
+        names = ', '.join(r['name'] for r in refs)
+        return {'success': False,
+                'message': f'Node is used by outbound(s): {names}'}
+
     delete(node_id)
     return {'success': True, 'message': 'Node deleted'}
 

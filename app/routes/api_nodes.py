@@ -65,7 +65,6 @@ def list_nodes_grouped():
         result.append({
             'sub': dict(g['sub']) if g['sub'] else None,
             'nodes': [_merge_latency(dict(n), n['id']) for n in g['nodes']],
-            'count': g['count'],
         })
     return jsonify(result)
 
