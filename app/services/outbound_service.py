@@ -4,7 +4,7 @@ import json
 
 from app.db.outbound import (
     create as create_ob, update as update_ob, delete as delete_ob,
-    get_by_id as get_ob, add_pool_node, remove_pool_node, reorder_pool_nodes,
+    get_by_id as get_ob, add_pool_node, remove_pool_node,
     get_pool_nodes, sync_pool_nodes,
 )
 from app.db.node import get_by_id as get_node
@@ -70,12 +70,6 @@ def remove_node_from_pool(pool_id):
     """Remove a pool entry."""
     remove_pool_node(pool_id)
     return {'success': True, 'message': 'Node removed from pool'}
-
-
-def reorder_pool(outbound_id, node_order):
-    """Reorder pool nodes. *node_order* is a list of pool entry IDs."""
-    reorder_pool_nodes(outbound_id, node_order)
-    return {'success': True, 'message': 'Pool reordered'}
 
 
 def sync_pool(outbound_id, node_ids):

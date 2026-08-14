@@ -120,17 +120,6 @@ def remove_pool_node(pool_id):
     db.commit()
 
 
-def reorder_pool_nodes(outbound_id, node_order):
-    """*node_order* is a list of pool entry ids in the new priority order."""
-    db = get_db()
-    for pri, pool_id in enumerate(node_order):
-        db.execute(
-            'UPDATE outbound_nodes SET priority = ? WHERE id = ? AND outbound_id = ?',
-            (pri + 1, pool_id, outbound_id)
-        )
-    db.commit()
-
-
 def sync_pool_nodes(outbound_id, node_ids):
     """Replace all pool nodes with the given node_ids in order."""
     db = get_db()

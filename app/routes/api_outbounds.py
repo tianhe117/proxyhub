@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify
 from app.db.outbound import list_all, get_by_id
 from app.services.outbound_service import (
     create_outbound, update_outbound, delete_outbound,
-    remove_node_from_pool, reorder_pool, sync_pool,
+    remove_node_from_pool, sync_pool,
 )
 from app.services.service_manager import switch_node
 from app.db.outbound import get_pool_nodes
@@ -69,14 +69,6 @@ def delete_outbound_handler(out_id):
 @auth_required
 def remove_pool_node_handler(out_id, pool_id):
     result = remove_node_from_pool(pool_id)
-    return jsonify(result)
-
-
-@api_outbounds.route('/<int:out_id>/nodes/reorder', methods=['POST'])
-@auth_required
-def reorder_pool_handler(out_id):
-    data = request.get_json(force=True) or {}
-    result = reorder_pool(out_id, data.get('order', []))
     return jsonify(result)
 
 
