@@ -2,18 +2,26 @@
 
 import threading
 import uuid
-from datetime import datetime
 
 from flask import Blueprint, request, jsonify
 
-from app.db.node import list_all, list_grouped, list_by_sub, get_by_id, update_latency
+from app.db.node import list_all, list_grouped, list_by_sub, get_by_id
 from app.services.node_service import (
     create_custom_node, update_node, delete_node, clear_all_nodes,
 )
 from app.checker import check_node
+from app.utils import get_latency, update_latency
 from . import auth_required
 
 api_nodes = Blueprint('api_nodes', __name__, url_prefix='/api/nodes')
+
+
+def _merge_latency(d, node_id):
+    """Attach tcp/curl latency to a serialized node dict (None when unchecked)."""
+    lat = get_latency(node_id)
+    d['tcp_latency'] = lat.tcp_latency_ms if lat else None
+    d['curl_latency'] = lat.url_latency_ms if lat else None
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +33,7 @@ _check_tasks = {}
 
 
 def _run_check_task(task_id, nodes):
-    """Run check_node in the background, then persist latency to DB."""
+    """Run check_node in the background, then persist latency to memory."""
     try:
         results = check_node(nodes)
         for nd, res in zip(nodes, results):
@@ -36,8 +44,7 @@ def _run_check_task(task_id, nodes):
                         'latency_ms': res.url_latency_ms},
             }
             _check_tasks[task_id]['checked'] += 1
-            update_latency(nd['id'], res.tcp_latency_ms,
-                           res.url_latency_ms, datetime.now().isoformat())
+            update_latency(nd['id'], res)
     finally:
         _check_tasks[task_id]['running'] = False
         _check_lock.release()
@@ -46,7 +53,7 @@ def _run_check_task(task_id, nodes):
 @api_nodes.route('/', methods=['GET'])
 @auth_required
 def list_nodes():
-    return jsonify([dict(n) for n in list_all()])
+    return jsonify([_merge_latency(dict(n), n['id']) for n in list_all()])
 
 
 @api_nodes.route('/grouped', methods=['GET'])
@@ -57,7 +64,7 @@ def list_nodes_grouped():
     for g in groups:
         result.append({
             'sub': dict(g['sub']) if g['sub'] else None,
-            'nodes': [dict(n) for n in g['nodes']],
+            'nodes': [_merge_latency(dict(n), n['id']) for n in g['nodes']],
             'count': g['count'],
         })
     return jsonify(result)
@@ -66,7 +73,7 @@ def list_nodes_grouped():
 @api_nodes.route('/by-sub/<int:sub_id>', methods=['GET'])
 @auth_required
 def list_nodes_by_sub(sub_id):
-    return jsonify([dict(n) for n in list_by_sub(sub_id)])
+    return jsonify([_merge_latency(dict(n), n['id']) for n in list_by_sub(sub_id)])
 
 
 @api_nodes.route('/', methods=['POST'])

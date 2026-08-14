@@ -9,12 +9,22 @@ from app.services.outbound_service import (
 )
 from app.services.service_manager import switch_node
 from app.db.outbound import get_pool_nodes
+from app.utils import get_latency
 from . import auth_required
 
 api_outbounds = Blueprint('api_outbounds', __name__, url_prefix='/api/outbounds')
 
 
 TYPE_ORDER = {'direct': 0, 'single': 1, 'auto': 2}
+
+
+def _merge_latency(d, node_id):
+    """Attach tcp/curl latency to a serialized pool entry (None when unchecked)."""
+    lat = get_latency(node_id)
+    d['tcp_latency'] = lat.tcp_latency_ms if lat else None
+    d['curl_latency'] = lat.url_latency_ms if lat else None
+    return d
+
 
 @api_outbounds.route('/', methods=['GET'])
 @auth_required
@@ -23,7 +33,7 @@ def list_outbounds():
     result = []
     for o in obs:
         d = dict(o)
-        d['pool'] = [dict(p) for p in get_pool_nodes(o['id'])]
+        d['pool'] = [_merge_latency(dict(p), p['node_id']) for p in get_pool_nodes(o['id'])]
         result.append(d)
     result.sort(key=lambda x: TYPE_ORDER.get(x.get('type'), 99))
     return jsonify(result)

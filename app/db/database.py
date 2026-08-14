@@ -99,10 +99,7 @@ def _create_v1(db):
             address       TEXT NOT NULL,
             port          INTEGER NOT NULL,
             config_json   TEXT NOT NULL,
-            bin_type      TEXT DEFAULT 'xray',
-            tcp_latency   INTEGER,
-            curl_latency  INTEGER,
-            last_check_at TEXT
+            bin_type      TEXT DEFAULT 'xray'
         );
 
         CREATE TABLE IF NOT EXISTS inbounds (

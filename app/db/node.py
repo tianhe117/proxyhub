@@ -10,10 +10,7 @@ Node dict structure (sqlite3.Row → dict):
     config_json str       JSON string, protocol-specific config
     bin_type    str       xray / sslocal / sing-box
 
-Deprecated fields (still in DB but being phased out):
-    tcp_latency   int     TCP handshake latency in ms
-    curl_latency  int     URL test latency in ms
-    last_check_at str     ISO timestamp of last health check
+Latency is stored in-memory (app.utils.latency), not in the DB.
 """
 
 import json
@@ -82,8 +79,7 @@ def create(sub_id, name, protocol, address, port, config_json, bin_type='xray'):
 
 def update(node_id, **fields):
     """Update mutable fields on a node."""
-    allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type',
-               'tcp_latency', 'curl_latency', 'last_check_at'}
+    allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if 'config_json' in updates and isinstance(updates['config_json'], dict):
         updates['config_json'] = json.dumps(updates['config_json'])
@@ -107,14 +103,4 @@ def delete_all():
     """Delete every node from the database."""
     db = get_db()
     db.execute('DELETE FROM nodes')
-    db.commit()
-
-
-def update_latency(node_id, tcp_latency, curl_latency, check_time):
-    """Update latency fields and last_check_at for a node."""
-    db = get_db()
-    db.execute(
-        'UPDATE nodes SET tcp_latency=?, curl_latency=?, last_check_at=? WHERE id=?',
-        (tcp_latency, curl_latency, check_time, node_id)
-    )
     db.commit()

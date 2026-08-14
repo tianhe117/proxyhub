@@ -14,7 +14,7 @@ from app.db.service import (
     list_all, update_status,
 )
 from app.db.outbound import get_by_id as get_outbound, get_pool_nodes
-from app.db.node import get_by_id as get_node, update_latency
+from app.db.node import get_by_id as get_node
 from app.settings import DEFAULT_SETTINGS, get_setting
 from app.process.manager import (
     start_process, stop_service as stop_service_processes,

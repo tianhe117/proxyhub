@@ -68,8 +68,7 @@ def get_pool_nodes(outbound_id):
     db = get_db()
     return db.execute(
         '''SELECT onr.id AS pool_id, onr.priority, onr.node_id,
-                  n.name, n.protocol, n.address, n.port,
-                  n.tcp_latency, n.curl_latency, n.bin_type
+                  n.name, n.protocol, n.address, n.port, n.bin_type
            FROM outbound_nodes onr
            JOIN nodes n ON n.id = onr.node_id
            WHERE onr.outbound_id = ?
