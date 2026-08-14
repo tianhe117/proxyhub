@@ -3,17 +3,19 @@
 Outbound dict structure (sqlite3.Row → dict):
     id          int    primary key
     name        str    display name
-    type        str    single / auto / direct
-    config_json str    JSON string; single stores node_id, direct stores {}
 
 outbound_nodes (pool entry) structure:
     id          int    primary key
     outbound_id int    parent outbound id
     node_id     int    pooled node id
     priority    int    lower = higher failover priority
+
+Semantics are derived from data, no type enum:
+    direct  → service.outbound_id = 0
+    single  → outbound with 1 pool node
+    auto    → outbound with >=2 pool nodes (failover)
 """
 
-import json
 from .database import get_db
 
 
@@ -33,44 +35,30 @@ def get_by_id(out_id):
     return db.execute('SELECT * FROM outbounds WHERE id = ?', (out_id,)).fetchone()
 
 
-def list_single_outbounds_by_node(node_id):
-    """Return single-type outbounds whose config_json.node_id matches *node_id*."""
+def list_outbounds_by_node(node_id):
+    """Return outbounds that reference *node_id* (via outbound_nodes)."""
     db = get_db()
-    rows = db.execute("SELECT * FROM outbounds WHERE type = 'single'").fetchall()
-    result = []
-    for row in rows:
-        cfg = row['config_json']
-        if isinstance(cfg, str):
-            try:
-                cfg = json.loads(cfg)
-            except (json.JSONDecodeError, TypeError):
-                cfg = {}
-        if isinstance(cfg, dict) and cfg.get('node_id') == node_id:
-            result.append(row)
-    return result
+    return db.execute(
+        '''SELECT DISTINCT o.id, o.name
+           FROM outbounds o
+           JOIN outbound_nodes onr ON onr.outbound_id = o.id
+           WHERE onr.node_id = ?''',
+        (node_id,)
+    ).fetchall()
 
 
-def create(name, out_type, config_json=None):
+def create(name):
     """Insert an outbound and return its id."""
-    if config_json is None:
-        config_json = {}
-    if isinstance(config_json, dict):
-        config_json = json.dumps(config_json)
     db = get_db()
-    cur = db.execute(
-        'INSERT INTO outbounds (name, type, config_json) VALUES (?, ?, ?)',
-        (name, out_type, config_json)
-    )
+    cur = db.execute('INSERT INTO outbounds (name) VALUES (?)', (name,))
     db.commit()
     return cur.lastrowid
 
 
 def update(out_id, **fields):
     """Update mutable fields on an outbound."""
-    allowed = {'name', 'type', 'config_json'}
+    allowed = {'name'}
     updates = {k: v for k, v in fields.items() if k in allowed}
-    if 'config_json' in updates and isinstance(updates['config_json'], dict):
-        updates['config_json'] = json.dumps(updates['config_json'])
     if not updates:
         return
     sets = ', '.join(f'{k} = ?' for k in updates)

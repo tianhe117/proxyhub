@@ -86,10 +86,8 @@ def _create_tables(db):
         );
 
         CREATE TABLE IF NOT EXISTS outbounds (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL,
-            type        TEXT NOT NULL,
-            config_json TEXT NOT NULL DEFAULT '{}'
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS outbound_nodes (

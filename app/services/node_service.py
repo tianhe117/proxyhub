@@ -3,7 +3,7 @@
 import json
 
 from app.db.node import create, update, delete, delete_all, get_by_id
-from app.db.outbound import list_single_outbounds_by_node
+from app.db.outbound import list_outbounds_by_node
 from app.utils.validators import is_valid_protocol, is_valid_port
 
 
@@ -54,7 +54,7 @@ def delete_node(node_id):
     if not node:
         return {'success': False, 'message': 'Node not found'}
 
-    refs = list_single_outbounds_by_node(node_id)
+    refs = list_outbounds_by_node(node_id)
     if refs:
         names = ', '.join(r['name'] for r in refs)
         return {'success': False,
