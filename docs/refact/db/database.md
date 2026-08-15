@@ -55,6 +55,10 @@ from .database import get_db, close_db, init_db
 
 `close_db` 每次 checkpoint TRUNCATE。低流量项目下略重，但换来 WAL 文件不堆积，是合理权衡，不动。
 
+### 6. `services.created_at` 是死字段
+
+仅靠 `DEFAULT (datetime('now','localtime'))` 自动填充，但全项目无读取/展示/更新（`renderServices` 只用 `id/name/inbound_id/outbound_id/auto_start/status`）。已删除该列，存量库由 `scripts/migrate_db.py` 追加 `ALTER TABLE services DROP COLUMN created_at` 清理。
+
 ## 重构方案
 
 ### `database.py` 精简

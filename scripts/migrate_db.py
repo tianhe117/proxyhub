@@ -3,7 +3,7 @@
 
 删除已废弃的 DB 结构：
 - nodes 表的 latency 三列（tcp_latency / curl_latency / last_check_at）
-- services 表的 status 列（运行时状态，改实时查进程）
+- services 表的 status 列（运行时状态，改实时查进程）与 created_at 列（死字段）
 - outbounds 表的 type / config_json 列（出站改纯关系，direct 走 service.outbound_id=0）
 - 废弃的 _schema / settings 表
 
@@ -31,10 +31,11 @@ for col in NODE_DROP_COLS:
     if col in node_cols:
         db.execute(f'ALTER TABLE nodes DROP COLUMN {col}')
 
-# services 表删 status 列
+# services 表删 status / created_at 列（status 改实时查进程，created_at 为死字段）
 svc_cols = {r[1] for r in db.execute('PRAGMA table_info(services)')}
-if 'status' in svc_cols:
-    db.execute('ALTER TABLE services DROP COLUMN status')
+for col in ('status', 'created_at'):
+    if col in svc_cols:
+        db.execute(f'ALTER TABLE services DROP COLUMN {col}')
 
 # outbounds 表：direct → service.outbound_id=0；single 的 config_json.node_id → outbound_nodes
 ob_cols = {r[1] for r in db.execute('PRAGMA table_info(outbounds)')}

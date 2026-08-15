@@ -6,7 +6,6 @@ Service dict structure (sqlite3.Row → dict):
     inbound_id  int    inbound listener id
     outbound_id int    outbound id
     auto_start  int    1 = start on app boot
-    created_at  str    ISO timestamp (SQLite default)
 
 Runtime state (running/stopped) is not persisted — it is derived live from
 processes via app.process.manager.

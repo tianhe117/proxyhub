@@ -107,7 +107,6 @@ def _create_tables(db):
             name        TEXT NOT NULL,
             inbound_id  INTEGER NOT NULL,
             outbound_id INTEGER NOT NULL,
-            auto_start  INTEGER DEFAULT 0,
-            created_at  TEXT DEFAULT (datetime('now','localtime'))
+            auto_start  INTEGER DEFAULT 0
         );
     ''')
