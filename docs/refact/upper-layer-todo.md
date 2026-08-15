@@ -57,6 +57,20 @@
 
 > 语义：fallback 是独立的快速切换节点，不在候选池里；A 挂了先切到 fallback，再扫候选池找可用节点。
 
+## 6. 引用完整性外键化：删除策略待定
+
+**底层待实现**：所有引用关系声明外键（`nodes.sub_id`、`outbound_nodes`、`outbound_fallback`、`services.inbound_id/outbound_id`），删除时由 DB 自动级联或拦删；`direct`/`custom` 升级为 `id=0` 哨兵行。见 `docs/refact/db/referential-integrity.md`。
+
+**待适配（上层重写时）**：
+
+| 文件 | 待改 |
+|------|------|
+| `services/node_service.py` | `delete_node` 现有「检查引用并拒绝」逻辑（`list_outbounds_by_node`）与外键 CASCADE 语义冲突。定：删除节点是否静默级联（删池/fallback 引用，不拦），或降级为前端删除前确认弹窗 |
+| `db/outbound.py` | `list_outbounds_by_node` 去留：若不再做后端拒绝，则删；若保留「误删提示」，改前端确认用（列出引用该节点的出站名） |
+| `services/outbound_service.py` | `delete_outbound` 是否加「被 service 引用则拦」（外键 RESTRICT 会在 DB 层抛 IntegrityError，需在 service 层捕获转友好提示） |
+
+> 外键只保证「不留孤儿 / 不静默破坏引用」，**不决定**「用户删时要不要先拦一下提示」。后者是应用层策略，此处登记，待上层重写时定。
+
 ---
 
 ## 约定
