@@ -71,19 +71,6 @@ def clear_nodes(sub_id):
     db.commit()
 
 
-def batch_insert_nodes(sub_id, nodes):
-    """Insert a list of node dicts for *sub_id* in one transaction."""
-    db = get_db()
-    db.executemany(
-        '''INSERT INTO nodes
-           (sub_id, name, protocol, address, port, config_json, bin_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        [(sub_id, n['name'], n['protocol'], n['address'], n['port'],
-          n['config_json'], n['bin_type']) for n in nodes]
-    )
-    db.commit()
-
-
 def _update_node(node_id, **fields):
     """Update node fields without committing (private to sync_nodes)."""
     allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}

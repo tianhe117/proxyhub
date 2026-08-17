@@ -10,7 +10,7 @@ from datetime import datetime
 
 import yaml
 
-from app.db.subscription import get_by_id, update, clear_nodes, batch_insert_nodes, sync_nodes
+from app.db.subscription import get_by_id, update, clear_nodes, sync_nodes
 from app.utils import log
 
 

@@ -3,7 +3,9 @@
 import json
 
 from app.db.node import create, update, delete, delete_all, get_by_id
-from app.db.outbound import list_outbounds_by_node
+from app.db.outbound import get_by_id as get_outbound
+from app.db.references import list_incoming_references
+from app.db.database import get_db
 from app.utils.validators import is_valid_protocol, is_valid_port
 
 
@@ -49,14 +51,21 @@ def update_node(node_id, **fields):
 
 
 def delete_node(node_id):
-    """Delete a node, refusing if a single-type outbound references it."""
+    """Delete a node, refusing if an outbound references it.
+
+    TODO(upper-layer): 删除策略待定——现「拒绝删除」与外键 CASCADE 冲突，
+    上层重写时决定去留（静默级联 或 前端确认弹窗）。
+    """
     node = get_by_id(node_id)
     if not node:
         return {'success': False, 'message': 'Node not found'}
 
-    refs = list_outbounds_by_node(node_id)
+    refs = list_incoming_references(get_db(), 'nodes', node_id)
     if refs:
-        names = ', '.join(r['name'] for r in refs)
+        ob_ids = sorted({row['outbound_id'] for ref in refs for row in ref['rows']})
+        names = ', '.join(
+            (get_outbound(oid) or {'name': f'#{oid}'})['name'] for oid in ob_ids
+        )
         return {'success': False,
                 'message': f'Node is used by outbound(s): {names}'}
 

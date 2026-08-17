@@ -42,18 +42,6 @@ def get_by_id(out_id):
     return db.execute('SELECT * FROM outbounds WHERE id = ?', (out_id,)).fetchone()
 
 
-def list_outbounds_by_node(node_id):
-    """Return outbounds that reference *node_id* (via outbound_nodes)."""
-    db = get_db()
-    return db.execute(
-        '''SELECT DISTINCT o.id, o.name
-           FROM outbounds o
-           JOIN outbound_nodes onr ON onr.outbound_id = o.id
-           WHERE onr.node_id = ?''',
-        (node_id,)
-    ).fetchall()
-
-
 def create(name):
     """Insert an outbound and return its id."""
     db = get_db()
