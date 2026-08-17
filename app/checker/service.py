@@ -53,7 +53,7 @@ def _check_url_one(node: dict, port: int) -> CheckResult:
 # check_node  —  TCP → URL 两阶段并发
 # ---------------------------------------------------------------------------
 
-def check_node(nodes: list[dict], timeout=None) -> list[CheckResult]:
+def check_node(nodes: list[dict]) -> list[CheckResult]:
     """Health-check a list of node dicts: TCP first (all parallel),
     then URL for nodes that passed TCP (parallel).
 
@@ -63,8 +63,6 @@ def check_node(nodes: list[dict], timeout=None) -> list[CheckResult]:
         return []
 
     tcp_to = int(get_setting('tcp_timeout') or DEFAULT_SETTINGS['tcp_timeout'])
-    curl_to = int(get_setting('curl_timeout') or DEFAULT_SETTINGS['curl_timeout'])
-    timeout = timeout or curl_to
 
     n = len(nodes)
 

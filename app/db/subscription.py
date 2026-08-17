@@ -14,6 +14,7 @@ Subscription dict structure (sqlite3.Row → dict):
 """
 
 from .database import get_db
+from .node import list_by_sub
 
 
 def list_all():
@@ -83,16 +84,8 @@ def batch_insert_nodes(sub_id, nodes):
     db.commit()
 
 
-def get_nodes_by_sub(sub_id):
-    """Return all nodes for a subscription."""
-    db = get_db()
-    return db.execute(
-        'SELECT * FROM nodes WHERE sub_id = ?', (sub_id,)
-    ).fetchall()
-
-
-def update_node(node_id, **fields):
-    """Update fields on a node."""
+def _update_node(node_id, **fields):
+    """Update node fields without committing (private to sync_nodes)."""
     allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if 'port' in updates:
@@ -105,8 +98,11 @@ def update_node(node_id, **fields):
     db.execute(f'UPDATE nodes SET {sets} WHERE id = ?', vals)
 
 
-def delete_node(node_id):
-    """Delete a node (outbound pool/fallback refs cascade via FK)."""
+def _delete_node(node_id):
+    """Delete a node without committing (private to sync_nodes).
+
+    outbound pool/fallback refs cascade via FK.
+    """
     db = get_db()
     db.execute('DELETE FROM nodes WHERE id = ?', (node_id,))
 
@@ -118,10 +114,15 @@ def sync_nodes(sub_id, new_nodes):
     - name only in old: DELETE
     - name only in new: INSERT
 
+    Matching by name keeps node ids stable, so outbound pool/fallback
+    references survive refreshes.  New-side duplicate names collapse to
+    the last occurrence (dict overwrite); dedup is expected upstream in
+    the parser.
+
     Returns:
         dict: {updated, deleted, inserted}
     """
-    old_nodes = get_nodes_by_sub(sub_id)
+    old_nodes = list_by_sub(sub_id)
     old_map = {n['name']: dict(n) for n in old_nodes}
     new_map = {n['name']: n for n in new_nodes}
 
@@ -144,18 +145,18 @@ def sync_nodes(sub_id, new_nodes):
 
     db = get_db()
     try:
-        # Update existing nodes
+        # Update existing nodes (deferred commit — one commit for the sync)
         for node_id, new in to_update:
-            update_node(node_id,
-                        protocol=new['protocol'],
-                        address=new['address'],
-                        port=new['port'],
-                        config_json=new['config_json'],
-                        bin_type=new['bin_type'])
+            _update_node(node_id,
+                         protocol=new['protocol'],
+                         address=new['address'],
+                         port=new['port'],
+                         config_json=new['config_json'],
+                         bin_type=new['bin_type'])
 
-        # Delete removed nodes
+        # Delete removed nodes (FK cascades outbound pool/fallback refs)
         for node_id in to_delete:
-            delete_node(node_id)
+            _delete_node(node_id)
 
         # Insert new nodes
         if to_insert:

@@ -75,6 +75,20 @@
 
 > 外键只保证「不留孤儿 / 不静默破坏引用」，**不决定**「用户删时要不要先拦一下提示」。后者是应用层策略，此处登记，待上层重写时定。
 
+## 7. direct 协议一等化：底层已开，上层待适配
+
+**底层已完成**：`PROTOCOL_BIN_MAP['direct'] = 'xray'`，`is_valid_protocol('direct')` 现返回 True；`engine/xray.py:_build_outbound` 已支持 `direct`→`freedom`。
+
+**待适配（上层重写时）**：
+
+| 文件 | 待改 |
+|------|------|
+| `services/node_service.py` | `create_custom_node` 的 `if not address` 校验会拒绝 direct 节点（direct 无需 address/port）。改为 direct 协议跳过 address/port 校验 |
+| 前端 `nodes.html` | 节点表单协议下拉加 `direct` 选项（direct 无 address/port/配置项） |
+| `services/config_service.py` | `get_outbound_node` 重写（现读旧 `outbound['type']`），direct 节点按普通 xray 节点走 freedom |
+
+> 语义提醒：`service.outbound_id=0` 哨兵（「不走出站」）与 `protocol='direct'` 节点（「freedom 直连」）是**两个不同概念**，此改动不合并它们；是否统一是上层建模决策。
+
 ---
 
 ## 约定

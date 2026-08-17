@@ -87,6 +87,7 @@ PROTOCOL_BIN_MAP = {
     'hysteria':  'sing-box',
     'hysteria2': 'sing-box',
     'tuic':      'sing-box',
+    'direct':    'xray',
 }
 
 # ---------------------------------------------------------------------------

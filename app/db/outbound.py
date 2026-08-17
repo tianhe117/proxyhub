@@ -101,11 +101,13 @@ def get_pool_nodes(outbound_id):
     ).fetchall()
 
 
-def add_pool_node(outbound_id, node_id, priority=0):
-    """Add a node to an outbound's pool and return the pool entry id."""
+def add_pool_node(outbound_id, node_id, priority=None):
+    """Add a node to an outbound's pool and return the pool entry id.
+
+    *priority* defaults to None = auto-assign to the end of the pool.
+    """
     db = get_db()
-    # Auto-assign priority to end if not specified
-    if priority == 0:
+    if priority is None:
         max_p = db.execute(
             'SELECT COALESCE(MAX(priority), 0) FROM outbound_nodes WHERE outbound_id = ?',
             (outbound_id,)

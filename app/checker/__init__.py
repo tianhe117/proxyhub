@@ -1,6 +1,6 @@
 """Node health checking — public API.
 
-check_node(nodes, timeout=6)  → list[CheckResult]  (CheckResult 从 app.utils 取)
+check_node(nodes)  → list[CheckResult]  (CheckResult 从 app.utils 取)
 """
 
 from .service import check_node

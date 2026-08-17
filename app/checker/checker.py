@@ -23,11 +23,10 @@ _SCRIPTS_DIR = os.path.join(BASE_DIR, 'scripts')
 def tcp_check(address: str, port: int, timeout: int = 3) -> CheckResult:
     try:
         t0 = time.time()
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect((address, int(port)))
-        lat = round((time.time() - t0) * 1000)
-        sock.close()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect((address, int(port)))
+            lat = round((time.time() - t0) * 1000)
         return CheckResult(success=True, url_latency_ms=-1, tcp_latency_ms=lat,
                    http_code='0', error='')
     except Exception as e:

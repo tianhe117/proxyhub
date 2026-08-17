@@ -118,7 +118,7 @@ def _seed_sentinels(db):
 
     These are placeholder parents so FOREIGN KEY constraints cover the
     sentinel values (nodes.sub_id=0, services.outbound_id=0).  They are
-    read-only and filtered out of list_all().
+    included in list_all(); delete() guards id=0 so they stay read-only.
     """
     db.execute(
         "INSERT OR IGNORE INTO subscriptions (id, name, url) VALUES (0, 'custom', '')"
