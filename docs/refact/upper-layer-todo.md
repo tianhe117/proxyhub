@@ -91,6 +91,24 @@
 
 ---
 
+## 8. SSR 支持方案待定：混淆告警
+
+**底层待定**：SSR 最终方案未定（xray 的 `shadowsocks` 协议无法表达 SSR 的 `obfs`/`protocol` 混淆字段）。两个方向：
+- **A. 近似支持**：engine `_build_outbound` 把 ssr 的 `cipher` 读成 `method`（无混淆的 ssr 等价 ss 可用），带混淆的由上层告警
+- **B. 彻底不支持**：`PROTOCOL_BIN_MAP` 删 `ssr`，parser 跳过 ssr 节点
+
+**待适配（方向 A 时）**：
+
+| 文件 | 待改 |
+|------|------|
+| `engine/xray.py` | ssr 分支读 `cipher`（当前读 `method`，加密方式会丢） |
+| `services/subscription_service.py` | `_parse_clash_ssr` 解析时，若 `obfs != 'plain'`，`log('warn', ...)` 提示"SSR 带混淆暂不支持" |
+| 前端 `nodes.html`（可选） | 带混淆标记 + 黄色角标 |
+
+> 根因：xray 的 `shadowsocks` 协议无法表达 SSR 的 `obfs`/`protocol` 混淆字段。是否支持 SSR 是建模决策，先不落地。
+
+---
+
 ## 约定
 
 - 底层改动只保证 `import app.routes` 不崩 + `py_compile` 通过；上层旧字段引用允许存在，直到整层重写。

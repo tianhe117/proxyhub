@@ -267,8 +267,7 @@ def _start_service_with_node(service_id, node_id):
     if not node:
         return {'success': False, 'message': 'Node not found'}
 
-    from app.engine import build_outbound_config
-    from app.engine.xray import build_xray_inbound
+    from app.engine import build_outbound_config, build_xray_inbound
     from app.services.config_service import (
         check_inbound_port, save_service_config,
     )
