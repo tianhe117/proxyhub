@@ -43,11 +43,12 @@ INSERT OR IGNORE INTO subscriptions (id, name) VALUES (0, 'custom');
 INSERT OR IGNORE INTO outbounds     (id, name) VALUES (0, 'direct');
 ```
 
-### 哨兵行三条配套规则（必须，否则泄漏进业务）
+### 哨兵行两条配套规则（必须，否则泄漏进业务）
 
-1. **列表查询过滤**：`subscriptions.list_all` / `outbounds.list_all` 加 `WHERE id > 0`，custom/direct 不进入订阅列表与出站下拉。
-2. **删除保护**：`subscriptions.delete` / `outbounds.delete` 显式拒绝 `id=0`（或 `WHERE id > 0`），哨兵行只读。
-3. **语义定位**：哨兵行是「为满足外键而存在的占位父行」，非真实业务实体——custom 节点 `sub_id=0` 借它满足外键，direct service `outbound_id=0` 借它满足外键。
+1. **删除保护**：`subscriptions.delete` / `outbounds.delete` 用 `WHERE id > 0` 兜底，哨兵行只读、不可删（前端即使发删除请求也落在 db 层护栏上，删不掉）。
+2. **语义定位**：哨兵行是「为满足外键而存在的占位父行」，非真实业务实体——custom 节点 `sub_id=0` 借它满足外键，direct service `outbound_id=0` 借它满足外键。
+
+> 列表查询**不**过滤哨兵行：`list_all` 直接全量返回，哨兵行是一等公民。`direct` 让 service 下拉自动获得 Direct 选项；`custom` 让 `list_by_sub(0)` 无需特殊通道。由此引入的前端显示适配（订阅页/出站管理页过滤 id=0）登记在 upper-layer-todo，待前端重写时处理。
 
 ## 完整 DDL
 
@@ -205,10 +206,10 @@ print('old db dropped; run init_db to rebuild')
 | 文件 | 改动 |
 |------|------|
 | `app/db/database.py` | 全部建表加外键；`init_db` 末尾 seed 两行哨兵（`INSERT OR IGNORE ... id=0`） |
-| `app/db/subscription.py` | `list_all` 加 `WHERE id > 0`；`delete` 拒绝/过滤 `id=0` |
-| `app/db/outbound.py` | `list_all` 加 `WHERE id > 0`；`delete` 拒绝/过滤 `id=0` |
+| `app/db/subscription.py` | `list_all` 全量返回（含 id=0 custom）；`delete` 用 `WHERE id > 0` 护栏 |
+| `app/db/outbound.py` | `list_all` 全量返回（含 id=0 direct）；`delete` 用 `WHERE id > 0` 护栏 |
 | `app/db/references.py`（新增） | `list_incoming_references` / `tree_incoming_references` 通用反向查询 |
-| `app/db/node.py` | `delete`/`delete_all` 删掉手写 `DELETE FROM outbound_nodes`（外键已级联） |
+| `app/db/node.py` | `delete` 删掉手写 `DELETE FROM outbound_nodes`（外键已级联）；`list_grouped` 跳过 id=0 哨兵（custom 仍以 `sub=None` 呈现） |
 | `app/db/outbound.py` | `delete` 删掉手写 `DELETE FROM outbound_nodes`（外键已级联） |
 | `app/db/subscription.py` | `delete`/`clear_nodes`/`delete_node` 删掉手写级联（外键已级联） |
 | `scripts/migrate_db.py` | 改为删库重建 |

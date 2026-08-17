@@ -42,18 +42,11 @@ def list_grouped():
     from .subscription import list_all as list_all_subs
 
     groups = []
-
-    # Custom nodes first (sub_id = 0)
-    custom_nodes = list_by_sub(0)
-    if custom_nodes:
-        groups.append({'sub': None, 'nodes': custom_nodes})
-
-    # Then each subscription
     for sub in list_all_subs():
         nodes = list_by_sub(sub['id'])
-        if nodes:
-            groups.append({'sub': sub, 'nodes': nodes})
-
+        if not nodes:
+            continue
+        groups.append({'sub': None if sub['id'] == 0 else sub, 'nodes': nodes})
     return groups
 
 
@@ -96,9 +89,8 @@ def update(node_id, **fields):
 
 
 def delete(node_id):
-    """Delete a single node and its outbound pool references."""
+    """Delete a single node (outbound pool/fallback refs cascade via FK)."""
     db = get_db()
-    db.execute('DELETE FROM outbound_nodes WHERE node_id = ?', (node_id,))
     db.execute('DELETE FROM nodes WHERE id = ?', (node_id,))
     db.commit()
 

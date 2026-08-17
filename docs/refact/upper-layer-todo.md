@@ -59,7 +59,7 @@
 
 ## 6. 引用完整性外键化：删除策略待定
 
-**底层待实现**：所有引用关系声明外键（`nodes.sub_id`、`outbound_nodes`、`outbound_fallback`、`services.inbound_id/outbound_id`），删除时由 DB 自动级联或拦删；`direct`/`custom` 升级为 `id=0` 哨兵行。见 `docs/refact/db/referential-integrity.md`。
+**底层已完成**：所有引用关系声明外键（`nodes.sub_id`、`outbound_nodes`、`outbound_fallback`、`services.inbound_id/outbound_id`），删除时由 DB 自动级联或拦删；`direct`/`custom` 升级为 `id=0` 哨兵行。见 `docs/refact/db/referential-integrity.md`。
 
 **待适配（上层重写时）**：
 
@@ -68,6 +68,10 @@
 | `services/node_service.py` | `delete_node` 现有「检查引用并拒绝」逻辑（`list_outbounds_by_node`）与外键 CASCADE 语义冲突。定：删除节点是否静默级联（删池/fallback 引用，不拦），或降级为前端删除前确认弹窗 |
 | `db/outbound.py` | `list_outbounds_by_node` 去留：若不再做后端拒绝，则删；若保留「误删提示」，改前端确认用（列出引用该节点的出站名） |
 | `services/outbound_service.py` | `delete_outbound` 是否加「被 service 引用则拦」（外键 RESTRICT 会在 DB 层抛 IntegrityError，需在 service 层捕获转友好提示） |
+| `routes/api_inbounds.py` | `delete_inbound` 直接调 `db.inbound.delete`，无 service 层；inbound 被 service 引用时 RESTRICT 抛 IntegrityError 未捕获，会变 500。需捕获转友好提示 |
+| 前端 `subscriptions.html` | `list_all` 现含 id=0 custom 哨兵行，列表会多一行 url 为空的 "custom" 订阅（带刷新/编辑/删除按钮）。渲染时 `filter(s.id !== 0)` 排除 |
+| 前端 `outbounds.html` | `list_all` 现含 id=0 direct 哨兵行，管理页会渲染出一个可编辑/可删的 direct 出站卡片。渲染时 `filter(o.id !== 0)` 排除 |
+| 前端 `dashboard.html` | service 下拉（`svcOutbound`）现自动含 direct 哨兵行（好处），可删掉手写 `<option value="0">Direct</option>`；确认 `o.type` 显示不再依赖旧 type 字段 |
 
 > 外键只保证「不留孤儿 / 不静默破坏引用」，**不决定**「用户删时要不要先拦一下提示」。后者是应用层策略，此处登记，待上层重写时定。
 

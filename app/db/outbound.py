@@ -31,7 +31,7 @@ from .database import get_db
 # ---------------------------------------------------------------------------
 
 def list_all():
-    """Return all outbounds ordered by id."""
+    """Return all outbounds ordered by id (includes id=0 direct sentinel)."""
     db = get_db()
     return db.execute('SELECT * FROM outbounds ORDER BY id').fetchall()
 
@@ -76,10 +76,9 @@ def update(out_id, **fields):
 
 
 def delete(out_id):
-    """Delete an outbound and its pool entries."""
+    """Delete an outbound (pool/fallback refs cascade via FK; id=0 reserved)."""
     db = get_db()
-    db.execute('DELETE FROM outbound_nodes WHERE outbound_id = ?', (out_id,))
-    db.execute('DELETE FROM outbounds WHERE id = ?', (out_id,))
+    db.execute('DELETE FROM outbounds WHERE id = ? AND id > 0', (out_id,))
     db.commit()
 
 

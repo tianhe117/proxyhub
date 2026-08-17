@@ -44,9 +44,10 @@ def close_db():
 # ---------------------------------------------------------------------------
 
 def init_db():
-    """Create tables (idempotent)."""
+    """Create tables (idempotent) and seed sentinel rows."""
     db = get_db()
     _create_tables(db)
+    _seed_sentinels(db)
 
 
 def _create_tables(db):
@@ -67,7 +68,7 @@ def _create_tables(db):
 
         CREATE TABLE IF NOT EXISTS nodes (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            sub_id        INTEGER DEFAULT 0,
+            sub_id        INTEGER NOT NULL DEFAULT 0 REFERENCES subscriptions(id) ON DELETE CASCADE,
             name          TEXT NOT NULL,
             protocol      TEXT NOT NULL,
             address       TEXT NOT NULL,
@@ -92,21 +93,35 @@ def _create_tables(db):
 
         CREATE TABLE IF NOT EXISTS outbound_nodes (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            outbound_id INTEGER NOT NULL,
-            node_id     INTEGER NOT NULL,
+            outbound_id INTEGER NOT NULL REFERENCES outbounds(id) ON DELETE CASCADE,
+            node_id     INTEGER NOT NULL REFERENCES nodes(id)     ON DELETE CASCADE,
             priority    INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS outbound_fallback (
-            outbound_id INTEGER PRIMARY KEY,
-            node_id     INTEGER NOT NULL
+            outbound_id INTEGER PRIMARY KEY REFERENCES outbounds(id) ON DELETE CASCADE,
+            node_id     INTEGER NOT NULL        REFERENCES nodes(id)     ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS services (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT NOT NULL,
-            inbound_id  INTEGER NOT NULL,
-            outbound_id INTEGER NOT NULL,
+            inbound_id  INTEGER NOT NULL REFERENCES inbounds(id)  ON DELETE RESTRICT,
+            outbound_id INTEGER NOT NULL REFERENCES outbounds(id) ON DELETE RESTRICT,
             auto_start  INTEGER DEFAULT 0
         );
     ''')
+
+
+def _seed_sentinels(db):
+    """Insert id=0 sentinel rows (custom subscription / direct outbound).
+
+    These are placeholder parents so FOREIGN KEY constraints cover the
+    sentinel values (nodes.sub_id=0, services.outbound_id=0).  They are
+    read-only and filtered out of list_all().
+    """
+    db.execute(
+        "INSERT OR IGNORE INTO subscriptions (id, name, url) VALUES (0, 'custom', '')"
+    )
+    db.execute("INSERT OR IGNORE INTO outbounds (id, name) VALUES (0, 'direct')")
+    db.commit()

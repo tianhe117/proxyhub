@@ -17,7 +17,7 @@ from .database import get_db
 
 
 def list_all():
-    """Return all subscriptions ordered by id."""
+    """Return all subscriptions ordered by id (includes id=0 custom sentinel)."""
     db = get_db()
     return db.execute('SELECT * FROM subscriptions ORDER BY id').fetchall()
 
@@ -57,10 +57,9 @@ def update(sub_id, **fields):
 
 
 def delete(sub_id):
-    """Delete a subscription and its associated nodes."""
+    """Delete a subscription (its nodes cascade via FK; id=0 reserved)."""
     db = get_db()
-    db.execute('DELETE FROM nodes WHERE sub_id = ?', (sub_id,))
-    db.execute('DELETE FROM subscriptions WHERE id = ?', (sub_id,))
+    db.execute('DELETE FROM subscriptions WHERE id = ? AND id > 0', (sub_id,))
     db.commit()
 
 
@@ -107,9 +106,8 @@ def update_node(node_id, **fields):
 
 
 def delete_node(node_id):
-    """Delete a node and its outbound references."""
+    """Delete a node (outbound pool/fallback refs cascade via FK)."""
     db = get_db()
-    db.execute('DELETE FROM outbound_nodes WHERE node_id = ?', (node_id,))
     db.execute('DELETE FROM nodes WHERE id = ?', (node_id,))
 
 
