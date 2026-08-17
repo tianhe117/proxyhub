@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ProxyHub{% endblock %}</title>
+  {# Pure HTML, CSS/JS fully inlined (no static/, no build step) #}
+  <style>
+    /* TODO(Web/route layer): global design system + landscape modal styles */
+  </style>
+</head>
+<body>
+  {% block content %}{% endblock %}
+  <script>
+    /* TODO(Web/route layer): showConfirm / showMessage / closeModal */
+  </script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# ProxyHub v2 - orchestration (deployment layer to be refined):
+#   sing-box + Flask in the same container; data/ and logs/ mounted as separate volumes.
+services: {}

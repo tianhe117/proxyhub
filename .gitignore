@@ -1,0 +1,15 @@
+# Nested worktree holding the refact branch for reference (not part of this branch)
+refact/
+
+# Runtime state (docker=volume / venv=local in-repo dir)
+data/
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Misc
+.DS_Store
