@@ -51,12 +51,16 @@ def _build_selectors(outbounds, outbound_nodes):
         oid = o['id']
         if oid == 0:
             continue  # direct sentinel — no selector
-        members = [_tag_node(nid) for nid in pool_by_outbound.get(oid, [])] + ['direct']
-        selectors.append({
+        members = [_tag_node(nid) for nid in pool_by_outbound.get(oid, [])]
+        if not members:
+            continue  # no pool nodes — skip selector (use direct via route)
+        sel = {
             'type': 'selector',
             'tag': _tag_selector(oid),
             'outbounds': members,
-        })
+            'default': members[0],
+        }
+        selectors.append(sel)
     return selectors
 
 

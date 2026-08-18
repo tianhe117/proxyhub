@@ -101,7 +101,7 @@ class TestBuildConfigSample(unittest.TestCase):
         self.assertEqual(sel['tag'], 'g20')
         self.assertIn('n1', sel['outbounds'])
         self.assertIn('n2', sel['outbounds'])
-        self.assertIn('direct', sel['outbounds'])
+        self.assertEqual(sel['default'], 'n1')
 
     def test_route_rules(self):
         rules = self.config['route']['rules']
@@ -162,7 +162,7 @@ class TestBuildConfigEdgeCases(unittest.TestCase):
         config = build_config(state)
         self.assertEqual(len(config['route']['rules']), 0)
 
-    def test_empty_pool_selector(self):
+    def test_empty_pool_selector_skipped(self):
         state = {
             'nodes': [],
             'inbounds': [],
@@ -171,8 +171,8 @@ class TestBuildConfigEdgeCases(unittest.TestCase):
             'services': [],
         }
         config = build_config(state)
-        sel = next(ob for ob in config['outbounds'] if ob.get('tag') == 'g10')
-        self.assertEqual(sel['outbounds'], ['direct'])
+        selectors = [ob for ob in config['outbounds'] if ob['type'] == 'selector']
+        self.assertEqual(len(selectors), 0)
 
 
 class TestWriteConfig(unittest.TestCase):
