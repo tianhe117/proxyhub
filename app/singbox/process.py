@@ -1,8 +1,7 @@
 """sing-box single resident process management: start / stop / restart.
 
 No hot reload: restart() = stop + start. No PID file — the resident process
-is identified by scanning system processes (Docker-native, matching the config
-path in args) plus an in-memory pid from the last start().
+is identified by scanning system processes (matching the config path in args).
 """
 
 import os
@@ -16,11 +15,6 @@ from app.settings import (
     SINGBOX_RUN_ARGS,
 )
 from app.utils import log
-
-# In-memory pid of the resident process (not persisted; design.md §4: no
-# state carried across restarts).
-_pid = None
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -49,13 +43,8 @@ def _is_running(pid):
 def _find_pid():
     """Return the resident sing-box pid, or None.
 
-    Prefers the in-memory pid; falls back to scanning `ps` for a `sing-box`
-    process whose args contain the generated config path.
+    Scans `ps` for a `sing-box` process whose args contain the config path.
     """
-    global _pid
-    if _pid and _is_running(_pid):
-        return _pid
-
     config_name = os.path.basename(CONFIG_PATH)
     try:
         result = subprocess.run(
@@ -128,10 +117,8 @@ def start() -> int:
     Raises:
         RuntimeError: binary missing, or process exited immediately.
     """
-    global _pid
     pid = _find_pid()
     if pid:
-        _pid = pid
         log.info(f'sing-box already running (PID {pid})')
         return pid
 
@@ -155,7 +142,6 @@ def start() -> int:
     if proc.poll() is not None:
         raise RuntimeError(f'sing-box exited immediately with code {proc.returncode}')
 
-    _pid = proc.pid
     log.info(f'sing-box started (PID {proc.pid})')
     return proc.pid
 
@@ -166,15 +152,12 @@ def stop() -> dict:
     Returns:
         dict: {success, message, killed}
     """
-    global _pid
     pid = _find_pid()
     if pid is None:
-        _pid = None
         log.info('sing-box: no running process found')
         return {'success': True, 'message': 'No process running', 'killed': 0}
 
     if _kill_pid(pid):
-        _pid = None
         log.info(f'sing-box stopped (PID {pid})')
         return {'success': True, 'message': 'Stopped', 'killed': 1}
 
