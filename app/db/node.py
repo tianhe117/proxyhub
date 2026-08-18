@@ -4,12 +4,10 @@ Node dict structure (sqlite3.Row → dict):
     id          int       primary key
     sub_id      int       subscription id, 0 = custom
     name        str       display name
-    protocol    str       vmess / vless / trojan / ss / ssr / anytls /
-                          hysteria / hysteria2 / tuic / direct
+    protocol    str       vmess / vless / trojan / ss / hysteria2 / tuic / direct
     address     str       remote server address
-    port         int        remote server port
+    port        int       remote server port
     config_json str       JSON string, protocol-specific config
-    bin_type    str       xray / sslocal / sing-box
 
 Latency is stored in-memory (app.utils.latency), not in the DB.
 """
@@ -56,16 +54,16 @@ def get_by_id(node_id):
     return db.execute('SELECT * FROM nodes WHERE id = ?', (node_id,)).fetchone()
 
 
-def create(sub_id, name, protocol, address, port, config_json, bin_type='xray'):
+def create(sub_id, name, protocol, address, port, config_json):
     """Insert a node and return its id."""
     db = get_db()
     if isinstance(config_json, dict):
         config_json = json.dumps(config_json)
     cur = db.execute(
         '''INSERT INTO nodes
-           (sub_id, name, protocol, address, port, config_json, bin_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?)''',
-        (sub_id, name, protocol, address, int(port), config_json, bin_type)
+           (sub_id, name, protocol, address, port, config_json)
+           VALUES (?, ?, ?, ?, ?, ?)''',
+        (sub_id, name, protocol, address, int(port), config_json)
     )
     db.commit()
     return cur.lastrowid
@@ -73,7 +71,7 @@ def create(sub_id, name, protocol, address, port, config_json, bin_type='xray'):
 
 def update(node_id, **fields):
     """Update mutable fields on a node."""
-    allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}
+    allowed = {'name', 'protocol', 'address', 'port', 'config_json'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if 'port' in updates:
         updates['port'] = int(updates['port'])

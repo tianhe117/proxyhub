@@ -73,8 +73,7 @@ def _create_tables(db):
             protocol      TEXT NOT NULL,
             address       TEXT NOT NULL,
             port          INTEGER NOT NULL,
-            config_json   TEXT NOT NULL,
-            bin_type      TEXT DEFAULT 'xray'
+            config_json   TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS inbounds (

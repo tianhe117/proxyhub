@@ -14,8 +14,8 @@ outbound_fallback structure:
     outbound_id int    primary key (at most one per outbound)
     node_id     int    quick-switch fallback node id
 
-Semantics are derived from data, no type enum:
-    direct  → service.outbound_id = 0
+Semantics:
+    direct  → service.outbound_id = 0 (sentinel, no outbound row)
     single  → outbound with 1 pool node
     auto    → outbound with >=2 pool nodes (failover)
 
@@ -80,7 +80,7 @@ def get_pool_nodes(outbound_id):
     db = get_db()
     return db.execute(
         '''SELECT onr.id AS pool_id, onr.priority, onr.node_id,
-                  n.name, n.protocol, n.address, n.port, n.bin_type
+                  n.name, n.protocol, n.address, n.port
            FROM outbound_nodes onr
            JOIN nodes n ON n.id = onr.node_id
            WHERE onr.outbound_id = ?

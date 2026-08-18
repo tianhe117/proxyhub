@@ -73,7 +73,7 @@ def clear_nodes(sub_id):
 
 def _update_node(node_id, **fields):
     """Update node fields without committing (private to sync_nodes)."""
-    allowed = {'name', 'protocol', 'address', 'port', 'config_json', 'bin_type'}
+    allowed = {'name', 'protocol', 'address', 'port', 'config_json'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if 'port' in updates:
         updates['port'] = int(updates['port'])
@@ -138,8 +138,7 @@ def sync_nodes(sub_id, new_nodes):
                          protocol=new['protocol'],
                          address=new['address'],
                          port=new['port'],
-                         config_json=new['config_json'],
-                         bin_type=new['bin_type'])
+                         config_json=new['config_json'])
 
         # Delete removed nodes (FK cascades outbound pool/fallback refs)
         for node_id in to_delete:
@@ -149,10 +148,10 @@ def sync_nodes(sub_id, new_nodes):
         if to_insert:
             db.executemany(
                 '''INSERT INTO nodes
-                   (sub_id, name, protocol, address, port, config_json, bin_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                   (sub_id, name, protocol, address, port, config_json)
+                   VALUES (?, ?, ?, ?, ?, ?)''',
                 [(sub_id, n['name'], n['protocol'], n['address'], n['port'],
-                  n['config_json'], n['bin_type']) for n in to_insert]
+                  n['config_json']) for n in to_insert]
             )
 
         db.commit()
