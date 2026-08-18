@@ -16,10 +16,11 @@ import os
 from app.settings import (
     CONFIG_PATH,
     VALID_INBOUND_PROTOCOLS,
+    get_setting,
 )
 from app.utils import log
 
-CLASH_API_CONTROLLER = '127.0.0.1:9090'
+CLASH_API_IP = '127.0.0.1'
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +351,7 @@ def build_config(db_state) -> dict:
         'route': route,
         'experimental': {
             'clash_api': {
-                'external_controller': CLASH_API_CONTROLLER,
+                'external_controller': f'{CLASH_API_IP}:{get_setting("clash_api_port")}',
                 'secret': '',
             },
         },

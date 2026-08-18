@@ -36,6 +36,7 @@ settings.py 承担两类职责：
 | `web_port` | `8080` | Web 监听端口 |
 | `web_username` | `admin` | 登录用户名 |
 | `web_password` | `` | 登录密码（空=免密） |
+| `clash_api_port` | `9090` | sing-box clash_api 外部控制器端口 |
 
 > 说明：`curl_timeout` 沿用 v1 命名（内部语义变为 clash_api `/delay` 的 timeout，非 curl 子进程）；`check_*` 间隔继续由调度层消费。
 > **二进制路径不再是配置项**：单引擎下二进制位置是部署产物（Docker 装 / upgrade 下载），无运行时改路径需求，改为写死常量 `SINGBOX_BIN_PATH`（见 §6）。

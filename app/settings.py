@@ -25,6 +25,7 @@ DEFAULT_SETTINGS = {
     'web_port':                '8080',
     'web_username':            'admin',
     'web_password':            '',
+    'clash_api_port':          '9090',
 }
 
 # ---------------------------------------------------------------------------
@@ -94,10 +95,18 @@ _store = _load_from_disk()
 # ---- public API ----
 
 def get_setting(key):
-    """Return a single setting value, or default if key not present."""
+    """Return a single setting value, or default if key not present.
+
+    When falling back to the default, the value is also persisted to disk
+    so that subsequent reads and the settings page reflect all known keys.
+    """
     if key in _store:
         return _store[key]
-    return DEFAULT_SETTINGS.get(key)
+    default = DEFAULT_SETTINGS.get(key)
+    if default is not None:
+        _store[key] = default
+        _persist_to_disk(_store)
+    return default
 
 
 def set_setting(key, value):
