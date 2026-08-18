@@ -82,7 +82,6 @@ db_state = {
 | `i{id}` | 用户入站（inbound id） | `i3` |
 | `g{id}` | selector 组（outbound id） | `g5` |
 | `n{id}` | 真实节点出站（node id） | `n12` |
-| `clash_api` | clash_api 专用入站（保留名，不与 `i{id}` 冲突） | `clash_api` |
 | `direct` / `block` | 静态保留出站 | `direct` / `block` |
 
 ### 3.3 config.json 顶层结构
@@ -91,8 +90,7 @@ db_state = {
 {
   "log": {"level": "info", "timestamp": true},
   "inbounds": [
-    { "type": "http", "tag": "i1", "listen": "0.0.0.0", "listen_port": 8081, "users": [...] },
-    { "type": "direct", "tag": "clash_api", "listen": "127.0.0.1", "listen_port": 9090 }
+    { "type": "http", "tag": "i1", "listen": "0.0.0.0", "listen_port": 8081, "users": [...] }
   ],
   "outbounds": [
     { "type": "vmess",  "tag": "n12", "server": "...", "server_port": 443, "uuid": "..." },
@@ -103,15 +101,20 @@ db_state = {
   "route": {
     "rules": [ { "inbound": ["i1"], "outbound": "g5" } ],
     "final": "direct"
+  },
+  "experimental": {
+    "clash_api": { "external_controller": "127.0.0.1:9090", "secret": "" }
   }
 }
 ```
+
+> 修正：clash_api **不是独立入站**，而是 sing-box 的 `experimental.clash_api` 块（`external_controller` 指定监听地址）。selector/出站会自动暴露为 clash API 的 proxy group / proxy，无需额外入站 tag。
 
 组装顺序（`build_config` 内部）：
 
 1. **节点出站**：遍历 `nodes`，每个真实节点生成 `n{id}` 出站（§3.5）。
 2. **selector 组**：遍历 `outbounds`（id>0），每个生成 `g{id}` selector（§3.6）。
-3. **用户入站**：遍历 `inbounds`，每个生成 `i{id}` 入站（§3.4）；末尾追加 `clash_api` 入站。
+3. **用户入站**：遍历 `inbounds`，每个生成 `i{id}` 入站（§3.4）。
 4. **静态出站**：追加 `direct`、`block`。
 5. **route**：遍历 `services`，每条生成 `{inbound: [i{inbound_id}], outbound: ...}` 规则（§3.7）；`final` 固定 `direct`。
 
