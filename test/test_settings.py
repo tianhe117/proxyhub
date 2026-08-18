@@ -31,6 +31,7 @@ class TestConstants(unittest.TestCase):
             'check_interval_normal', 'check_interval_failover',
             'tcp_timeout', 'curl_timeout', 'test_url',
             'web_port', 'web_username', 'web_password',
+            'clash_api_port',
         }
         self.assertEqual(set(settings.DEFAULT_SETTINGS), expected)
 

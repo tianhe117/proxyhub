@@ -13,12 +13,9 @@ Tag convention:
 import json
 import os
 
-from app.settings import (
-    CONFIG_PATH,
-    VALID_INBOUND_PROTOCOLS,
-    get_setting,
-)
+from app.settings import CONFIG_PATH, get_setting
 from app.utils import log
+from app.singbox import protocol
 
 CLASH_API_IP = '127.0.0.1'
 
@@ -37,228 +34,6 @@ def _tag_selector(oid):
 
 def _tag_node(nid):
     return f'n{nid}'
-
-
-def _parse_json(raw):
-    """Parse a config_json / params_json field into a dict; tolerate bad input."""
-    if raw is None:
-        return {}
-    if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, str):
-        try:
-            data = json.loads(raw)
-            return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-    return {}
-
-
-# ---------------------------------------------------------------------------
-# Outbounds — real nodes (n{id})
-# ---------------------------------------------------------------------------
-
-def _apply_tls(ob, cfg):
-    """Attach a sing-box tls block when cfg['tls'] is truthy."""
-    if not cfg.get('tls'):
-        return
-    tls = {'enabled': True}
-    if cfg.get('sni'):
-        tls['server_name'] = cfg['sni']
-    if cfg.get('allowInsecure'):
-        tls['insecure'] = True
-    if cfg.get('alpn'):
-        alpn = cfg['alpn']
-        tls['alpn'] = alpn.split(',') if isinstance(alpn, str) else alpn
-    ob['tls'] = tls
-
-
-def _apply_transport(ob, cfg):
-    """Attach a sing-box transport block for ws / h2 / grpc networks."""
-    network = cfg.get('network', 'tcp') or 'tcp'
-    if network == 'tcp':
-        return
-    transport = {'type': network}
-    if network == 'ws':
-        if cfg.get('ws_host'):
-            transport['headers'] = {'Host': cfg['ws_host']}
-        if cfg.get('ws_path'):
-            transport['path'] = cfg['ws_path']
-    elif network in ('h2', 'http'):
-        transport['type'] = 'http'
-        if cfg.get('h2_host'):
-            host = cfg['h2_host']
-            transport['host'] = [host] if isinstance(host, str) else host
-        if cfg.get('h2_path'):
-            transport['path'] = cfg['h2_path']
-    elif network == 'grpc':
-        if cfg.get('grpc_service_name'):
-            transport['service_name'] = cfg['grpc_service_name']
-    else:
-        return  # unknown transport — leave outbound as plain TCP
-    ob['transport'] = transport
-
-
-def _build_hysteria2(tag, address, port, cfg):
-    ob = {
-        'type': 'hysteria2',
-        'tag': tag,
-        'server': address,
-        'server_port': port,
-        'password': cfg.get('password', ''),
-        'tls': {'enabled': True, 'server_name': cfg.get('sni', '')},
-    }
-    if cfg.get('allowInsecure'):
-        ob['tls']['insecure'] = True
-    if cfg.get('alpn'):
-        alpn = cfg['alpn']
-        ob['tls']['alpn'] = alpn.split(',') if isinstance(alpn, str) else alpn
-    if cfg.get('up_mbps'):
-        ob['up_mbps'] = int(cfg['up_mbps'])
-    if cfg.get('down_mbps'):
-        ob['down_mbps'] = int(cfg['down_mbps'])
-    if cfg.get('obfs'):
-        ob['obfs'] = {'type': 'salamander', 'password': cfg.get('obfs_password', '')}
-    return ob
-
-
-def _build_tuic(tag, address, port, cfg):
-    ob = {
-        'type': 'tuic',
-        'tag': tag,
-        'server': address,
-        'server_port': port,
-        'uuid': cfg.get('uuid', ''),
-        'password': cfg.get('password', ''),
-        'tls': {'enabled': True, 'server_name': cfg.get('sni', '')},
-    }
-    if cfg.get('allowInsecure'):
-        ob['tls']['insecure'] = True
-    if cfg.get('alpn'):
-        alpn = cfg['alpn']
-        ob['tls']['alpn'] = alpn.split(',') if isinstance(alpn, str) else alpn
-    if cfg.get('congestion_control'):
-        ob['congestion_control'] = cfg['congestion_control']
-    if cfg.get('udp_relay_mode'):
-        ob['udp_relay_mode'] = cfg['udp_relay_mode']
-    return ob
-
-
-def _build_node_outbound(node):
-    """Build a single real-node outbound n{id} from a node row/dict."""
-    protocol = node['protocol']
-    tag = _tag_node(node['id'])
-    cfg = _parse_json(node.get('config_json'))
-
-    if protocol == 'direct':
-        return {'type': 'direct', 'tag': tag}
-
-    address = node['address']
-    port = int(node['port'])
-
-    if protocol == 'vmess':
-        ob = {
-            'type': 'vmess',
-            'tag': tag,
-            'server': address,
-            'server_port': port,
-            'uuid': cfg.get('uuid') or cfg.get('id', ''),
-            'alter_id': int(cfg.get('alterId', cfg.get('alter_id', 0))),
-            'security': cfg.get('security', 'auto'),
-        }
-        _apply_tls(ob, cfg)
-        _apply_transport(ob, cfg)
-        return ob
-    elif protocol == 'vless':
-        ob = {
-            'type': 'vless',
-            'tag': tag,
-            'server': address,
-            'server_port': port,
-            'uuid': cfg.get('uuid') or cfg.get('id', ''),
-        }
-        if cfg.get('flow'):
-            ob['flow'] = cfg['flow']
-        _apply_tls(ob, cfg)
-        _apply_transport(ob, cfg)
-        return ob
-    elif protocol == 'trojan':
-        ob = {
-            'type': 'trojan',
-            'tag': tag,
-            'server': address,
-            'server_port': port,
-            'password': cfg.get('password', ''),
-        }
-        _apply_tls(ob, cfg)
-        _apply_transport(ob, cfg)
-        return ob
-    elif protocol == 'ss':
-        return {
-            'type': 'shadowsocks',
-            'tag': tag,
-            'server': address,
-            'server_port': port,
-            'method': cfg.get('method', 'aes-256-gcm'),
-            'password': cfg.get('password', ''),
-        }
-    elif protocol == 'hysteria2':
-        return _build_hysteria2(tag, address, port, cfg)
-    elif protocol == 'tuic':
-        return _build_tuic(tag, address, port, cfg)
-
-    raise ValueError(f'sing-box does not support protocol: {protocol}')
-
-
-# ---------------------------------------------------------------------------
-# Inbounds — user listeners (i{id})
-# ---------------------------------------------------------------------------
-
-def _build_inbound(inbound):
-    """Build a single user inbound i{id} from an inbound row/dict."""
-    protocol = inbound['protocol']
-    if protocol not in VALID_INBOUND_PROTOCOLS:
-        raise ValueError(f'Unsupported inbound protocol: {protocol}')
-
-    params = _parse_json(inbound.get('params_json'))
-    tag = _tag_inbound(inbound['id'])
-    listen = inbound.get('listen_addr') or '0.0.0.0'
-    port = int(inbound['port'])
-
-    if protocol == 'http':
-        ib = {'type': 'http', 'tag': tag, 'listen': listen, 'listen_port': port}
-        user, pwd = params.get('username', ''), params.get('password', '')
-        if user or pwd:
-            ib['users'] = [{'username': user, 'password': pwd}]
-        return ib
-    elif protocol == 'socks':
-        ib = {'type': 'socks', 'tag': tag, 'listen': listen, 'listen_port': port}
-        user, pwd = params.get('username', ''), params.get('password', '')
-        if user or pwd:
-            ib['users'] = [{'username': user, 'password': pwd}]
-        return ib
-    elif protocol == 'ss':
-        return {
-            'type': 'shadowsocks',
-            'tag': tag,
-            'listen': listen,
-            'listen_port': port,
-            'method': params.get('method', 'aes-256-gcm'),
-            'password': params.get('password', ''),
-        }
-    elif protocol == 'vmess':
-        return {
-            'type': 'vmess',
-            'tag': tag,
-            'listen': listen,
-            'listen_port': port,
-            'users': [{
-                'uuid': params.get('uuid', ''),
-                'alterId': int(params.get('alterId', 0)),
-            }],
-        }
-
-    raise ValueError(f'Unsupported inbound protocol: {protocol}')
 
 
 # ---------------------------------------------------------------------------
@@ -332,9 +107,34 @@ def build_config(db_state) -> dict:
     outbound_nodes = db_state.get('outbound_nodes', [])
     services = db_state.get('services', [])
 
-    node_outbounds = [_build_node_outbound(n) for n in nodes]
+    # 1. Node outbounds — delegate to protocol layer
+    node_outbounds = [
+        protocol.build_outbound(
+            tag=_tag_node(n['id']),
+            address=n['address'],
+            port=n['port'],
+            protocol=n['protocol'],
+            config_json=n.get('config_json'),
+        )
+        for n in nodes
+    ]
+
+    # 2. Selector groups
     selectors = _build_selectors(outbounds, outbound_nodes)
-    inbound_configs = [_build_inbound(ib) for ib in inbounds]
+
+    # 3. User inbounds — delegate to protocol layer
+    inbound_configs = [
+        protocol.build_inbound(
+            tag=_tag_inbound(ib['id']),
+            protocol=ib['protocol'],
+            listen=ib.get('listen_addr') or '0.0.0.0',
+            port=ib['port'],
+            params_json=ib.get('params_json'),
+        )
+        for ib in inbounds
+    ]
+
+    # 4. Route
     route = _build_route(
         services,
         {ib['id'] for ib in inbounds},
