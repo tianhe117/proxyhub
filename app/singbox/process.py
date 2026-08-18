@@ -124,6 +124,7 @@ def start() -> int:
 
     bin_path = SINGBOX_BIN_PATH
     if not bin_path or not os.path.isfile(bin_path):
+        log.error(f'Binary not found: {bin_path}')
         raise RuntimeError(f'Binary not found: {bin_path}')
 
     run_args = [a.format(config=CONFIG_PATH)
@@ -140,6 +141,7 @@ def start() -> int:
 
     time.sleep(0.2)
     if proc.poll() is not None:
+        log.error(f'sing-box exited immediately with code {proc.returncode}')
         raise RuntimeError(f'sing-box exited immediately with code {proc.returncode}')
 
     log.info(f'sing-box started (PID {proc.pid})')
@@ -171,10 +173,12 @@ def restart() -> dict:
     Returns:
         dict: {success, message}
     """
+    log.info('sing-box: restarting ...')
     stop()
     time.sleep(0.5)  # let the port release before re-binding
     try:
         pid = start()
         return {'success': True, 'message': f'Restarted (PID {pid})'}
     except Exception as e:
+        log.error(f'sing-box restart failed: {e}')
         return {'success': False, 'message': str(e)}
