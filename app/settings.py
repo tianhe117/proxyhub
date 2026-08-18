@@ -59,7 +59,6 @@ LOGS_DIR         = os.path.join(BASE_DIR, 'logs')
 CONFIG_PATH      = os.path.join(DATA_DIR, 'config.json')
 SETTINGS_PATH    = os.path.join(DATA_DIR, 'setting.json')
 DB_PATH          = os.path.join(DATA_DIR, 'proxyhub.db')
-PID_DIR          = DATA_DIR
 SINGBOX_BIN_DIR  = os.path.join(DATA_DIR, 'bin')
 SINGBOX_BIN_PATH = os.path.join(SINGBOX_BIN_DIR, 'sing-box')
 

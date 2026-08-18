@@ -88,10 +88,6 @@ class TestPathConstants(unittest.TestCase):
         self.assertEqual(settings.DB_PATH,
                          os.path.join(settings.BASE_DIR, 'data', 'proxyhub.db'))
 
-    def test_pid_dir(self):
-        # PID dir is the data dir itself (no separate subdir).
-        self.assertEqual(settings.PID_DIR, settings.DATA_DIR)
-
 
 class TestLoadAndPersist(unittest.TestCase):
     """_load_from_disk / _persist_to_disk / module-level _store."""
