@@ -216,7 +216,6 @@ def start() -> int:            # 启动常驻进程，返回 pid；已运行则�
 def stop() -> dict:            # 停止常驻进程，返回 {success, message, killed}
 def restart() -> dict:         # stop + start，返回 {success, message}
 def is_running() -> bool:      # 常驻进程是否存活
-def get_version() -> str:      # sing-box 版本串，拿不到返回 'N/A'
 ```
 
 - 无热重载：`restart()` = 先停后起。任何配置变更后由调用方 `write_config(...)` + `restart()`。
@@ -266,7 +265,6 @@ def _kill_pid(pid, timeout=3):   # 承 manager.py：SIGTERM → 轮询 → SIGKI
 
 - `_is_running(pid)` 复用 `manager.py` 的 `/proc/{pid}/stat` 状态判断（区分僵尸/死进程）。
 - `stop()`：`_find_pid()` 无果 → 返回 `{'success': True, 'message': 'No process', 'killed': 0}`；有则 `_kill_pid`。
-- `get_version()`：`subprocess.run([bin_path] + SINGBOX_VERSION_ARGS)`，取第一行非空输出。
 
 ### 4.4 关键决策
 
@@ -282,6 +280,8 @@ def _kill_pid(pid, timeout=3):   # 承 manager.py：SIGTERM → 轮询 → SIGKI
 ### 5.1 对外接口
 
 ```python
+def get_version() -> str:        # 读已安装 sing-box 版本串，拿不到返回 'N/A'
+
 def check_upgrade() -> dict:     # 查 GitHub 最新 release
     # {success, current_version, latest_version, download_url, asset_name, is_update}
 
@@ -289,13 +289,14 @@ def download_upgrade() -> dict:  # 下载 + 整包解压 + 落 data/bin/（含 l
     # {success, message, version}
 ```
 
-- 只下 sing-box：仓库/资产模式取 `settings.SINGBOX_REPO` / `settings.SINGBOX_ASSET_PATTERNS`，无三引擎泛化、无 obfs-local 插件（v2 已删）。
+- 只下 sing-box：仓库/资产模式取 `SINGBOX_REPO` / `SINGBOX_ASSET_PATTERNS`，无三引擎泛化、无 obfs-local 插件（v2 已删）。
+- 版本读取 `get_version()` 归 upgrade（检查/升级自包含），`process.py` 只管进程生命周期。
 
 ### 5.2 流程（承 `upgrade_service.py`，砍泛化）
 
 ```python
 def check_upgrade():
-    current_raw = process.get_version()                 # 复用 process.py
+    current_raw = get_version()                        # 本模块内读当前版本
     current = re.search(r'(\d+\.\d+\.\d+)', current_raw)  # "sing-box version 1.13.13" → 1.13.13
     # GitHub API: https://api.github.com/repos/SagerNet/sing-box/releases/latest
     #   Accept: application/vnd.github.v3+json, User-Agent: ProxyHub/1.0, timeout=15
@@ -308,7 +309,7 @@ def download_upgrade():
     check = check_upgrade()
     if not check['success'] or not check['is_update']: return ...
     # urllib 下载（timeout=120）→ NamedTemporaryFile
-    # 整包解压到 settings.SINGBOX_BIN_DIR：
+    # 整包解压到 SINGBOX_BIN_DIR：
     #   .tar.gz/.tgz → tarfile 'r:gz'，.tar.xz → 'r:xz'，.zip → zipfile，裸二进制 → 直写
     #   strip 顶层版本目录，全部成员平铺到 bin/（sing-box + libcronet.so 等）
     #   保留 tar 成员权限（sing-box 可执行）
@@ -323,7 +324,7 @@ def download_upgrade():
 |------|------|------|
 | 只下 sing-box | 常量化 repo/资产，删 `BIN_REPOS` 字典与 `bin_name` 参数 | 单引擎，无选择面 |
 | 删插件 | 无 `_handle_plugins` | v2 无 obfs-local（design.md 核心决策 1） |
-| 版本取 process | `check_upgrade` 复用 `process.get_version()` | 避免重复实现版本读取 |
+| 版本自包含 | `get_version()` 归 upgrade，检查/升级自包含 | 版本读取只被升级消费，就近放置；process 专注进程生命周期 |
 | 升级不自动重启 | 只落二进制，启停交给调用方 | 职责单一，进程生命周期归 process.py |
 
 ## 6. 与 v1 差异速览

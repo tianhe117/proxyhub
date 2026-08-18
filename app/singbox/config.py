@@ -13,7 +13,10 @@ Tag convention:
 import json
 import os
 
-from app import settings
+from app.settings import (
+    CONFIG_PATH,
+    VALID_INBOUND_PROTOCOLS,
+)
 from app.utils import log
 
 CLASH_API_CONTROLLER = '127.0.0.1:9090'
@@ -213,7 +216,7 @@ def _build_node_outbound(node):
 def _build_inbound(inbound):
     """Build a single user inbound i{id} from an inbound row/dict."""
     protocol = inbound['protocol']
-    if protocol not in settings.VALID_INBOUND_PROTOCOLS:
+    if protocol not in VALID_INBOUND_PROTOCOLS:
         raise ValueError(f'Unsupported inbound protocol: {protocol}')
 
     params = _parse_json(inbound.get('params_json'))
@@ -355,8 +358,8 @@ def build_config(db_state) -> dict:
 
 
 def write_config(config: dict) -> str:
-    """Atomically write config dict to settings.CONFIG_PATH; return path."""
-    path = settings.CONFIG_PATH
+    """Atomically write config dict to CONFIG_PATH; return path."""
+    path = CONFIG_PATH
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
     with open(tmp, 'w') as f:
