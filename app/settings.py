@@ -6,9 +6,8 @@ update memory then persist to disk.
 
 v2 uses a single engine: sing-box. Multi-engine fields are dropped
 (BIN_REGISTRY, BIN_REPOS, per-protocol bin map, SOCKS/TEST port pools).
-Runtime paths are module-level constants resolved from BASE_DIR (override
-with the PROXYHUB_HOME env var, e.g. Docker volume mounts / venv repo root);
-there are no get_* path helpers.
+Runtime paths are module-level constants resolved from BASE_DIR
+(PROXYHUB_HOME override or project root); there are no get_* path helpers.
 """
 
 import json
@@ -51,10 +50,9 @@ SUPPORTED_PROTOCOLS = ('vmess', 'vless', 'trojan', 'ss', 'hysteria2', 'tuic', 'd
 VALID_INBOUND_PROTOCOLS = ('http', 'socks', 'ss', 'vmess')
 
 # ---------------------------------------------------------------------------
-# Runtime path constants — resolved once from BASE_DIR (PROXYHUB_HOME override)
+# Runtime path constants — resolved from BASE_DIR (PROXYHUB_HOME or project root)
 # ---------------------------------------------------------------------------
-BASE_DIR = os.environ.get('PROXYHUB_HOME') or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATA_DIR         = os.path.join(BASE_DIR, 'data')
 LOGS_DIR         = os.path.join(BASE_DIR, 'logs')
