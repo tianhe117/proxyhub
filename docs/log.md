@@ -1,13 +1,13 @@
 # logger 设计（utils 叶子工具）
 
-> 层级：工具层 / 日志。本文是 `app/utils/_logger.py` 的设计稿，承接[顶层设计](design.md)核心决策与 [`settings.md`](settings.md) 的路径布局。
+> 层级：工具层 / 日志。本文是 `app/utils/logger.py` 的设计稿，承接[顶层设计](design.md)核心决策与 [`settings.md`](settings.md) 的路径布局。
 > 状态：✅ 已编码。对外入口唯一：`from app.utils import log`。
 
 ## 1. 定位
 
-`app/utils/_logger.py` 是日志叶子工具（**私有内部模块**，下划线前缀标识），只做一件事：把运行日志写到 `logs/` 目录下的本地文件。无引擎耦合、无第三方依赖（用 Python 标准库 `logging`）。
+`app/utils/logger.py` 是日志叶子工具，只做一件事：把运行日志写到 `logs/` 目录下的本地文件。无引擎耦合、无第三方依赖（用 Python 标准库 `logging`）。
 
-对外**只有一个接口 `log`，且只能通过 `app.utils` 调用**：调用方 `from app.utils import log` 之后，`log.info(msg)` / `log.error(msg)` 即可落盘，其余细节全部隐藏。`_logger.py` 不对外暴露，**禁止** `from app.utils.logger import log` 这类绕过方式。
+对外**只有一个接口 `log`，统一通过 `app.utils` 调用**：调用方 `from app.utils import log` 之后，`log.info(msg)` / `log.error(msg)` 即可落盘，其余细节全部隐藏。约定不直接 `from app.utils.logger import log`（避免绕过 `app.utils` 出口）。
 
 ## 2. 对外接口
 
@@ -20,9 +20,9 @@ log.warning('...')          # 标准库自带，同理可用
 log.debug('...')            # 默认级别 INFO，debug 不落盘
 ```
 
-- **唯一入口**：`from app.utils import log`。`log` 由 `app/utils/__init__.py` 从私有模块 `_logger.py` 再导出（`__all__ = ['log']`）。
+- **唯一入口**：`from app.utils import log`。`log` 由 `app/utils/__init__.py` 从 `logger.py` 再导出（`__all__ = ['log']`）。
 - `log` 是 `logging.Logger` 实例（标准库），`info` / `error` / `warning` / `debug` / `exception` 全部可用。
-- 除 `log` 外**不对外暴露任何名字**（`_build_log` 等实现细节私有化，模块本身也私有化为 `_logger.py`）。
+- 除 `log` 外**不对外暴露任何名字**（`_build_log` 等实现细节私有化）。
 
 ## 3. 日志格式
 
@@ -50,7 +50,7 @@ log.debug('...')            # 默认级别 INFO，debug 不落盘
 ## 5. 实现要点（代码草案）
 
 ```python
-"""Internal file logger for ProxyHub (private — import via `app.utils` only).
+"""File logger for ProxyHub (use via `app.utils`).
 
 Single public interface: `log` (a stdlib logging.Logger), re-exported from
 app.utils:
@@ -59,9 +59,9 @@ app.utils:
     log.info('node switched')
     log.error('pull failed')
 
-This module is private (_logger.py); do not import it directly. Writes one
-file per process start to settings.get_logs_dir(), named
-YYYY-MM-DD_HHMMSS.log (per design.md). Each line records time, level,
+Import it through app.utils (`from app.utils import log`) rather than this
+module directly. Writes one file per process start to settings.get_logs_dir(),
+named YYYY-MM-DD_HHMMSS.log (per design.md). Each line records time, level,
 caller function name (接口名称), and message.
 """
 
@@ -101,7 +101,7 @@ log = _build_log()
 | 标准库 `logging` | 不引第三方依赖 | 叶子工具，够用且线程安全（Flask 多线程下无并发问题） |
 | 只落文件 | `FileHandler` + `propagate=False` | 需求是「记录日志到本地」，不打印控制台 |
 | 直接暴露 Logger | `log` 就是 Logger 实例，不包 helper 函数 | 若包一层函数，`%(funcName)s` 会捕获到 helper 名而非真实调用方 |
-| 私有模块 + 单一出口 | `_logger.py` 私有化，`log` 只从 `app/utils/__init__.py` 导出 | 强制「只能通过 utils 调用」，杜绝 `from app.utils.logger import log` |
+| 单一出口 | `log` 只从 `app/utils/__init__.py` 导出，模块名保持 `logger.py`（风格统一） | 约定「通过 utils 调用」，不靠文件名下划线强制 |
 | 防重 | `if not logger.handlers` | `importlib.reload` 时不重复追加 handler / 不产生多余文件 |
 | 级别默认 `INFO` | `logger.setLevel(logging.INFO)` | `debug` 默认不落盘；如需可后续加设置项，当前 YAGNI |
 | 模块级导入即建文件 | `log = _build_log()` 在模块顶层执行 | 首次 import（= 启动）即确定本次文件名 |
@@ -111,4 +111,4 @@ log = _build_log()
 - **不落控制台**：开发期如需同时看 stdout，后续可加一个 `StreamHandler`，当前按需求只落盘。
 - **无日志轮转**：一次进程一个文件，不做按大小/天数切分（单文件足够，避免引入 `RotatingFileHandler`）。
 - **模块顶层调用**：在非函数上下文调用 `log.info(...)` 时 `%(funcName)s` 显示 `<module>`，属预期行为。
-- 对应 [`refer.md` §9 复用清单](refer.md) 中的 `utils/logger.py`；v2 在此将其私有化为 `_logger.py`、对外收敛为 `app.utils` 的单一 `log`，并按启动时间命名文件。
+- 对应 [`refer.md` §9 复用清单](refer.md) 中的 `utils/logger.py`；v2 在此对外收敛为 `app.utils` 的单一 `log`，并按启动时间命名文件。

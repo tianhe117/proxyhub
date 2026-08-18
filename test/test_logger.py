@@ -1,4 +1,4 @@
-"""Tests for app/utils/_logger.py — the single `log` interface.
+"""Tests for app/utils/logger.py — the single `log` interface.
 
 Run with:
     python3 -m unittest discover -s test -v

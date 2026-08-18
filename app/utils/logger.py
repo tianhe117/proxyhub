@@ -1,4 +1,4 @@
-"""Internal file logger for ProxyHub (private — import via `app.utils` only).
+"""File logger for ProxyHub (use via `app.utils`).
 
 Single public interface: `log` (a stdlib logging.Logger), re-exported from
 app.utils:
@@ -7,9 +7,9 @@ app.utils:
     log.info('node switched')
     log.error('pull failed')
 
-This module is private (_logger.py); do not import it directly. Writes one
-file per process start to settings.get_logs_dir(), named
-YYYY-MM-DD_HHMMSS.log (per design.md). Each line records time, level,
+Import it through app.utils (`from app.utils import log`) rather than this
+module directly. Writes one file per process start to settings.get_logs_dir(),
+named YYYY-MM-DD_HHMMSS.log (per design.md). Each line records time, level,
 caller function name (接口名称), and message.
 """
 

@@ -1,5 +1,5 @@
 """Leaf utilities (reuse): common / validators / logger / latency, etc."""
 
-from app.utils._logger import log
+from app.utils.logger import log
 
 __all__ = ['log']
