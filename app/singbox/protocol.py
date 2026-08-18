@@ -125,6 +125,8 @@ def _build_ss(tag, address, port, cfg):
         'server_port': port,
         'method': cfg.get('method', 'aes-256-gcm'),
         'password': cfg.get('password', ''),
+        'plugin': cfg.get('plugin', ''),
+        'plugin_opts': cfg.get('plugin_opts', ''),
     }
 
 

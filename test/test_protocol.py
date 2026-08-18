@@ -48,6 +48,14 @@ class TestBuildOutbound(unittest.TestCase):
         self.assertEqual(ob['server_port'], 8388)
         self.assertEqual(ob['method'], 'aes-256-gcm')
         self.assertEqual(ob['password'], 'pw')
+        self.assertEqual(ob['plugin'], '')
+        self.assertEqual(ob['plugin_opts'], '')
+
+    def test_ss_with_obfs(self):
+        ob = build_outbound('n1', '1.2.3.4', 8388, 'ss',
+                            '{"method": "aes-128-gcm", "password": "pw", "plugin": "obfs-local", "plugin_opts": "obfs=http;obfs-host=test.com"}')
+        self.assertEqual(ob['plugin'], 'obfs-local')
+        self.assertEqual(ob['plugin_opts'], 'obfs=http;obfs-host=test.com')
 
     def test_vmess(self):
         ob = build_outbound('n2', 'srv.com', 443, 'vmess',
