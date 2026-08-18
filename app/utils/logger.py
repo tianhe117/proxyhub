@@ -8,7 +8,7 @@ app.utils:
     log.error('pull failed')
 
 Import it through app.utils (`from app.utils import log`) rather than this
-module directly. Writes one file per process start to settings.get_logs_dir(),
+module directly. Writes one file per process start to settings.LOGS_DIR,
 named YYYY-MM-DD_HHMMSS.log (per design.md). Each line records time, level,
 caller function name (接口名称), and message.
 """
@@ -22,9 +22,9 @@ from app import settings
 
 def _build_log():
     """Configure and return the process-wide logger (called once at import)."""
-    os.makedirs(settings.get_logs_dir(), exist_ok=True)
+    os.makedirs(settings.LOGS_DIR, exist_ok=True)
     filename = datetime.now().strftime('%Y-%m-%d_%H%M%S') + '.log'
-    path = os.path.join(settings.get_logs_dir(), filename)
+    path = os.path.join(settings.LOGS_DIR, filename)
 
     logger = logging.getLogger('proxyhub')
     if not logger.handlers:  # 防重：reload 时避免重复加 handler

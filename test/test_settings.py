@@ -28,14 +28,13 @@ class TestConstants(unittest.TestCase):
 
     def test_default_settings_expected_keys(self):
         expected = {
-            'bin_path_singbox', 'check_interval_normal',
-            'check_interval_failover', 'tcp_timeout', 'curl_timeout',
-            'test_url', 'web_port', 'web_username', 'web_password',
+            'check_interval_normal', 'check_interval_failover',
+            'tcp_timeout', 'curl_timeout', 'test_url',
+            'web_port', 'web_username', 'web_password',
         }
         self.assertEqual(set(settings.DEFAULT_SETTINGS), expected)
 
     def test_singbox_binary_constants(self):
-        self.assertEqual(settings.SINGBOX_EXE, 'sing-box')
         self.assertEqual(settings.SINGBOX_VERSION_ARGS, ['version'])
         self.assertEqual(settings.SINGBOX_RUN_ARGS, ['run', '-c', '{config}'])
 
@@ -58,47 +57,47 @@ class TestConstants(unittest.TestCase):
         self.assertTrue(os.path.isabs(settings.BASE_DIR))
 
 
-class TestPathHelpers(unittest.TestCase):
-    """All get_* path helpers are anchored under BASE_DIR."""
+class TestPathConstants(unittest.TestCase):
+    """All path constants are anchored under BASE_DIR (no get_* helpers)."""
 
-    def test_get_data_dir(self):
-        self.assertEqual(settings.get_data_dir(),
+    def test_data_dir(self):
+        self.assertEqual(settings.DATA_DIR,
                          os.path.join(settings.BASE_DIR, 'data'))
 
-    def test_get_logs_dir(self):
-        self.assertEqual(settings.get_logs_dir(),
+    def test_logs_dir(self):
+        self.assertEqual(settings.LOGS_DIR,
                          os.path.join(settings.BASE_DIR, 'logs'))
 
-    def test_get_bin_dir(self):
-        self.assertEqual(settings.get_bin_dir(),
+    def test_singbox_bin_dir(self):
+        self.assertEqual(settings.SINGBOX_BIN_DIR,
                          os.path.join(settings.BASE_DIR, 'data', 'bin'))
 
-    def test_get_config_path(self):
-        self.assertEqual(settings.get_config_path(),
+    def test_singbox_bin_path(self):
+        self.assertEqual(settings.SINGBOX_BIN_PATH,
+                         os.path.join(settings.BASE_DIR, 'data', 'bin', 'sing-box'))
+
+    def test_config_path(self):
+        self.assertEqual(settings.CONFIG_PATH,
                          os.path.join(settings.BASE_DIR, 'data', 'config.json'))
 
-    def test_get_settings_path(self):
-        self.assertEqual(settings.get_settings_path(),
+    def test_settings_path(self):
+        self.assertEqual(settings.SETTINGS_PATH,
                          os.path.join(settings.BASE_DIR, 'data', 'setting.json'))
 
-    def test_get_db_path(self):
-        self.assertEqual(settings.get_db_path(),
+    def test_db_path(self):
+        self.assertEqual(settings.DB_PATH,
                          os.path.join(settings.BASE_DIR, 'data', 'proxyhub.db'))
 
-    def test_get_pid_dir(self):
+    def test_pid_dir(self):
         # PID dir is the data dir itself (no separate subdir).
-        self.assertEqual(settings.get_pid_dir(), settings.get_data_dir())
-
-    def test_get_singbox_bin_path_uses_setting(self):
-        self.assertEqual(settings.get_singbox_bin_path(),
-                         settings.get_setting('bin_path_singbox'))
+        self.assertEqual(settings.PID_DIR, settings.DATA_DIR)
 
 
 class TestLoadAndPersist(unittest.TestCase):
     """_load_from_disk / _persist_to_disk / module-level _store."""
 
     def setUp(self):
-        self.path = settings._SETTINGS_FILE
+        self.path = settings.SETTINGS_PATH
         self.assertTrue(os.path.exists(self.path), 'settings file must exist')
 
     def test_store_loaded_at_import(self):
@@ -126,18 +125,17 @@ class TestLoadAndPersist(unittest.TestCase):
         self.assertFalse(os.path.exists(self.path + '.tmp'))
 
     def test_persist_creates_parent_dir(self):
-        # Point the module's file at a missing parent and ensure it's created.
-        orig = settings._SETTINGS_FILE
-        missing = os.path.join(settings.get_data_dir(),
-                               'nested', 'setting.json')
-        settings._SETTINGS_FILE = missing
+        # Point the module's path at a missing parent and ensure it's created.
+        orig = settings.SETTINGS_PATH
+        missing = os.path.join(settings.DATA_DIR, 'nested', 'setting.json')
+        settings.SETTINGS_PATH = missing
         try:
             settings._persist_to_disk({'x': '1'})
             self.assertTrue(os.path.exists(missing))
             with open(missing) as f:
                 self.assertEqual(json.load(f), {'x': '1'})
         finally:
-            settings._SETTINGS_FILE = orig
+            settings.SETTINGS_PATH = orig
             os.remove(missing)
             os.rmdir(os.path.dirname(missing))
 
@@ -201,7 +199,7 @@ class TestPublicAPI(unittest.TestCase):
     def test_set_setting_updates_memory_and_disk(self):
         settings.set_setting('web_port', '9090')
         self.assertEqual(settings.get_setting('web_port'), '9090')
-        with open(settings._SETTINGS_FILE) as f:
+        with open(settings.SETTINGS_PATH) as f:
             self.assertEqual(json.load(f)['web_port'], '9090')
 
     def test_set_setting_coerces_to_string(self):
@@ -224,7 +222,7 @@ class TestPublicAPI(unittest.TestCase):
         settings.update_settings({'web_port': '1111', 'tcp_timeout': '9'})
         self.assertEqual(settings.get_setting('web_port'), '1111')
         self.assertEqual(settings.get_setting('tcp_timeout'), '9')
-        with open(settings._SETTINGS_FILE) as f:
+        with open(settings.SETTINGS_PATH) as f:
             on_disk = json.load(f)
         self.assertEqual(on_disk['web_port'], '1111')
         self.assertEqual(on_disk['tcp_timeout'], '9')
@@ -245,12 +243,8 @@ class TestPublicAPI(unittest.TestCase):
         settings.reset_to_defaults()
         self.assertEqual(settings.get_all_settings(), settings.DEFAULT_SETTINGS)
         self.assertNotIn('extra', settings.get_all_settings())
-        with open(settings._SETTINGS_FILE) as f:
+        with open(settings.SETTINGS_PATH) as f:
             self.assertEqual(json.load(f), settings.DEFAULT_SETTINGS)
-
-    def test_get_singbox_bin_path_reflects_set(self):
-        settings.set_setting('bin_path_singbox', '/custom/sing-box')
-        self.assertEqual(settings.get_singbox_bin_path(), '/custom/sing-box')
 
 
 if __name__ == '__main__':

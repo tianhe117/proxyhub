@@ -94,10 +94,9 @@ def download_upgrade() -> dict:
     except Exception as e:
         return {'success': False, 'message': f'Download failed: {e}'}
 
-    bin_dir = settings.get_bin_dir()
+    bin_dir = settings.SINGBOX_BIN_DIR
     os.makedirs(bin_dir, exist_ok=True)
     asset_name = check['asset_name']
-    exe_name = settings.SINGBOX_EXE
 
     try:
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -105,13 +104,14 @@ def download_upgrade() -> dict:
             tmp_path = tmp.name
 
         if asset_name.endswith('.zip'):
-            _extract_zip(tmp_path, bin_dir, exe_name)
+            _extract_zip(tmp_path, bin_dir)
         elif asset_name.endswith('.tar.gz') or asset_name.endswith('.tgz'):
-            _extract_tar(tmp_path, bin_dir, exe_name, 'gz')
+            _extract_tar(tmp_path, bin_dir, 'gz')
         elif asset_name.endswith('.tar.xz'):
-            _extract_tar(tmp_path, bin_dir, exe_name, 'xz')
+            _extract_tar(tmp_path, bin_dir, 'xz')
         else:
-            dest = os.path.join(bin_dir, exe_name)
+            # Bare binary
+            dest = settings.SINGBOX_BIN_PATH
             with open(dest, 'wb') as f:
                 f.write(data)
             os.chmod(dest, 0o755)
@@ -129,24 +129,45 @@ def download_upgrade() -> dict:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _extract_zip(path, dest_dir, exe_name):
-    """Extract the matching executable from a .zip archive."""
+def _strip_root(name):
+    """Drop the first path component of an archive member name.
+
+    sing-box releases bundle files under a top-level version dir
+    (e.g. ``sing-box-1.13.13-linux-amd64/sing-box``); stripping it lands
+    every file (``sing-box``, ``libcronet.so``, ...) flat into bin_dir.
+    """
+    parts = name.split('/', 1)
+    return parts[1] if len(parts) > 1 else parts[0]
+
+
+def _extract_zip(path, dest_dir):
+    """Extract all members of a .zip archive into *dest_dir* (strip root)."""
     with zipfile.ZipFile(path, 'r') as zf:
-        for name in zf.namelist():
-            if os.path.basename(name) == exe_name:
-                dest = os.path.join(dest_dir, exe_name)
-                with zf.open(name) as src, open(dest, 'wb') as dst:
-                    shutil.copyfileobj(src, dst)
-                os.chmod(dest, 0o755)
+        for zi in zf.infolist():
+            target = _strip_root(zi.filename)
+            if not target or target.endswith('/'):
+                continue
+            dest = os.path.join(dest_dir, target)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with zf.open(zi) as src, open(dest, 'wb') as dst:
+                shutil.copyfileobj(src, dst)
+            mode = (zi.external_attr >> 16) & 0o777 or 0o644
+            os.chmod(dest, mode)
 
 
-def _extract_tar(path, dest_dir, exe_name, mode):
-    """Extract the matching executable from a tar archive."""
+def _extract_tar(path, dest_dir, mode):
+    """Extract all members of a tar archive into *dest_dir* (strip root)."""
     fmt = 'r:gz' if mode == 'gz' else 'r:xz'
     with tarfile.open(path, fmt) as tf:
         for member in tf.getmembers():
-            if os.path.basename(member.name) == exe_name and (member.isfile() or member.isreg()):
-                dest = os.path.join(dest_dir, exe_name)
+            target = _strip_root(member.name)
+            if not target:
+                continue
+            dest = os.path.join(dest_dir, target)
+            if member.isdir():
+                os.makedirs(dest, exist_ok=True)
+            elif member.isfile() or member.isreg():
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with tf.extractfile(member) as src, open(dest, 'wb') as dst:
                     shutil.copyfileobj(src, dst)
-                os.chmod(dest, 0o755)
+                os.chmod(dest, member.mode & 0o777)

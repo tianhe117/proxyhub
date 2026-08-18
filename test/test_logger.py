@@ -4,7 +4,7 @@ Run with:
     python3 -m unittest discover -s test -v
 
 The logger builds one file per process start at import time, in
-settings.get_logs_dir(), named YYYY-MM-DD_HHMMSS.log. These tests assert the
+settings.LOGS_DIR, named YYYY-MM-DD_HHMMSS.log. These tests assert the
 public contract: `log` is a stdlib Logger, it writes to a correctly-named
 file, and each line records time / level / caller funcName / message.
 """
@@ -47,7 +47,7 @@ class TestLogFile(unittest.TestCase):
 
     def test_file_is_in_logs_dir(self):
         path = self._file_path()
-        self.assertEqual(os.path.dirname(path), settings.get_logs_dir())
+        self.assertEqual(os.path.dirname(path), settings.LOGS_DIR)
 
     def test_file_name_matches_startup_format(self):
         name = os.path.basename(self._file_path())

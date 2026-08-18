@@ -23,12 +23,12 @@ app/services（订阅/升级/节点/出站业务）
 config.py（纯函数，不依赖 process/client）
         │  产出 data/config.json
         ▼
-process.py（读 get_config_path()，启停常驻进程）
+process.py（读 CONFIG_PATH，启停常驻进程）
         │
         ▼
 sing-box 常驻进程 ──clash_api(127.0.0.1:9090)──▶ client.py（调度/健康检查层消费）
 
-upgrade.py（下载二进制 → data/bin/sing-box，与 process/config 无运行时耦合）
+upgrade.py（下载二进制 → data/bin/，与 process/config 无运行时耦合）
 ```
 
 - `config.py` 是纯函数，只依赖 db 行与 settings 常量；`process.py` 只依赖 settings 路径；`upgrade.py` 只依赖 settings 的 `SINGBOX_REPO` / `SINGBOX_ASSET_PATTERNS`。
@@ -57,7 +57,7 @@ def build_config(db_state: dict) -> dict:
     """db 状态 → sing-box config.json 内容（纯函数，无 IO，好单测）。"""
 
 def write_config(config: dict) -> str:
-    """config dict 原子写入 settings.get_config_path()，返回路径（唯一 IO）。"""
+    """config dict 原子写入 settings.CONFIG_PATH，返回路径（唯一 IO）。"""
 ```
 
 - `build_config` 保持**纯函数**：不读盘、不 import process/client，输入 `db_state`、输出可 JSON 序列化的 dict。
@@ -229,7 +229,7 @@ def get_version() -> str:      # sing-box 版本串，拿不到返回 'N/A'
 def _find_pid() -> int | None:
     """ps -eo pid,stat,comm,args 扫一遍，找 sing-box 常驻进程。
 
-    匹配：comm == 'sing-box' 且 args 含 get_config_path() 的 basename（config.json）。
+    匹配：comm == 'sing-box' 且 args 含 CONFIG_PATH 的 basename（config.json）。
     排除僵尸（stat 含 'Z'）与自身。"""
 ```
 
@@ -240,10 +240,10 @@ def _find_pid() -> int | None:
 
 ```python
 def start():
-    bin_path = settings.get_singbox_bin_path()   # 相对路径则 resolve 到 BASE_DIR
+    bin_path = settings.SINGBOX_BIN_PATH        # 已是绝对路径常量
     if not os.path.isfile(bin_path): raise RuntimeError(f'Binary not found: {bin_path}')
     if is_running(): return _pid                 # 幂等
-    cmd = [bin_path] + [a.format(config=settings.get_config_path())
+    cmd = [bin_path] + [a.format(config=settings.CONFIG_PATH)
                         for a in settings.SINGBOX_RUN_ARGS]
     proc = subprocess.Popen(cmd, stdout=DEVNULL, stderr=DEVNULL, preexec_fn=os.setsid)
     time.sleep(0.2)
@@ -285,7 +285,7 @@ def _kill_pid(pid, timeout=3):   # 承 manager.py：SIGTERM → 轮询 → SIGKI
 def check_upgrade() -> dict:     # 查 GitHub 最新 release
     # {success, current_version, latest_version, download_url, asset_name, is_update}
 
-def download_upgrade() -> dict:  # 下载 + 解压 + chmod，落 data/bin/sing-box
+def download_upgrade() -> dict:  # 下载 + 整包解压 + 落 data/bin/（含 libcronet.so）
     # {success, message, version}
 ```
 
@@ -308,10 +308,10 @@ def download_upgrade():
     check = check_upgrade()
     if not check['success'] or not check['is_update']: return ...
     # urllib 下载（timeout=120）→ NamedTemporaryFile
-    # 解压到 settings.get_bin_dir()：
+    # 整包解压到 settings.SINGBOX_BIN_DIR：
     #   .tar.gz/.tgz → tarfile 'r:gz'，.tar.xz → 'r:xz'，.zip → zipfile，裸二进制 → 直写
-    #   按 basename == 'sing-box' 提取（sing-box 资产为 tar.gz，内含子目录）
-    #   chmod 0o755
+    #   strip 顶层版本目录，全部成员平铺到 bin/（sing-box + libcronet.so 等）
+    #   保留 tar 成员权限（sing-box 可执行）
 ```
 
 - 内部 helper：`_extract_tar` / `_extract_zip`（承 `upgrade_service.py`，删 `_handle_plugins`）。

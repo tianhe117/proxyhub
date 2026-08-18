@@ -58,7 +58,9 @@ proxyhub/
 ├── logs/                   # ★ 日志（gitignore；docker=volume）
 │   └── YYYY-MM-DD_HHMMSS.log   # 每次启动一个新文件，如 2026-08-17_201500.log
 ├── data/                   # 运行时数据（gitignore；docker=volume）
-│   ├── bin/sing-box        # sing-box 二进制
+│   ├── bin/                 # ★ sing-box 二进制（release 整包解压）
+│   │   ├── sing-box
+│   │   └── libcronet.so
 │   ├── config.json         # 生成的配置
 │   └── setting.json        # 应用设置
 ├── test/                   # pytest
