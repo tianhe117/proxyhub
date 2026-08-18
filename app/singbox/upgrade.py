@@ -186,13 +186,10 @@ def _extract_tar(path, dest_dir, mode):
     with tarfile.open(path, fmt) as tf:
         for member in tf.getmembers():
             target = _strip_root(member.name)
-            if not target:
+            if not target or member.isdir():
                 continue
             dest = os.path.join(dest_dir, target)
-            if member.isdir():
-                os.makedirs(dest, exist_ok=True)
-            elif member.isfile() or member.isreg():
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                with tf.extractfile(member) as src, open(dest, 'wb') as dst:
-                    shutil.copyfileobj(src, dst)
-                os.chmod(dest, member.mode & 0o777)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with tf.extractfile(member) as src, open(dest, 'wb') as dst:
+                shutil.copyfileobj(src, dst)
+            os.chmod(dest, member.mode & 0o777)
