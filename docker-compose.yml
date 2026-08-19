@@ -1,3 +1,18 @@
-# ProxyHub v2 - orchestration (deployment layer to be refined):
-#   sing-box + Flask in the same container; data/ and logs/ mounted as separate volumes.
-services: {}
+services:
+  proxyhub:
+    build: .
+    image: proxyhub:2.0
+    container_name: proxyhub
+    restart: unless-stopped
+    dns:
+      - 223.5.5.5
+      - 223.6.6.6
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - .:/opt/proxyhub
+    ports:
+      # Web UI（固定端口）
+      - "8080:8080"
+      # inbound 端口映射请放到 docker-compose.override.yml 中
+      # 参考 docker-compose.override.example.yml

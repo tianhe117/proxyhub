@@ -8,9 +8,46 @@ logs/
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# --- Virtual environment ---
 venv/
 .venv/
+*.venv/
+
+# --- ProxyHub runtime ---
+bin/
+config/
+data/
+logs/
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
 
 # Misc
 .DS_Store
 CLAUDE.md
+
+# --- OS files ---
+Thumbs.db
+
+# --- Logs ---
+*.log
+
+# --- Environment ---
+.env
+.env.local
+
+# --- Docker Compose override (per-deployment port mappings) ---
+docker-compose.override.yml
+
+# --- Temp files ---
+temp
