@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
-# ProxyHub v2 - venv 模式一键初始化：建 venv + 装 requirements + 建运行时目录。
-# 部署在 Ubuntu 上使用；Windows 开发环境不跑此脚本。
+# ProxyHub v2 - venv mode initialization script
+# Creates virtual environment, installs dependencies, and sets up runtime directories.
+# For Ubuntu deployment; Windows dev environments should not run this script.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# 1. 创建 venv（若不存在）
+# 1. Create virtual environment (if not exists)
 if [ ! -d venv ]; then
-    echo "[1/3] 创建 venv..."
+    echo "[1/3] Creating virtual environment..."
     python3 -m venv venv
 fi
 
-# 2. 安装依赖
-echo "[2/3] 安装依赖..."
+# 2. Install dependencies
+echo "[2/3] Installing dependencies..."
 ./venv/bin/pip install -q -r requirements.txt
 
-# 3. 建运行时目录（data/bin 供手动放置 sing-box，logs 供启动日志）
-echo "[3/3] 创建 data/bin 与 logs 目录..."
+# 3. Create runtime directories (data/bin for sing-box binary, logs for startup logs)
+echo "[3/3] Creating data/bin and logs directories..."
 mkdir -p data/bin logs
 
 echo ""
-echo "初始化完成。运行 ./start.sh 启动。"
+echo "Initialization complete. Run ./start.sh to start the application."

@@ -1,0 +1,11 @@
+# Example: inbound port mappings
+# Copy this file to docker-compose.override.yml and modify with your actual ports.
+# docker-compose.override.yml is in .gitignore and won't be tracked by Git.
+#
+# Docker Compose automatically merges override files, no -f flag needed.
+
+services:
+  proxyhub:
+    ports:
+      # --- Example: add ports for your configured inbounds ---
+      # - "666:666"
