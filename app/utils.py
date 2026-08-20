@@ -82,11 +82,9 @@ def is_valid_inbound_protocol(protocol):
 
 @dataclass
 class CheckResult:
-    success: bool
-    tcp_latency_ms: int       # TCP handshake latency (-1 if failed)
-    url_latency_ms: int       # URL latency (-1 if not done)
-    http_code: str            # URL HTTP code ("0" if not done)
-    error: str
+    tcp_latency_ms: int    # TCP 握手延迟（-1 = 失败）
+    url_latency_ms: int    # URL 测速延迟（-1 = 失败/未测）
+    error: str             # 失败原因（成功则 ''）—— 日志/排查用
 
 
 _lock = threading.Lock()   # 互斥锁（非队列）：写是纳秒级赋值，last-write-wins 即可

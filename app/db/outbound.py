@@ -36,6 +36,20 @@ def list_all():
     return db.execute('SELECT * FROM outbounds ORDER BY id').fetchall()
 
 
+def list_all_pool_entries():
+    """Return all outbound_nodes rows ordered by outbound_id, priority.
+
+    Used by build_config to assemble all selector pools in one query (vs
+    looping get_pool_nodes per outbound). Returns lightweight rows with
+    only outbound_id / node_id / priority.
+    """
+    db = get_db()
+    return db.execute(
+        'SELECT outbound_id, node_id, priority FROM outbound_nodes '
+        'ORDER BY outbound_id, priority ASC'
+    ).fetchall()
+
+
 def get_by_id(out_id):
     """Return an outbound by id, or None."""
     db = get_db()
