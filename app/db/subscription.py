@@ -72,7 +72,7 @@ def clear_nodes(sub_id):
 
 
 def _update_node(node_id, **fields):
-    """Update node fields without committing (private to sync_nodes)."""
+    """Update node fields without committing (private to apply_node_diff)."""
     allowed = {'name', 'protocol', 'address', 'port', 'config_json'}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if 'port' in updates:
@@ -86,7 +86,7 @@ def _update_node(node_id, **fields):
 
 
 def _delete_node(node_id):
-    """Delete a node without committing (private to sync_nodes).
+    """Delete a node without committing (private to apply_node_diff).
 
     outbound pool/fallback refs cascade via FK.
     """
@@ -94,8 +94,8 @@ def _delete_node(node_id):
     db.execute('DELETE FROM nodes WHERE id = ?', (node_id,))
 
 
-def sync_nodes(sub_id, new_nodes):
-    """Sync nodes for a subscription using name as matching key.
+def apply_node_diff(sub_id, new_nodes):
+    """Replace a subscription's nodes by name (keeps node ids stable).
 
     - name exists in both: UPDATE config
     - name only in old: DELETE
@@ -105,6 +105,9 @@ def sync_nodes(sub_id, new_nodes):
     references survive refreshes.  New-side duplicate names collapse to
     the last occurrence (dict overwrite); dedup is expected upstream in
     the parser.
+
+    This is the DB-layer name-diff primitive; the service layer's
+    sync_nodes orchestrates fetch+parse before calling this.
 
     Returns:
         dict: {updated, deleted, inserted}
