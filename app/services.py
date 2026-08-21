@@ -240,3 +240,118 @@ def get_status():
     running = sb_is_running()
     version = sb_get_version() if running else 'N/A'
     return {'running': running, 'version': version}
+
+
+# ---------------------------------------------------------------------------
+# Service-level selector control
+# ---------------------------------------------------------------------------
+
+def start_service(svc_id):
+    """Route traffic through this service's selector (select default node).
+
+    Returns: {success, message, node_tag?}
+    """
+    from app.singbox.clash import select_proxy
+    from app.db import outbound as db_outbound_mod
+
+    svc = db_service.get_by_id(svc_id)
+    if not svc:
+        return {'success': False, 'message': 'Service not found'}
+    oid = svc['outbound_id']
+    if oid == 0:
+        return {'success': False, 'message': 'direct outbound cannot be started'}
+
+    pool = db_outbound_mod.get_pool_nodes(oid)
+    if not pool:
+        return {'success': False, 'message': 'Outbound pool is empty'}
+
+    node_tag = f'n{pool[0]["node_id"]}'
+    group_tag = f'g{oid}'
+    ok = select_proxy(group_tag, node_tag)
+    if ok:
+        log.info(f'service "{svc["name"]}" started → {node_tag}')
+        return {'success': True, 'message': f'Started → {node_tag}',
+                'node_tag': node_tag}
+    log.error(f'service "{svc["name"]}" start failed: clash_api error')
+    return {'success': False, 'message': 'clash_api selector switch failed'}
+
+
+def stop_service(svc_id):
+    """Stop routing: switch this service's selector to direct.
+
+    Returns: {success, message}
+    """
+    from app.singbox.clash import select_proxy
+
+    svc = db_service.get_by_id(svc_id)
+    if not svc:
+        return {'success': False, 'message': 'Service not found'}
+    oid = svc['outbound_id']
+    if oid == 0:
+        return {'success': True, 'message': 'Already direct'}
+    group_tag = f'g{oid}'
+    ok = select_proxy(group_tag, 'direct')
+    if ok:
+        log.info(f'service "{svc["name"]}" stopped → direct')
+        return {'success': True, 'message': 'Stopped → direct'}
+    return {'success': False, 'message': 'clash_api selector switch failed'}
+
+
+def restart_service(svc_id):
+    """Stop then start (re-select default node)."""
+    stop_result = stop_service(svc_id)
+    if not stop_result['success'] and 'Already direct' not in stop_result.get('message', ''):
+        return stop_result
+    return start_service(svc_id)
+
+
+def switch_node(svc_id, node_id):
+    """Manually switch this service's selector to a specific node.
+
+    Verifies node_id is in the outbound's pool.
+
+    Returns: {success, message, node_tag?}
+    """
+    from app.singbox.clash import select_proxy
+
+    svc = db_service.get_by_id(svc_id)
+    if not svc:
+        return {'success': False, 'message': 'Service not found'}
+    oid = svc['outbound_id']
+    if oid == 0:
+        return {'success': False, 'message': 'direct outbound cannot switch nodes'}
+
+    pool = db_outbound.get_pool_nodes(oid)
+    pool_node_ids = {e['node_id'] for e in pool}
+    if node_id not in pool_node_ids:
+        return {'success': False, 'message': f'Node {node_id} not in outbound pool'}
+
+    node_tag = f'n{node_id}'
+    group_tag = f'g{oid}'
+    ok = select_proxy(group_tag, node_tag)
+    if ok:
+        log.info(f'service "{svc["name"]}" switched → {node_tag}')
+        return {'success': True, 'message': f'Switched → {node_tag}',
+                'node_tag': node_tag}
+    return {'success': False, 'message': 'clash_api selector switch failed'}
+
+
+def get_service_status(svc_id):
+    """Query clash_api for this service's selector current node.
+
+    Returns: {success, status, current_node}
+    """
+    from app.singbox.clash import get_proxy_now
+
+    svc = db_service.get_by_id(svc_id)
+    if not svc:
+        return {'success': False, 'message': 'Service not found'}
+    oid = svc['outbound_id']
+    if oid == 0:
+        return {'success': True, 'status': 'direct', 'current_node': 'direct'}
+    group_tag = f'g{oid}'
+    now = get_proxy_now(group_tag)
+    if now is None:
+        return {'success': True, 'status': 'stopped', 'current_node': None}
+    status = 'running' if now != 'direct' else 'stopped'
+    return {'success': True, 'status': status, 'current_node': now}
