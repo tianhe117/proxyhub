@@ -1,20 +1,28 @@
-"""Flask routes — CRUD + sing-box lifecycle + service control + upgrade.
+"""Flask routes — CRUD + sing-box lifecycle + service control + upgrade + checker.
 
 Blueprint ``api`` with /api/* endpoints. No auth yet (deferred to the Web
 layer per docs/design.md §2). Each handler is a thin translation layer:
 extract params → call db/service → format JSON response.
 """
 
+import threading
+import time
+import uuid
+
 from flask import Blueprint, jsonify, request
 
 from app import services
 from app import settings
+from app import checker
 from app.db import subscription as db_sub
 from app.db import node as db_node
 from app.db import inbound as db_inbound
 from app.db import outbound as db_outbound
 from app.db import service as db_service
 from app.singbox import upgrade
+from app.singbox import is_running as sb_is_running
+from app.singbox import start as sb_start
+from app.singbox import restart as sb_restart
 
 bp = Blueprint('api', __name__)
 
@@ -331,3 +339,105 @@ def upgrade_download():
     if not r['success']:
         return jsonify(r), 502
     return jsonify(r)
+
+
+# ---------------------------------------------------------------------------
+# Node checker
+# ---------------------------------------------------------------------------
+
+def _ensure_singbox_with_nodes():
+    """Ensure sing-box is running with current DB nodes in its config."""
+    if not sb_is_running():
+        services.start_singbox()
+    else:
+        services.apply_config()
+        sb_restart()
+
+
+def _resolve_node_ids(node_ids):
+    """Convert a list of node IDs to [(node_id, address, port), ...]."""
+    out = []
+    for nid in node_ids:
+        n = db_node.get_by_id(nid)
+        if n:
+            out.append((n['id'], n['address'], n['port']))
+    return out
+
+
+def _resolve_sub_nodes(sub_id):
+    """Get all node tuples for a subscription."""
+    return [(n['id'], n['address'], n['port'])
+            for n in db_node.list_by_sub(sub_id)]
+
+
+def _resolve_all_nodes():
+    """Get all node tuples."""
+    return [(n['id'], n['address'], n['port'])
+            for n in db_node.list_all()]
+
+
+@bp.route('/api/nodes/check', methods=['POST'])
+def api_check_nodes():
+    """发起节点测试。单点同步，批量异步。"""
+    _ensure_singbox_with_nodes()
+
+    d = request.get_json(force=True) if request.data else {}
+
+    if 'node_id' in d:
+        node_list = _resolve_node_ids([d['node_id']])
+    elif 'node_ids' in d:
+        node_list = _resolve_node_ids(d['node_ids'])
+    elif 'sub_id' in d:
+        node_list = _resolve_sub_nodes(d['sub_id'])
+    else:
+        node_list = _resolve_all_nodes()
+
+    if not node_list:
+        return jsonify({'success': False, 'message': 'No nodes to check'}), 400
+
+    # 单点同步
+    if len(node_list) == 1:
+        nid, addr, port = node_list[0]
+        result = checker.check_node(nid, addr, port)
+        return jsonify({
+            'single': True,
+            'node_id': nid,
+            'result': {
+                'tcp_latency_ms': result.tcp_latency_ms,
+                'url_latency_ms': result.url_latency_ms,
+                'error': result.error,
+            }
+        })
+
+    # 批量异步
+    task_id = f'chk_{int(time.time())}_{uuid.uuid4().hex[:6]}'
+    threading.Thread(
+        target=checker.check_nodes_async,
+        args=(node_list, task_id),
+        daemon=True
+    ).start()
+    return jsonify({'task_id': task_id, 'total': len(node_list), 'status': 'running'})
+
+
+@bp.route('/api/nodes/check/<task_id>', methods=['GET'])
+def api_check_status(task_id):
+    """查询批量测试进度。前端每秒轮询。"""
+    task = checker.get_task(task_id)
+    if not task:
+        return jsonify({'error': 'Task not found'}), 404
+    return jsonify(task)
+
+
+@bp.route('/api/nodes/<int:node_id>/latency', methods=['GET'])
+def api_node_latency(node_id):
+    """查单个节点最新测试结果（内存 store）。"""
+    from app.utils import get_latency
+    r = get_latency(node_id)
+    return jsonify({
+        'node_id': node_id,
+        'latency': {
+            'tcp_latency_ms': r.tcp_latency_ms,
+            'url_latency_ms': r.url_latency_ms,
+            'error': r.error,
+        } if r else None
+    })
