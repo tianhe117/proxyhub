@@ -31,7 +31,7 @@ async function saveSection(keys, restartHint) {
 async function loadSbVersion() {
     try {
         var d = await api('/api/status');
-        document.getElementById('sbCurrent').textContent = d.version || 'N/A';
+        document.getElementById('sbCurrent').textContent = formatVersion(d.version);
         saveCache('settings_status', d);
     } catch (e) {}
 }
@@ -42,8 +42,8 @@ async function checkUpgrade() {
     try {
         var r = await api('/api/upgrade/status');
         if (!r.success) { showMessage(r.message || 'Check failed'); return; }
-        document.getElementById('sbLatest').textContent = r.latest_version || 'unknown';
-        document.getElementById('sbCurrent').textContent = r.current_version || 'N/A';
+        document.getElementById('sbLatest').textContent = formatVersion(r.latest_version || 'unknown');
+        document.getElementById('sbCurrent').textContent = formatVersion(r.current_version);
         document.getElementById('btnDownload').disabled = !r.is_update;
         if (!r.is_update) showMessage('Already up to date');
     } catch (e) { showMessage('Check failed: ' + e); }
@@ -101,18 +101,6 @@ async function doClearPw() {
     } catch (e) { showMessage('Failed: ' + e); }
 }
 
-/* ---- 日志 ---- */
-async function loadLogs() {
-    try {
-        var d = await api('/api/logs?tail=200');
-        document.getElementById('logFileName').textContent = d.file ? d.file : '(no log file)';
-        document.getElementById('logView').innerHTML = (d.lines || []).map(escapeHtml).join('\n');
-        var view = document.getElementById('logView');
-        view.scrollTop = view.scrollHeight;
-        saveCache('settings_logs', d);
-    } catch (e) { showMessage('Load logs failed: ' + e); }
-}
-
 /* ---- 危险区 ---- */
 function clearNodes() {
     showConfirm('Clear All Nodes', 'Delete ALL nodes (subscriptions kept)?', async function() {
@@ -126,13 +114,7 @@ function clearNodes() {
     var cached = loadCache('settings');
     if (cached && cached.settings) { _settings = cached.settings; renderSettings(); }
     var status = loadCache('settings_status');
-    if (status) document.getElementById('sbCurrent').textContent = status.version || 'N/A';
-    var logs = loadCache('settings_logs');
-    if (logs) {
-        document.getElementById('logFileName').textContent = logs.file || '(no log file)';
-        document.getElementById('logView').innerHTML = (logs.lines || []).map(escapeHtml).join('\n');
-    }
+    if (status) document.getElementById('sbCurrent').textContent = formatVersion(status.version);
     fetchSettings().catch(function() {});
     loadSbVersion();
-    loadLogs();
 })();

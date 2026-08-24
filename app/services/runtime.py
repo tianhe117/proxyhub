@@ -95,5 +95,6 @@ def restart_singbox():
 def get_status():
     """Return sing-box running state and version."""
     running = sb_is_running()
-    version = sb_get_version() if running else 'N/A'
+    # The installed binary can report its version without a running process.
+    version = sb_get_version()
     return {'running': running, 'version': version}

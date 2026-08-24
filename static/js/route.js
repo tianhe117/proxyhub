@@ -81,7 +81,7 @@ function renderRouteStatus(d) {
     if (!d) return;
     document.getElementById('rtSbDot').className = 'status-dot ' + (d.running ? 'ok' : 'idle');
     document.getElementById('rtSbStatus').textContent = d.running ? 'running' : 'stopped';
-    document.getElementById('rtSbVersion').textContent = d.version || '';
+    document.getElementById('rtSbVersion').textContent = d.version && d.version !== 'N/A' ? formatVersion(d.version) : '';
 }
 
 async function refreshSbStatus() {

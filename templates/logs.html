@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}ProxyHub — Logs{% endblock %}
+
+{% block navbar_actions %}
+<button class="btn btn-sm" onclick="loadLogs()">Refresh</button>
+<a class="btn btn-sm btn-primary" href="/api/logs/download" download>Download</a>
+{% endblock %}
+
+{% block content %}
+<div class="section">
+    <div class="section-title">Logs</div>
+    <div class="section-body">
+        <div class="muted" id="logFileName" style="margin-bottom:8px;"></div>
+        <pre id="logView" style="height:calc(100vh - 170px);min-height:320px;overflow-y:auto;font-size:12px;line-height:1.5;background:var(--bg-page);border:1px solid var(--border);border-radius:4px;padding:8px;white-space:pre-wrap;word-break:break-all;"></pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/logs.js') }}"></script>
+{% endblock %}

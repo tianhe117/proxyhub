@@ -43,6 +43,12 @@ def settings_page():
     return render_template('settings.html', page='settings')
 
 
+@bp.route('/logs')
+@auth_required
+def logs_page():
+    return render_template('logs.html', page='logs')
+
+
 @bp.route('/m')
 @auth_required
 def mobile_page():

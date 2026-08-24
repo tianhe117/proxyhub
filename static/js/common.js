@@ -7,6 +7,11 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function formatVersion(value) {
+    var match = String(value || '').match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/);
+    return match ? match[0] : (value || 'N/A');
+}
+
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 function openModal(id) { document.getElementById(id).classList.add('show'); }
 
@@ -67,7 +72,7 @@ function renderGlobalStatus(data) {
     var dot = document.getElementById('sbDot');
     dot.className = 'status-dot ' + (data.running ? 'ok' : 'idle');
     document.getElementById('sbLabel').textContent = data.running ? 'sing-box running' : 'sing-box stopped';
-    document.getElementById('sbVersion').textContent = data.version && data.version !== 'N/A' ? data.version : '';
+    document.getElementById('sbVersion').textContent = data.version && data.version !== 'N/A' ? formatVersion(data.version) : '';
     if (data.node_count !== undefined) {
         document.getElementById('nodeCount').textContent = data.node_count + ' nodes';
     }

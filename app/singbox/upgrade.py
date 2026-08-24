@@ -20,7 +20,7 @@ from app.utils import log
 
 
 def get_version() -> str:
-    """Return the sing-box version string, or 'N/A' if unavailable."""
+    """Return the installed sing-box version number, or 'N/A'."""
     if not os.path.isfile(config.SINGBOX_BIN_PATH):
         return 'N/A'
     try:
@@ -29,11 +29,8 @@ def get_version() -> str:
             capture_output=True, text=True, timeout=5,
         )
         output = result.stdout or result.stderr or ''
-        for line in output.splitlines():
-            line = line.strip()
-            if line:
-                return line
-        return 'N/A'
+        match = re.search(r'\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b', output)
+        return match.group(1) if match else 'N/A'
     except Exception:
         return 'N/A'
 
@@ -45,11 +42,7 @@ def check_upgrade() -> dict:
         dict: {success, current_version, latest_version, download_url,
                asset_name, is_update, message}
     """
-    current_raw = get_version()
-
-    # "sing-box version 1.13.13" -> "1.13.13"
-    m = re.search(r'(\d+\.\d+\.\d+)', current_raw)
-    current = m.group(1) if m else current_raw
+    current = get_version()
 
     try:
         url = f'https://api.github.com/repos/{config.SINGBOX_REPO}/releases/latest'

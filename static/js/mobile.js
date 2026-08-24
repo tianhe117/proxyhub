@@ -3,6 +3,10 @@ function escapeHtml(t) {
     if (t === null || t === undefined) return '';
     var d = document.createElement('div'); d.textContent = String(t); return d.innerHTML;
 }
+function formatVersion(value) {
+    var match = String(value || '').match(/\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b/);
+    return match ? match[0] : (value || 'N/A');
+}
 async function api(path, method, body) {
     var opts = { method: method || 'GET', headers: {} };
     if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
@@ -74,7 +78,7 @@ function renderSb(d) {
         if (el) el.className = 'status-dot ' + (d.running ? 'ok' : 'idle');
     });
     document.getElementById('mSbStatus').textContent = d.running ? 'running' : 'stopped';
-    document.getElementById('mSbVersion').textContent = d.version || '';
+    document.getElementById('mSbVersion').textContent = d.version && d.version !== 'N/A' ? formatVersion(d.version) : '';
 }
 
 async function refreshSb() {
