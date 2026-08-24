@@ -269,7 +269,7 @@ async function checkNode(nodeId) {
     } catch (e) { showMessage('Check failed: ' + e); }
 }
 
-/* ---- 缓存秒开 ---- */
+/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
 (function init() {
     var cached = loadCache('outbounds');
     if (cached) {
@@ -278,5 +278,5 @@ async function checkNode(nodeId) {
     }
     _latencies = loadCache('outbounds_lat') || {};
     if (_outbounds.length) renderOutbounds();
-    startPolling(fetchOutbounds, 10000);
+    fetchOutbounds().catch(function() {});
 })();

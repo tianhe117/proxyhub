@@ -25,7 +25,13 @@ async function fetchRouteData() {
     _nodes = results[3].nodes || [];
     _currentNodes = {};
     (results[4].services || []).forEach(function(s) { _currentNodes[s.id] = s; });
-    saveCache('route', { services: _services, current: results[4].services || [] });
+    saveCache('route', {
+        services: _services,
+        inbounds: _inbounds,
+        outbounds: _outbounds,
+        nodes: _nodes,
+        current: results[4].services || [],
+    });
     renderServices();
 }
 
@@ -71,12 +77,18 @@ function renderServices() {
 }
 
 /* ---- sing-box 进程控制 ---- */
+function renderRouteStatus(d) {
+    if (!d) return;
+    document.getElementById('rtSbDot').className = 'status-dot ' + (d.running ? 'ok' : 'idle');
+    document.getElementById('rtSbStatus').textContent = d.running ? 'running' : 'stopped';
+    document.getElementById('rtSbVersion').textContent = d.version || '';
+}
+
 async function refreshSbStatus() {
     try {
         var d = await api('/api/status');
-        document.getElementById('rtSbDot').className = 'status-dot ' + (d.running ? 'ok' : 'idle');
-        document.getElementById('rtSbStatus').textContent = d.running ? 'running' : 'stopped';
-        document.getElementById('rtSbVersion').textContent = d.version || '';
+        saveCache('route_status', d);
+        renderRouteStatus(d);
     } catch (e) {}
 }
 
@@ -174,14 +186,18 @@ async function doSwitch(svcId, nodeId) {
     } catch (e) { showMessage('Switch failed: ' + e); }
 }
 
-/* ---- 缓存秒开 + 轮询 ---- */
+/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
 (function init() {
     var cached = loadCache('route');
     if (cached) {
         _services = cached.services || [];
+        _inbounds = cached.inbounds || [];
+        _outbounds = cached.outbounds || [];
+        _nodes = cached.nodes || [];
         (cached.current || []).forEach(function(s) { _currentNodes[s.id] = s; });
-        // 缓存渲染需要关联数据, 等真实数据拉到再完整渲染; 先渲染骨架
+        renderServices();
     }
+    renderRouteStatus(loadCache('route_status'));
     refreshSbStatus();
-    startPolling(fetchRouteData, 10000);
+    fetchRouteData().catch(function() {});
 })();

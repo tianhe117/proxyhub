@@ -184,9 +184,9 @@ function delIb(id, name) {
     }, 'Delete', true);
 }
 
-/* ---- 缓存秒开 ---- */
+/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
 (function init() {
     var cached = loadCache('inbounds');
     if (cached && cached.inbounds) { _inbounds = cached.inbounds; renderInbounds(); }
-    startPolling(fetchInbounds, 10000);
+    fetchInbounds().catch(function() {});
 })();

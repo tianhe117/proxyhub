@@ -61,37 +61,32 @@ function saveUiState(key, val) {
     try { localStorage.setItem('ph_ui_' + key, JSON.stringify(val)); } catch (e) {}
 }
 
-/* ---- 轮询 + 切回页面立即刷新 ---- */
-var _pollers = [];
-function startPolling(fn, intervalMs) {
-    fn();
-    var iv = setInterval(fn, intervalMs);
-    _pollers.push({ fn: fn, iv: iv });
-    return iv;
-}
-document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible') {
-        _pollers.forEach(function(p) { p.fn(); });
-    }
-});
-
 /* ---- 状态栏: sing-box 状态 + 节点数 ---- */
+function renderGlobalStatus(data) {
+    if (!data) return;
+    var dot = document.getElementById('sbDot');
+    dot.className = 'status-dot ' + (data.running ? 'ok' : 'idle');
+    document.getElementById('sbLabel').textContent = data.running ? 'sing-box running' : 'sing-box stopped';
+    document.getElementById('sbVersion').textContent = data.version && data.version !== 'N/A' ? data.version : '';
+    if (data.node_count !== undefined) {
+        document.getElementById('nodeCount').textContent = data.node_count + ' nodes';
+    }
+}
+
 async function checkSingboxStatus() {
     try {
-        var data = await api('/api/status');
-        var dot = document.getElementById('sbDot');
-        dot.className = 'status-dot ' + (data.running ? 'ok' : 'idle');
-        document.getElementById('sbLabel').textContent = data.running ? 'sing-box running' : 'sing-box stopped';
-        document.getElementById('sbVersion').textContent = data.version && data.version !== 'N/A' ? data.version : '';
-    } catch (e) {}
-    try {
-        var nodes = await api('/api/nodes');
-        document.getElementById('nodeCount').textContent = (nodes.nodes || []).length + ' nodes';
+        var results = await Promise.all([api('/api/status'), api('/api/nodes')]);
+        var data = results[0];
+        data.node_count = (results[1].nodes || []).length;
+        saveCache('global_status', data);
+        renderGlobalStatus(data);
     } catch (e) {}
 }
-startPolling(checkSingboxStatus, 10000);
 
 /* ---- 移动端重定向 ---- */
 if (window.matchMedia('(max-width: 768px)').matches) {
     location.replace('/m');
+} else {
+    renderGlobalStatus(loadCache('global_status'));
+    checkSingboxStatus();
 }

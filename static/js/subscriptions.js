@@ -141,9 +141,9 @@ async function saveKw() {
     } catch (e) { showMessage('Save failed: ' + e); }
 }
 
-/* ---- 缓存秒开 ---- */
+/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
 (function init() {
     var cached = loadCache('subscriptions');
     if (cached && cached.subs) { _subs = cached.subs; renderSubs(); }
-    startPolling(fetchSubs, 10000);
+    fetchSubs().catch(function() {});
 })();

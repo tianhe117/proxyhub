@@ -32,6 +32,7 @@ async function loadSbVersion() {
     try {
         var d = await api('/api/status');
         document.getElementById('sbCurrent').textContent = d.version || 'N/A';
+        saveCache('settings_status', d);
     } catch (e) {}
 }
 
@@ -108,6 +109,7 @@ async function loadLogs() {
         document.getElementById('logView').innerHTML = (d.lines || []).map(escapeHtml).join('\n');
         var view = document.getElementById('logView');
         view.scrollTop = view.scrollHeight;
+        saveCache('settings_logs', d);
     } catch (e) { showMessage('Load logs failed: ' + e); }
 }
 
@@ -123,7 +125,14 @@ function clearNodes() {
 (function init() {
     var cached = loadCache('settings');
     if (cached && cached.settings) { _settings = cached.settings; renderSettings(); }
-    fetchSettings();
+    var status = loadCache('settings_status');
+    if (status) document.getElementById('sbCurrent').textContent = status.version || 'N/A';
+    var logs = loadCache('settings_logs');
+    if (logs) {
+        document.getElementById('logFileName').textContent = logs.file || '(no log file)';
+        document.getElementById('logView').innerHTML = (logs.lines || []).map(escapeHtml).join('\n');
+    }
+    fetchSettings().catch(function() {});
     loadSbVersion();
     loadLogs();
 })();

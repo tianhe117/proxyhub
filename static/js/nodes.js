@@ -78,6 +78,7 @@ async function fetchNodes() {
 
 function updateRowLatency(nodeId, result) {
     _latencies[nodeId] = result;
+    saveCache('nodes_lat', _latencies);
     var tcp = document.getElementById('tcp-' + nodeId);
     var url = document.getElementById('url-' + nodeId);
     if (tcp) tcp.innerHTML = latHtml(result.tcp_latency_ms, false);
@@ -93,25 +94,10 @@ async function checkNode(nodeId) {
     } catch (e) { showMessage('Check failed: ' + e); }
 }
 
-function pollTask(taskId) {
-    var iv = setInterval(async function() {
-        try {
-            var t = await api('/api/nodes/check/' + taskId);
-            Object.keys(t.results || {}).forEach(function(nid) {
-                updateRowLatency(parseInt(nid), t.results[nid]);
-            });
-            if (t.status !== 'running') {
-                clearInterval(iv);
-                saveCache('nodes_lat', _latencies);
-            }
-        } catch (e) { clearInterval(iv); }
-    }, 1000);
-}
-
 async function checkGroup(subId) {
     try {
         var r = await api('/api/nodes/check', 'POST', { sub_id: subId });
-        if (r.task_id) pollTask(r.task_id);
+        if (r.task_id) showMessage('Check started. Reopen this page later to load the results.');
         else if (r.result) updateRowLatency(r.node_id, r.result);
     } catch (e) { showMessage('Check failed: ' + e); }
 }
@@ -119,7 +105,7 @@ async function checkGroup(subId) {
 async function checkAll() {
     try {
         var r = await api('/api/nodes/check', 'POST', {});
-        if (r.task_id) pollTask(r.task_id);
+        if (r.task_id) showMessage('Check started. Reopen this page later to load the results.');
     } catch (e) { showMessage('Check failed: ' + e); }
 }
 
@@ -441,11 +427,11 @@ function delNode(id, name) {
     }, 'Delete', true);
 }
 
-/* ---- 缓存秒开 ---- */
+/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
 (function init() {
     var cached = loadCache('nodes');
     if (cached && cached.groups) _groups = cached.groups;
     _latencies = loadCache('nodes_lat') || {};
     if (_groups.length) renderGroups();
-    startPolling(fetchNodes, 10000);
+    fetchNodes().catch(function() {});
 })();
