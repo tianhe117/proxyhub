@@ -61,7 +61,7 @@
 
 ### 2.5 不修改内存状态生命周期
 
-当前使用规模约 50–100 个节点，checker task 和 latency store 的内存占用有限。本轮不增加 TTL、容量限制或清理逻辑，保持 `app/checker.py` 与 `app/utils.py` 的现有内存状态语义。
+当前使用规模约 50–100 个节点，checker task 和 latency store 的内存占用有限。本轮不增加 TTL、容量限制或清理逻辑，保持 `app/common/checker.py` 与 `app/utils.py` 的现有内存状态语义。
 
 ## 3. 目标目录结构
 
@@ -72,8 +72,11 @@ proxyhub/
 │   ├── config.py                 # 运行路径和应用级配置
 │   ├── settings.py               # setting.json 用户设置持久化
 │   ├── logger.py
-│   ├── checker.py
 │   ├── utils.py
+│   │
+│   ├── common/
+│   │   ├── __init__.py
+│   │   └── checker.py            # 节点检测和内存任务状态
 │   │
 │   ├── web/
 │   │   ├── __init__.py

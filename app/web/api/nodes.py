@@ -6,7 +6,7 @@ import uuid
 
 from flask import jsonify, request
 
-from app import checker
+from app.common import checker
 from app.db import node as db_node
 from app.services.runtime import apply_config, start_singbox
 from app.singbox import is_running as sb_is_running

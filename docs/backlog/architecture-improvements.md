@@ -32,7 +32,8 @@ proxyhub/
 │   ├── pages.py             # 页面路由
 │   ├── routes.py            # 47 个 API 端点，505 行
 │   ├── services.py          # 订阅、进程、服务 selector 编排，357 行
-│   ├── checker.py           # 节点检查和内存任务状态
+│   ├── common/
+│   │   └── checker.py       # 节点检查和内存任务状态
 │   ├── settings.py          # 设置持久化和运行路径
 │   ├── logger.py / utils.py
 │   ├── db/                  # SQLite 连接、schema、按实体 CRUD
@@ -222,7 +223,8 @@ proxyhub/
 │   ├── db/                  # 保持当前实体拆分
 │   ├── parser/              # 保持
 │   ├── singbox/             # 保持
-│   ├── checker.py
+│   ├── common/
+│   │   └── checker.py
 │   └── utils.py
 ├── templates/
 ├── static/                  # 原生 CSS/JS，无构建步骤
