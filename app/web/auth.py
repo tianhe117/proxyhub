@@ -1,12 +1,8 @@
-"""Authentication: auth_required decorator + login/logout routes.
-
-Password empty (web_password == '') → auth disabled, everything passes.
-Session-based; API routes get 401 JSON, page routes get redirected to /login.
-"""
+"""Session authentication and login/logout routes."""
 
 import functools
 
-from flask import Blueprint, redirect, request, session, jsonify, render_template, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 
 from app.settings import get_setting
 
@@ -22,14 +18,13 @@ def _is_api_request():
 
 
 def _safe_next(target):
-    """Only allow in-site paths (prevent open redirect)."""
     if target and target.startswith('/') and not target.startswith('//'):
         return target
     return '/'
 
 
 def auth_required(view):
-    """Gate a view behind session auth (no-op when password is empty)."""
+    """Gate a view behind session auth when a password is configured."""
     @functools.wraps(view)
     def wrapper(*args, **kwargs):
         if _auth_disabled() or session.get('authenticated'):
@@ -48,8 +43,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '')
         password = request.form.get('password', '')
-        if (username == get_setting('web_username')
-                and password == get_setting('web_password')):
+        if username == get_setting('web_username') and password == get_setting('web_password'):
             session['authenticated'] = True
             return redirect(_safe_next(request.args.get('next')))
         error = 'Invalid username or password'

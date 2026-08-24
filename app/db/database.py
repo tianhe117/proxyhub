@@ -4,7 +4,7 @@ import sqlite3
 import os
 import threading
 
-from app.settings import DB_PATH
+from app import config
 
 _local = threading.local()
 
@@ -15,7 +15,7 @@ _local = threading.local()
 def get_db():
     """Return a thread-local SQLite connection with row_factory set."""
     if not hasattr(_local, 'db') or _local.db is None:
-        db_path = DB_PATH
+        db_path = config.DB_PATH
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         _local.db = sqlite3.connect(db_path)
         _local.db.row_factory = sqlite3.Row

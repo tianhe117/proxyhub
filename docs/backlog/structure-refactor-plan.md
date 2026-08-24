@@ -1,7 +1,7 @@
 # ProxyHub Structure Refactor Plan
 
 > 建立日期：2026-08-24
-> 状态：待确认，尚未执行
+> 状态：已执行（2026-08-24）
 > 范围：只做项目结构优化，不修复 `known-issues.md` 中的业务问题
 
 ## 1. 目标
@@ -14,7 +14,7 @@
 2. 按业务职责拆分 service 层。
 3. 将大型内联 CSS/JavaScript 抽到 `static/`，继续使用原生前端且不引入构建工具。
 4. 分离运行配置与用户设置，为路径注入和生命周期管理打基础。
-5. 增加数据库连接 teardown 和轻量 schema version 基础设施。
+5. 增加数据库连接 teardown；数据库结构变化继续采用备份、重建和少量数据导入方式。
 6. 删除当前不再维护的测试代码，不创建新的 `tests/` 或 `scripts/`。
 
 ## 2. 明确不在本轮执行的内容
@@ -229,14 +229,13 @@ API 分配：
 - 允许 `create_app(config_overrides=None)` 为未来隔离运行提供入口，但生产默认行为不变。
 - logger 的初始化从 import 副作用逐步收敛到 app 初始化；公共 `log` 对象名称不变。
 
-### 4.5 数据库生命周期与 schema version
+### 4.5 数据库生命周期
 
 修改内容：
 
 1. 在 Flask app 上注册 `teardown_appcontext`，请求结束时调用 `close_db()`。
-2. 使用 SQLite `PRAGMA user_version` 记录 schema 版本。
-3. 当前 schema 定义为 version 1；已有 version 0 数据库完成表初始化后只标记为 version 1，不删除或重建业务表。
-4. 预留按版本顺序执行 migration 的函数结构，但本轮没有业务字段迁移。
+2. 不增加 schema version 或 migration 机制。
+3. 未来结构变化时先备份/导出旧数据库，再重新初始化并导入少量数据。
 
 不引入 ORM 或 Alembic，不改变现有表、外键和 sentinel 数据。
 
@@ -280,7 +279,7 @@ API 分配：
 
 1. 新增 `app/config.py` 并更新常量 import。
 2. 收敛 settings/logger 初始化职责。
-3. 注册 DB teardown 和 schema version。
+3. 注册 DB teardown；不增加 schema version。
 
 ### Phase 5：删除测试目录并更新当前文档
 
@@ -334,7 +333,7 @@ API 分配：
 | JS 抽离后加载顺序变化 | `common.js` 固定先加载，页面脚本在 DOM 后加载，不启用 module |
 | static 抽离造成样式差异 | 不改 CSS 内容，只移动；逐页浏览器对照 |
 | 配置拆分改变运行路径 | 默认值逐项对照，明确不启用 `PROXYHUB_HOME` |
-| DB version 误处理旧数据 | 只对现有 schema 标记 version 1，不执行 destructive migration |
+| DB 结构变化影响旧数据 | 不做自动 migration；结构变化时先备份，再重建数据库并导入少量数据 |
 | 删除测试后缺少回归保护 | 本轮采用 route map、compile、配置一致性和人工冒烟；未来是否恢复测试另行决定 |
 
 任何阶段出现行为差异时，优先回退该阶段，不继续叠加下一阶段修改。
@@ -343,9 +342,19 @@ API 分配：
 
 开始执行前确认以下约束：
 
-- [ ] 接受 `app/web/`、`app/services/` 和 `static/` 的目标结构。
-- [ ] 接受删除当前 `test/` 全部文件，且不新建 `tests/`。
-- [ ] 接受当前没有 `scripts/`，本轮保持不存在；保留根目录 `setup.sh`。
-- [ ] 接受 Docker、compose 和 `run.py` 部署语义暂不修改。
-- [ ] 接受本轮只做结构迁移，不修复 `known-issues.md` 中的业务问题。
-- [ ] 接受使用 SQLite `PRAGMA user_version = 1` 建立轻量 schema version 基线。
+- [x] 接受 `app/web/`、`app/services/` 和 `static/` 的目标结构。
+- [x] 接受删除当前 `test/` 全部文件，且不新建 `tests/`。
+- [x] 接受当前没有 `scripts/`，本轮保持不存在；保留根目录 `setup.sh`。
+- [x] 接受 Docker、compose 和 `run.py` 部署语义暂不修改。
+- [x] 接受本轮只做结构迁移，不修复 `known-issues.md` 中的业务问题。
+
+## 9. 执行结果
+
+- `app/services.py` 已拆为 `app/services/` 三个职责模块，并保留公共 API 再导出。
+- auth、pages 和 47 个 API route 已迁入 `app/web/`；迁移前后完整 Flask route map 一致。
+- 11 份 CSS/JavaScript 资源已原样移入 `static/`，模板改为静态文件引用。
+- 运行常量已移入 `app/config.py`；默认路径和部署行为不变。
+- settings 改为惰性加载，logger 改为 app 初始化时配置。
+- Flask 已注册数据库 teardown；数据库初始化保持原有建表与 sentinel 初始化方式。
+- `test/` 已删除，仓库不存在 `tests/` 或 `scripts/`；`setup.sh` 保留。
+- Docker、compose、`run.py` 和 `known-issues.md` 未修改。

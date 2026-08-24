@@ -13,7 +13,8 @@ Tag convention:
 import json
 import os
 
-from app.settings import CONFIG_PATH, get_setting
+from app import config as app_config
+from app.settings import get_setting
 from app.utils import log
 from app.singbox import protocol
 
@@ -164,7 +165,7 @@ def build_config(db_state) -> dict:
 
 def write_config(config: dict) -> str:
     """Atomically write config dict to CONFIG_PATH; return path."""
-    path = CONFIG_PATH
+    path = app_config.CONFIG_PATH
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + '.tmp'
     with open(tmp, 'w') as f:

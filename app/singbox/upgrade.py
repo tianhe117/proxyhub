@@ -15,23 +15,17 @@ import tempfile
 import urllib.request
 import zipfile
 
-from app.settings import (
-    SINGBOX_REPO,
-    SINGBOX_ASSET_PATTERNS,
-    SINGBOX_BIN_DIR,
-    SINGBOX_BIN_PATH,
-    SINGBOX_VERSION_ARGS,
-)
+from app import config
 from app.utils import log
 
 
 def get_version() -> str:
     """Return the sing-box version string, or 'N/A' if unavailable."""
-    if not os.path.isfile(SINGBOX_BIN_PATH):
+    if not os.path.isfile(config.SINGBOX_BIN_PATH):
         return 'N/A'
     try:
         result = subprocess.run(
-            [SINGBOX_BIN_PATH] + SINGBOX_VERSION_ARGS,
+            [config.SINGBOX_BIN_PATH] + config.SINGBOX_VERSION_ARGS,
             capture_output=True, text=True, timeout=5,
         )
         output = result.stdout or result.stderr or ''
@@ -58,7 +52,7 @@ def check_upgrade() -> dict:
     current = m.group(1) if m else current_raw
 
     try:
-        url = f'https://api.github.com/repos/{SINGBOX_REPO}/releases/latest'
+        url = f'https://api.github.com/repos/{config.SINGBOX_REPO}/releases/latest'
         req = urllib.request.Request(url)
         req.add_header('Accept', 'application/vnd.github.v3+json')
         req.add_header('User-Agent', 'ProxyHub/1.0')
@@ -70,7 +64,7 @@ def check_upgrade() -> dict:
     latest_tag = release.get('tag_name', '').lstrip('v')
     latest_version = latest_tag or 'unknown'
 
-    patterns = SINGBOX_ASSET_PATTERNS.get('linux-64', [])
+    patterns = config.SINGBOX_ASSET_PATTERNS.get('linux-64', [])
     asset_url = None
     asset_name = None
     for asset in release.get('assets', []):
@@ -119,7 +113,7 @@ def download_upgrade() -> dict:
     except Exception as e:
         return {'success': False, 'message': f'Download failed: {e}'}
 
-    bin_dir = SINGBOX_BIN_DIR
+    bin_dir = config.SINGBOX_BIN_DIR
     os.makedirs(bin_dir, exist_ok=True)
     asset_name = check['asset_name']
 
@@ -136,7 +130,7 @@ def download_upgrade() -> dict:
             _extract_tar(tmp_path, bin_dir, 'xz')
         else:
             # Bare binary
-            dest = SINGBOX_BIN_PATH
+            dest = config.SINGBOX_BIN_PATH
             with open(dest, 'wb') as f:
                 f.write(data)
             os.chmod(dest, 0o755)

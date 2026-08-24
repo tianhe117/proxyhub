@@ -3,6 +3,7 @@
 > 评估日期：2026-08-24
 > 评估对象：当前仓库实际代码，而不是早期目标结构。
 > 相关问题清单：[known-issues.md](known-issues.md)
+> 结构优化状态：第 4 节对应重构已按 [structure-refactor-plan.md](structure-refactor-plan.md) 执行；部署优化延期，测试目录已删除，文档结构后续再维护。
 
 ## 1. 总体判断
 
@@ -146,23 +147,21 @@ static/
 - 测试创建 app 时注入临时目录；
 - 不要求立即引入复杂配置库。
 
-### 4.5 数据库缺少迁移和请求结束清理
+### 4.5 数据库请求结束清理
 
-目前只有 `CREATE TABLE IF NOT EXISTS`，适合首次创建，但不能可靠演进已有 schema；thread-local 连接也没有注册 Flask teardown。
+thread-local 连接原先没有注册 Flask teardown，现已补充请求结束清理。
 
-建议：
-
-- 注册 `teardown_appcontext` 调用 `close_db()`；
-- 增加轻量 schema version/migration 表，或采用 Flask-Migrate/Alembic（只有未来引入 SQLAlchemy 时才值得）；
-- 所有 API 集成测试使用临时 SQLite 文件。
+数据库数据量只有约 100–200 条，不维护 schema version 或自动 migration。未来表结构变化时采用“备份/导出旧数据库 → 重新初始化 → 导入少量数据”的方式处理。
 
 ### 4.6 内存任务状态缺少生命周期
 
 节点批量检查的 `_tasks` 和延迟结果存在进程内存中，没有 TTL/数量上限。小规模短期运行问题不大，但长期运行会积累任务，重启也会丢失状态。
 
-建议先增加定长/TTL 清理，不必为此引入 Redis。只有多进程 Web worker 或分布式部署成为真实需求时，才需要外部任务存储。
+当前规模最多约 50–100 个节点，内存占用有限。本项决定暂不修改；只有任务数量或运行模式明显扩大后再重新评估。
 
 ## 5. 部署结构评估
+
+> 决定：暂不修改。当前单人使用场景优先保留 Docker 下通过宿主仓库 `git pull` 快速更新的方式，等软件稳定后再评估生产化镜像。
 
 ### 5.1 当前方式
 
@@ -184,21 +183,11 @@ static/
 
 ## 6. 测试结构评估
 
-`test/` 作为目录名可以工作，但 Python 社区更常见 `tests/`。真正需要优化的是测试类型边界，而不是复数命名：
-
-```text
-tests/
-├── unit/                   # 无网络、无真实 data 写入
-├── integration/            # Flask test client + 临时 SQLite + mock Clash API
-└── fixtures/
-scripts/manual/
-├── smoke_process.py        # 明确需要本地端口/网络
-└── smoke_upgrade.py        # 明确可能替换 binary
-```
-
-应先修复测试触碰真实 `data/config.json` 的问题，再考虑目录重命名。
+> 决定：当前测试代码不再维护，`test/` 已删除；不创建 `tests/` 或 `scripts/`。结构变更使用一次性检查和人工冒烟验收，不在仓库保留测试资产。
 
 ## 7. 文档结构评估
+
+> 决定：已先采用 `docs/archive/` 与 `docs/backlog/` 的简易分类，后期有需要时再继续维护，不在本轮扩大调整。
 
 当前文档记录很丰富，但存在“设计稿、实施计划、实际状态”混在一起的问题。例如：
 
@@ -237,10 +226,6 @@ proxyhub/
 │   └── utils.py
 ├── templates/
 ├── static/                  # 原生 CSS/JS，无构建步骤
-├── tests/
-│   ├── unit/
-│   └── integration/
-├── scripts/manual/
 ├── docs/
 ├── data/ / logs/
 └── Dockerfile / compose / run.py
@@ -250,21 +235,7 @@ proxyhub/
 
 ## 9. 推荐实施顺序
 
-### 阶段 A：稳定手动核心链路
-
-修复 [known-issues.md](known-issues.md) 中 KI-001、002、004、006、009，并补对应回归测试。在真实部署环境完成订阅、路由、进程和流量验收。
-
-### 阶段 B：降低修改风险
-
-按业务域拆 `routes.py` 和 `services.py`；增加统一错误处理、临时数据库 API 测试、DB teardown 和配置注入。拆分期间保持 URL 和外部 API 不变。
-
-### 阶段 C：部署可复现
-
-固定依赖，构建自包含镜像，采用 WSGI server，增加 healthcheck 和备份/恢复说明。
-
-### 阶段 D：按增长情况优化前端与数据迁移
-
-页面继续增长时抽出 static 原生 JS/CSS；schema 首次需要变更前引入迁移机制。没有真实需求时不引入 Redis、Celery、SQLAlchemy 或前端框架。
+第 4 节结构优化已经完成，执行与验收记录见 [structure-refactor-plan.md](structure-refactor-plan.md)。下一阶段只处理 [known-issues.md](known-issues.md) 中的业务问题；部署、测试体系、文档深度整理和内存生命周期均按上述决定延期或取消。
 
 ## 10. 最终结论
 

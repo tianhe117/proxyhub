@@ -14,8 +14,8 @@ import hashlib
 import threading
 from dataclasses import dataclass
 
+from app.config import SUPPORTED_PROTOCOLS, VALID_INBOUND_PROTOCOLS
 from app.logger import log
-from app.settings import SUPPORTED_PROTOCOLS, VALID_INBOUND_PROTOCOLS
 
 
 # ---------------------------------------------------------------------------

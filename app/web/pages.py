@@ -1,8 +1,8 @@
-"""Page routes: desktop pages + mobile SPA. All behind auth."""
+"""Authenticated desktop pages and mobile SPA route."""
 
 from flask import Blueprint, render_template
 
-from app.auth import auth_required
+from app.web.auth import auth_required
 
 bp = Blueprint('pages', __name__)
 

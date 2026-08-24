@@ -8,7 +8,7 @@ app.utils:
     log.error('pull failed')
 
 Import it through app.utils (`from app.utils import log`) rather than this
-module directly. Writes one file per process start to settings.LOGS_DIR,
+module directly. Writes one file per process start to config.LOGS_DIR,
 named YYYY-MM-DD_HHMMSS.log (per design.md). Each line records time, level,
 caller function name (接口名称), and message.
 """
@@ -17,26 +17,33 @@ import logging
 import os
 from datetime import datetime
 
-from app import settings
+from app import config
 
 
-def _build_log():
-    """Configure and return the process-wide logger (called once at import)."""
-    os.makedirs(settings.LOGS_DIR, exist_ok=True)
+log = logging.getLogger('proxyhub')
+
+
+def init_logger():
+    """Configure the process-wide file logger after runtime paths are set."""
+    os.makedirs(config.LOGS_DIR, exist_ok=True)
     filename = datetime.now().strftime('%Y-%m-%d_%H%M%S') + '.log'
-    path = os.path.join(settings.LOGS_DIR, filename)
+    path = os.path.join(config.LOGS_DIR, filename)
 
-    logger = logging.getLogger('proxyhub')
-    if not logger.handlers:  # 防重：reload 时避免重复加 handler
+    target_dir = os.path.abspath(config.LOGS_DIR)
+    for existing in list(log.handlers):
+        if isinstance(existing, logging.FileHandler):
+            existing_dir = os.path.dirname(os.path.abspath(existing.baseFilename))
+            if existing_dir != target_dir:
+                log.removeHandler(existing)
+                existing.close()
+
+    if not log.handlers:
         handler = logging.FileHandler(path, encoding='utf-8')
         handler.setFormatter(logging.Formatter(
             '[%(asctime)s] [%(levelname)s] [%(funcName)s] %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S',
         ))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.propagate = False  # 只落文件，不回传 root（避免 console/stderr 输出）
-    return logger
-
-
-log = _build_log()
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+        log.propagate = False
+    return log

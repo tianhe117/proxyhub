@@ -7,7 +7,7 @@
 
 ## 1. 背景
 
-"从订阅到启动 sing-box"这条链目前断在第 4 环：[services.py](../../app/services.py) 只做了订阅刷新，没有函数把 DB 状态组装成 `db_state` → `build_config` → `write_config` → `process.start/restart` 串起来。[config.py:101](../../app/singbox/config.py#L101) docstring 写着"db_state 由调用方组装"但这个调用方不存在。
+"从订阅到启动 sing-box"这条链目前断在第 4 环：当时的 `app/services.py` 只做了订阅刷新，没有函数把 DB 状态组装成 `db_state` → `build_config` → `write_config` → `process.start/restart` 串起来。[config.py:101](../../app/singbox/config.py#L101) docstring 写着"db_state 由调用方组装"但这个调用方不存在。
 
 用户决定把第 4 环（sing-box 编排）和 routes 一起做——routes 需要 start/stop/restart/is_running 接口暴露给前端。本计划实现 `app/routes.py`（Flask Blueprint）+ 在 `app/services.py` 补 sing-box 编排函数 + `app/singbox/clash.py` 实现 clash_api 客户端（start/stop 依赖查询当前状态）+ `CheckResult` 重构（v2 检查机制变了，原结构已不适用）。`create_app()` 接上蓝图注册 + DB 初始化。
 

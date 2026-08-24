@@ -12,7 +12,7 @@ Documents that describe current problems and future optimization work:
 |---|---|
 | [backlog/known-issues.md](backlog/known-issues.md) | 当前已知问题、优先级、影响和验收标准 |
 | [backlog/architecture-improvements.md](backlog/architecture-improvements.md) | 当前软件和文件结构评估、后续结构优化建议 |
-| [backlog/structure-refactor-plan.md](backlog/structure-refactor-plan.md) | 当前待确认的结构重构实施方案 |
+| [backlog/structure-refactor-plan.md](backlog/structure-refactor-plan.md) | 已执行的结构重构方案与验收记录 |
 
 ## Archive
 

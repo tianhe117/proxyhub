@@ -7,7 +7,7 @@ Pure functions, zero DB/IO dependency. The single public entry is
 Adding a new protocol:
     1. create ``app/parser/{protocol}.py`` with ``parse_uri(uri)``
     2. add a branch in ``_dispatch_uri`` below
-    3. add the string to ``settings.SUPPORTED_PROTOCOLS``
+    3. add the string to ``config.SUPPORTED_PROTOCOLS``
 """
 
 from app.utils import log

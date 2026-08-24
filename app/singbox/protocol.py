@@ -7,7 +7,7 @@ one elif branch here + the protocol string in settings.py.
 
 import json
 
-from app.settings import VALID_INBOUND_PROTOCOLS
+from app.config import VALID_INBOUND_PROTOCOLS
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import os
 
 from flask import Flask
 
-from app import settings
+from app import config
 
 
 def _load_secret_key():
@@ -15,7 +15,7 @@ def _load_secret_key():
     env = os.environ.get('PROXYHUB_SECRET')
     if env:
         return env
-    path = os.path.join(settings.DATA_DIR, 'secret_key')
+    path = os.path.join(config.DATA_DIR, 'secret_key')
     try:
         with open(path, 'r') as f:
             return f.read().strip()
@@ -29,21 +29,45 @@ def _load_secret_key():
     return secret
 
 
-def create_app() -> Flask:
+def create_app(config_overrides=None) -> Flask:
     """Create and configure the Flask application instance."""
-    app = Flask(__name__, template_folder='../templates')
+    config.configure(config_overrides)
+
+    from app import settings
+    from app.logger import init_logger
+
+    settings.configure()
+    init_logger()
+
+    app = Flask(
+        __name__,
+        template_folder='../templates',
+        static_folder='../static',
+    )
+    app.config.update({
+        'BASE_DIR': config.BASE_DIR,
+        'DATA_DIR': config.DATA_DIR,
+        'LOGS_DIR': config.LOGS_DIR,
+        'DB_PATH': config.DB_PATH,
+        'CONFIG_PATH': config.CONFIG_PATH,
+    })
     app.secret_key = _load_secret_key()
 
-    from app.routes import bp as api_bp
-    from app.auth import bp as auth_bp
-    from app.pages import bp as pages_bp
-    from app.auth import auth_required
+    from app.web.api import bp as api_bp
+    from app.web.auth import bp as auth_bp
+    from app.web.pages import bp as pages_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(pages_bp)
-    api_bp.before_request(auth_required(lambda: None))
     app.register_blueprint(api_bp)
 
-    from app.db.database import init_db
+    from app.db.database import close_db, init_db
+
+    close_db()
     init_db()
+
+    @app.teardown_appcontext
+    def _close_database(_error):
+        close_db()
+
     return app

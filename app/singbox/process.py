@@ -9,11 +9,7 @@ import signal
 import subprocess
 import time
 
-from app.settings import (
-    CONFIG_PATH,
-    SINGBOX_BIN_PATH,
-    SINGBOX_RUN_ARGS,
-)
+from app import config
 from app.utils import log
 
 # ---------------------------------------------------------------------------
@@ -45,7 +41,7 @@ def _find_pid():
 
     Scans `ps` for a `sing-box` process whose args contain the config path.
     """
-    config_name = os.path.basename(CONFIG_PATH)
+    config_name = os.path.basename(config.CONFIG_PATH)
     try:
         result = subprocess.run(
             ['ps', '-eo', 'pid,stat,comm,args'],
@@ -66,7 +62,7 @@ def _find_pid():
                 continue
             if 'Z' in stat:
                 continue  # skip zombies
-            if comm == os.path.basename(SINGBOX_BIN_PATH) and config_name in args:
+            if comm == os.path.basename(config.SINGBOX_BIN_PATH) and config_name in args:
                 return pid
     except Exception as e:
         log.error(f'Failed to scan processes: {e}')
@@ -122,13 +118,13 @@ def start() -> int:
         log.info(f'sing-box already running (PID {pid})')
         return pid
 
-    bin_path = SINGBOX_BIN_PATH
+    bin_path = config.SINGBOX_BIN_PATH
     if not bin_path or not os.path.isfile(bin_path):
         log.error(f'Binary not found: {bin_path}')
         raise RuntimeError(f'Binary not found: {bin_path}')
 
-    run_args = [a.format(config=CONFIG_PATH)
-                for a in SINGBOX_RUN_ARGS]
+    run_args = [a.format(config=config.CONFIG_PATH)
+                for a in config.SINGBOX_RUN_ARGS]
     cmd = [bin_path] + run_args
     log.info(f'Starting sing-box: {" ".join(cmd)}')
 
