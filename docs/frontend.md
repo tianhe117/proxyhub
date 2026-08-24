@@ -222,7 +222,7 @@ GET /logout → 清 session → 302 → /login
 └──────────────────────────────────────────────────┘
 ```
 
-**数据模型**：出站只有 `name` + 节点池（`GET /api/outbounds` 每项含 `pool[]`，池条目含 `id`（池条目 id）、`node_id`、`priority` 及节点详情 JOIN）。direct 哨兵（id=0）不出现在此页（后端已过滤）。
+**数据模型**：出站只有 `name` + 节点池（`GET /api/outbounds` 每项含 `pool[]`，池条目字段为 `pool_id`（池条目 id）、`node_id`、`priority` 及节点详情 JOIN——`name/protocol/address/port`）。direct 哨兵（id=0）不出现在此页（后端已过滤）。
 
 - **新建/编辑模态框** = name + 节点选择器（filter 输入框 + 节点列表点击切换选中，选中集合即池、点击顺序即优先级）。保存流程：`POST/PUT /api/outbounds[/id]` → `POST /api/outbounds/<id>/nodes/reorder {node_ids:[...]}` 全量同步池。
 - **池内操作**：
