@@ -5,6 +5,7 @@ layer per docs/design.md §2). Each handler is a thin translation layer:
 extract params → call db/service → format JSON response.
 """
 
+import os
 import threading
 import time
 import uuid
@@ -300,6 +301,26 @@ def api_service_status(svc_id):
     return jsonify(services.get_service_status(svc_id))
 
 
+@bp.route('/api/services/current-nodes', methods=['GET'])
+def api_current_nodes():
+    """Batch current-node query: one call instead of N per-service status calls."""
+    from app.singbox.clash import get_proxy_now
+    out = []
+    for svc in db_service.list_all():
+        oid = svc['outbound_id']
+        if oid == 0:
+            out.append({'id': svc['id'], 'outbound_id': 0,
+                        'current_node': 'direct', 'status': 'direct'})
+            continue
+        now = get_proxy_now(f'g{oid}')
+        out.append({
+            'id': svc['id'], 'outbound_id': oid,
+            'current_node': now,
+            'status': 'running' if (now and now != 'direct') else 'stopped',
+        })
+    return jsonify({'services': out})
+
+
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
@@ -441,3 +462,44 @@ def api_node_latency(node_id):
             'error': r.error,
         } if r else None
     })
+
+
+# ---------------------------------------------------------------------------
+# Logs (file-based, simplest scheme)
+# ---------------------------------------------------------------------------
+
+def _current_log_file():
+    """Return the newest *.log in LOGS_DIR (this process's log file), or None."""
+    import glob
+    files = glob.glob(os.path.join(settings.LOGS_DIR, '*.log'))
+    if not files:
+        return None
+    return max(files, key=os.path.getmtime)
+
+
+@bp.route('/api/logs', methods=['GET'])
+def api_logs():
+    """Tail the current log file: ?tail=N (default 200, max 1000)."""
+    try:
+        tail = min(int(request.args.get('tail', 200)), 1000)
+    except ValueError:
+        tail = 200
+    path = _current_log_file()
+    if not path:
+        return jsonify({'file': None, 'lines': []})
+    try:
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.read().splitlines()[-tail:]
+    except OSError as e:
+        return jsonify({'file': None, 'lines': [], 'error': str(e)})
+    return jsonify({'file': os.path.basename(path), 'lines': lines})
+
+
+@bp.route('/api/logs/download', methods=['GET'])
+def api_logs_download():
+    """Download the current log file as an attachment."""
+    from flask import send_file
+    path = _current_log_file()
+    if not path:
+        return jsonify({'success': False, 'message': 'No log file'}), 404
+    return send_file(path, as_attachment=True)

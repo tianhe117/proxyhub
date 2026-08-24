@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}ProxyHub — Settings{% endblock %}
+
+{% block content %}
+<!-- sing-box 升级 -->
+<div class="section">
+    <div class="section-title">sing-box</div>
+    <div class="section-body">
+        <div class="row-flex" style="border:none;">
+            <span style="flex:1;">current: <strong id="sbCurrent">—</strong> &middot; latest: <strong id="sbLatest">—</strong></span>
+            <button class="btn btn-sm" id="btnCheckUpd" onclick="checkUpgrade()">Check Update</button>
+            <button class="btn btn-sm btn-primary" id="btnDownload" onclick="downloadUpgrade()" disabled>Download Update</button>
+        </div>
+    </div>
+</div>
+
+<!-- Node check -->
+<div class="section">
+    <div class="section-title">Node Check</div>
+    <div class="section-body">
+        <div class="field-row">
+            <div class="field"><label>check_interval_normal (s)</label><input class="input" id="s_check_interval_normal"></div>
+            <div class="field"><label>check_interval_failover (s)</label><input class="input" id="s_check_interval_failover"></div>
+        </div>
+        <div class="field-row">
+            <div class="field"><label>tcp_timeout (s)</label><input class="input" id="s_tcp_timeout"></div>
+            <div class="field"><label>curl_timeout (s)</label><input class="input" id="s_curl_timeout"></div>
+        </div>
+        <div class="field"><label>test_url</label><input class="input" id="s_test_url"></div>
+        <button class="btn btn-primary" onclick="saveSection(['check_interval_normal','check_interval_failover','tcp_timeout','curl_timeout','test_url'])">Save</button>
+    </div>
+</div>
+
+<!-- Clash API -->
+<div class="section">
+    <div class="section-title">Clash API</div>
+    <div class="section-body">
+        <div class="field"><label>clash_api_port</label><input class="input" id="s_clash_api_port"></div>
+        <button class="btn btn-primary" onclick="saveSection(['clash_api_port'], true)">Save</button>
+    </div>
+</div>
+
+<!-- Web UI -->
+<div class="section">
+    <div class="section-title">Web UI</div>
+    <div class="section-body">
+        <div class="field-row">
+            <div class="field"><label>web_port</label><input class="input" id="s_web_port"></div>
+            <div class="field"><label>web_username</label><input class="input" id="s_web_username"></div>
+        </div>
+        <div class="field"><label>password: <span id="pwState" class="muted"></span></label>
+            <div style="display:flex;gap:8px;">
+                <button class="btn" onclick="openChangePw()">Change Password</button>
+                <button class="btn btn-danger" onclick="openClearPw()">Clear Password</button>
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="saveSection(['web_port','web_username'], true)">Save</button>
+    </div>
+</div>
+
+<!-- Logs -->
+<div class="section">
+    <div class="section-title">Logs
+        <span style="float:right;display:flex;gap:4px;">
+            <button class="btn btn-sm" onclick="loadLogs()">Refresh</button>
+            <a class="btn btn-sm btn-primary" href="/api/logs/download" download>Download Log</a>
+        </span>
+    </div>
+    <div class="section-body">
+        <div class="muted" id="logFileName" style="margin-bottom:4px;"></div>
+        <pre id="logView" style="max-height:320px;overflow-y:auto;font-size:12px;line-height:1.5;background:var(--bg-page);border:1px solid var(--border);border-radius:4px;padding:8px;white-space:pre-wrap;word-break:break-all;"></pre>
+    </div>
+</div>
+
+<!-- Danger zone -->
+<div class="section">
+    <div class="section-title" style="color:var(--red);">Danger Zone</div>
+    <div class="section-body">
+        <button class="btn btn-danger" onclick="clearNodes()">Clear All Nodes</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block modals %}
+<!-- 修改密码 -->
+<div class="modal-overlay" id="pwModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Change Password</span>
+            <button class="modal-close" onclick="closeModal('pwModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="field"><label>New Password</label><input class="input" id="pwNew" type="password"></div>
+            <div class="field"><label>Confirm New Password</label><input class="input" id="pwConfirm" type="password"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('pwModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="savePw()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- 清空密码(输入确认) -->
+<div class="modal-overlay" id="clearPwModal">
+    <div class="modal">
+        <div class="modal-header">
+            <span class="modal-title">Clear Password</span>
+            <button class="modal-close" onclick="closeModal('clearPwModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="line-height:1.6;margin-bottom:10px;">This disables web authentication — anyone can access the panel. Type <strong>CLEAR</strong> to confirm.</p>
+            <div class="field"><input class="input" id="clearPwInput" placeholder="CLEAR"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="closeModal('clearPwModal')">Cancel</button>
+            <button class="btn btn-danger" onclick="doClearPw()">Clear</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var _settings = {};
+
+async function fetchSettings() {
+    var d = await api('/api/settings');
+    _settings = d.settings || {};
+    saveCache('settings', { settings: _settings });
+    renderSettings();
+}
+
+function renderSettings() {
+    ['check_interval_normal', 'check_interval_failover', 'tcp_timeout', 'curl_timeout',
+     'test_url', 'clash_api_port', 'web_port', 'web_username'].forEach(function(k) {
+        var el = document.getElementById('s_' + k);
+        if (el && _settings[k] !== undefined) el.value = _settings[k];
+    });
+    document.getElementById('pwState').textContent =
+        _settings.web_password ? '(set)' : '(not set — auth disabled)';
+}
+
+async function saveSection(keys, restartHint) {
+    var payload = {};
+    keys.forEach(function(k) { payload[k] = document.getElementById('s_' + k).value; });
+    try {
+        await api('/api/settings', 'POST', payload);
+        showMessage(restartHint ? 'Saved. Restart the app to apply.' : 'Saved.');
+        fetchSettings();
+    } catch (e) { showMessage('Save failed: ' + e); }
+}
+
+/* ---- sing-box 升级 ---- */
+async function loadSbVersion() {
+    try {
+        var d = await api('/api/status');
+        document.getElementById('sbCurrent').textContent = d.version || 'N/A';
+    } catch (e) {}
+}
+
+async function checkUpgrade() {
+    var btn = document.getElementById('btnCheckUpd');
+    btn.disabled = true;
+    try {
+        var r = await api('/api/upgrade/status');
+        if (!r.success) { showMessage(r.message || 'Check failed'); return; }
+        document.getElementById('sbLatest').textContent = r.latest_version || 'unknown';
+        document.getElementById('sbCurrent').textContent = r.current_version || 'N/A';
+        document.getElementById('btnDownload').disabled = !r.is_update;
+        if (!r.is_update) showMessage('Already up to date');
+    } catch (e) { showMessage('Check failed: ' + e); }
+    btn.disabled = false;
+}
+
+async function downloadUpgrade() {
+    var btn = document.getElementById('btnDownload');
+    btn.disabled = true;
+    btn.textContent = 'Downloading...';
+    try {
+        var r = await api('/api/upgrade/download', 'POST');
+        showMessage(r.message || (r.success ? 'Done' : 'Failed'));
+        loadSbVersion();
+    } catch (e) { showMessage('Download failed: ' + e); }
+    btn.textContent = 'Download Update';
+    btn.disabled = false;
+}
+
+/* ---- 密码 ---- */
+function openChangePw() {
+    document.getElementById('pwNew').value = '';
+    document.getElementById('pwConfirm').value = '';
+    openModal('pwModal');
+}
+
+async function savePw() {
+    var p1 = document.getElementById('pwNew').value;
+    var p2 = document.getElementById('pwConfirm').value;
+    if (!p1) { showMessage('Password cannot be empty — use Clear Password instead'); return; }
+    if (p1 !== p2) { showMessage('Passwords do not match'); return; }
+    try {
+        await api('/api/settings', 'POST', { web_password: p1 });
+        closeModal('pwModal');
+        showMessage('Password updated.');
+        fetchSettings();
+    } catch (e) { showMessage('Save failed: ' + e); }
+}
+
+function openClearPw() {
+    document.getElementById('clearPwInput').value = '';
+    openModal('clearPwModal');
+}
+
+async function doClearPw() {
+    if (document.getElementById('clearPwInput').value !== 'CLEAR') {
+        showMessage('Type CLEAR to confirm');
+        return;
+    }
+    try {
+        await api('/api/settings', 'POST', { web_password: '' });
+        closeModal('clearPwModal');
+        showMessage('Password cleared — authentication is now disabled.');
+        fetchSettings();
+    } catch (e) { showMessage('Failed: ' + e); }
+}
+
+/* ---- 日志 ---- */
+async function loadLogs() {
+    try {
+        var d = await api('/api/logs?tail=200');
+        document.getElementById('logFileName').textContent = d.file ? d.file : '(no log file)';
+        document.getElementById('logView').innerHTML = (d.lines || []).map(escapeHtml).join('\n');
+        var view = document.getElementById('logView');
+        view.scrollTop = view.scrollHeight;
+    } catch (e) { showMessage('Load logs failed: ' + e); }
+}
+
+/* ---- 危险区 ---- */
+function clearNodes() {
+    showConfirm('Clear All Nodes', 'Delete ALL nodes (subscriptions kept)?', async function() {
+        try { await api('/api/nodes/clear', 'POST'); showMessage('All nodes cleared'); }
+        catch (e) { showMessage('Failed: ' + e); }
+    }, 'Clear', true);
+}
+
+/* ---- 缓存秒开 ---- */
+(function init() {
+    var cached = loadCache('settings');
+    if (cached && cached.settings) { _settings = cached.settings; renderSettings(); }
+    fetchSettings();
+    loadSbVersion();
+    loadLogs();
+})();
+</script>
+{% endblock %}
