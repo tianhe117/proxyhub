@@ -64,7 +64,13 @@ def create_app(config_overrides=None) -> Flask:
     from app.db.database import close_db, init_db
 
     close_db()
-    init_db()
+    try:
+        init_db()
+    finally:
+        # init_db() runs before Flask enters an application/request context, so
+        # teardown_appcontext cannot close this thread-local connection.  Close
+        # it here to let SQLite remove idle WAL and shared-memory sidecars.
+        close_db()
 
     @app.teardown_appcontext
     def _close_database(_error):
