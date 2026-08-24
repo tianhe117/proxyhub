@@ -11,7 +11,7 @@ from app.db import node as db_node
 from app.services.runtime import apply_config, start_singbox
 from app.singbox import is_running as sb_is_running
 from app.singbox import restart as sb_restart
-from app.utils import get_latency
+from app.utils import get_all_latencies, get_latency
 from app.web.api import bp
 
 
@@ -146,14 +146,30 @@ def api_check_status(task_id):
     return jsonify(task)
 
 
+def _latency_dict(result):
+    if result is None:
+        return None
+    return {
+        'tcp_latency_ms': result.tcp_latency_ms,
+        'url_latency_ms': result.url_latency_ms,
+        'error': result.error,
+    }
+
+
+@bp.route('/api/nodes/latencies', methods=['GET'])
+def api_node_latencies():
+    """Return a snapshot of all in-memory node latency results."""
+    return jsonify({
+        'latencies': {
+            str(node_id): _latency_dict(result)
+            for node_id, result in get_all_latencies().items()
+        },
+    })
+
+
 @bp.route('/api/nodes/<int:node_id>/latency', methods=['GET'])
 def api_node_latency(node_id):
-    result = get_latency(node_id)
     return jsonify({
         'node_id': node_id,
-        'latency': {
-            'tcp_latency_ms': result.tcp_latency_ms,
-            'url_latency_ms': result.url_latency_ms,
-            'error': result.error,
-        } if result else None,
+        'latency': _latency_dict(get_latency(node_id)),
     })

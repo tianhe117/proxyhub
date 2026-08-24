@@ -59,15 +59,12 @@ function renderGroups() {
 }
 
 async function fetchNodes() {
-    var d = await api('/api/nodes/grouped');
-    _groups = d.groups || [];
-    var ids = [];
-    _groups.forEach(function(g) { g.nodes.forEach(function(n) { ids.push(n.id); }); });
-    await Promise.all(ids.map(function(id) {
-        return api('/api/nodes/' + id + '/latency').then(function(r) {
-            if (r.latency) _latencies[id] = r.latency;
-        }).catch(function() {});
-    }));
+    var results = await Promise.all([
+        api('/api/nodes/grouped'),
+        api('/api/nodes/latencies'),
+    ]);
+    _groups = results[0].groups || [];
+    _latencies = results[1].latencies || {};
     renderGroups();
 }
 

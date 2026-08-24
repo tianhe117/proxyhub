@@ -97,6 +97,12 @@ def get_latency(node_id: int) -> CheckResult | None:
         return _latency.get(node_id)
 
 
+def get_all_latencies() -> dict[int, CheckResult]:
+    """Return a snapshot of all latest node check results."""
+    with _lock:
+        return dict(_latency)
+
+
 def update_latency(node_id: int, result: CheckResult) -> None:
     """Store (or overwrite) the CheckResult for *node_id*."""
     with _lock:
@@ -107,5 +113,5 @@ __all__ = [
     'log',
     'sha256', 'format_size', 'split_keywords',
     'is_valid_protocol', 'is_valid_inbound_protocol',
-    'CheckResult', 'get_latency', 'update_latency',
+    'CheckResult', 'get_latency', 'get_all_latencies', 'update_latency',
 ]
