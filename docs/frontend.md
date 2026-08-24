@@ -65,8 +65,11 @@
 - **表单**：`.input`（28px 高、`#fafafa` 底、focus 边框 `#999`）、`textarea.input`、`select.input`、`.field`（label + input）、`.field-row`（flex 行）、`.radio-group`。
 - **标签/状态点**：`.tag`（11px 边框小标签，协议/类型标识）；`.status-dot`（6px 圆点）+ `.ok` 绿 / `.error` 红 / `.idle` 灰。
 - **卡片**：`.section` / `.section-title`（`#fafafa` 底标题行）/ `.section-body`。
-- **模态框**：`.modal-overlay`（全屏 `#0003`，默认 `display:none`，`.show` 时 flex 居中）/ `.modal`（白底，`min-width:440px; max-width:600px; max-height:85vh`）/ `.modal-header`（标题 + ✕ 关闭）/ `.modal-body`（滚动区）/ `.modal-footer`（右对齐按钮）。移动端模态框宽度 `min(92vw, 440px)`。
-- **折叠**：`.collapse-header`（点击切换，箭头 ▼ 展开 / ▶ 闭合）+ `.collapse-body`（默认隐藏，`.show` 显示）。
+- **模态框**（所有弹窗的统一风格，确认框、表单框（添加节点/入站/出站/服务/订阅）、关键字编辑框、节点选择器等一律使用同一套结构和类，不允许页面自定义弹窗外壳）：`.modal-overlay`（全屏 `#0003`，默认 `display:none`，`.show` 时 flex 居中）/ `.modal`（白底，`min-width:440px; max-width:600px; max-height:85vh`，flex 列布局）/ `.modal-header`（`#fafafa` 底，左侧 `.modal-title` 15px bold + 右侧 ✕ `.modal-close`）/ `.modal-body`（20px padding，滚动区，内用 `.field` 排表单）/ `.modal-footer`（`#fafafa` 底，右对齐按钮，`.btn` 最小宽 72px）。移动端模态框宽度 `min(92vw, 440px)`（表单类弹窗）或底部 sheet（选择器，§6.6）。
+  - 确认型：body 一段说明文字，footer = Cancel + 主按钮（危险操作用 `.btn-danger`）。
+  - 表单型：body 若干 `.field`，footer = Cancel + Save（`.btn-primary`）。
+  - 所有弹窗通过 `classList.add/remove('show')` 开关，✕ 与 Cancel 等效；点击 overlay 空白不关闭（防误触丢失表单）。
+- **折叠**：`.collapse-header`（点击切换）+ `.collapse-body`（默认隐藏，`.show` 显示）。**不用箭头图标**：通过标题行底色区分状态——折叠时深色（`#eee` 底 + `.collapsed` 类），展开时浅色（`#fafafa` 底，默认 `.section-title` 样式）。
 - **其他**：`.empty-state`（居中灰斜体空状态）、`.lat-pending/.lat-ok/.lat-warn/.lat-bad`（延迟着色）、`.row-flex`（flex 行，行间顶边框）、`.row-active`（当前节点行高亮，浅绿底）、`.error-msg`。
 
 ### 2.3 延迟着色规则
@@ -127,7 +130,7 @@ GET /logout → 清 session → 302 → /login
 ```
 
 - **Navbar**：左侧 brand `ProxyHub`；右侧 `{% block navbar_actions %}` + Logout 链接。
-- **Status Bar**：左侧 `status-dot` + `sing-box` 字样 + 版本（`GET /api/status` → `{running, version}`，绿=running 灰=stopped）；右侧 `N nodes`（节点总数）+ `{% block statusbar_right %}`。10 秒轮询 `/api/status`。
+- 状态栏：左侧 `status-dot` + `sing-box` 字样 + 版本（`GET /api/status` → `{running, version}`，绿=running 灰=stopped）；右侧 `N nodes`（节点总数）+ `{% block statusbar_right %}`。10 秒轮询 + visibilitychange 立即刷新（§8.2）。
 - **无底部日志面板**：操作反馈统一用全局 messageModal / confirmModal（见下）。
 
 **Sidebar 导航**（当前页 `.list-item.active`）：
@@ -151,7 +154,8 @@ GET /logout → 清 session → 302 → /login
 - `escapeHtml(text)` — 只定义一次。
 - `closeModal(id)` / `showMessage(msg)` / `showConfirm(...)`。
 - `api(path, method, body)` — fetch 封装：自动 `Content-Type: application/json`；**401 时跳 `/login?next=<当前路径>`**；返回解析后的 JSON。
-- `checkSingboxStatus()` — 状态栏轮询（10s）。
+- `checkSingboxStatus()` — 状态栏轮询（10s），并挂 `visibilitychange` 监听（§8.2）。
+- **统一页面数据流 `loadPageData()`**：每页入口函数（§8.3 缓存策略）——先渲染 localStorage 缓存（秒开），再拉真实数据更新；随后启动 10s 轮询 + `visibilitychange` 立即刷新。子页面只需实现 `fetchData()` + `render(data)`。
 - **移动端重定向**：`matchMedia('(max-width: 768px)')` 命中时 `location.replace('/m')`（`/m` 不反向跳转，移动端顶部菜单可手动切回桌面）。
 
 ### 4.2 route 页（`GET /`，首页）
@@ -162,7 +166,7 @@ GET /logout → 清 session → 302 → /login
 
 1. **sing-box 状态卡**（一个 `.section`）：
    - 状态点 + 版本 + 运行状态；按钮 `Start` / `Stop` / `Restart`（`POST /api/start|stop|restart`）。
-2. **服务列表**（每服务一个 `.section` 卡片，10s 自动刷新）：
+2. **服务列表**（每服务一个 `.section` 卡片，10s 轮询 + visibilitychange 立即刷新，§8.2）：
 
 ```
 ┌────────────────────────────────────────────────────┐
@@ -210,7 +214,7 @@ GET /logout → 清 session → 302 → /login
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ ▼ auto-pool · 3 nodes               [✎][✕]       │
+│  auto-pool · 3 nodes                [✎][✕]       │ ← 浅色标题行 = 展开（深色 = 折叠）
 │ # │name   │protocol│addr:port    │tcp │url │act  │
 │ 1 │node-a │vmess   │1.2.3.4:443  │45ms│200 │⇄ ▲▼✕│ ← 当前节点行 .row-active
 │ 2 │node-b │ss      │5.6.7.8:8388 │150 │ —  │⇄ ▲▼✕│
@@ -228,7 +232,7 @@ GET /logout → 清 session → 302 → /login
   - 首节点（priority 最小）显示 `默认` tag。
 - **当前节点**：`GET /api/services/current-nodes`（§7.5）得出每出站当前 `n{id}`，对应行 `.row-active` 高亮；非当前节点显示 ⇄ 切换按钮——点击后对该出站的所有绑定服务逐个 `POST /api/services/<id>/switch`；无服务绑定此出站时 showMessage 提示。
 - 每行单节点测速按钮 ↻（§6.3 单节点同步流程）。
-- 折叠状态存 localStorage。
+- 折叠状态存 localStorage（`ph_ui_*`，§8.3）。
 
 ### 4.5 subscriptions 页
 
@@ -256,11 +260,10 @@ GET /logout → 清 session → 302 → /login
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ ▼ sub-name · N nodes              [check all]    │
+│  sub-name · N nodes               [check all]    │ ← 深色 = 折叠
+│  sub-name · N nodes               [check all]    │ ← 浅色 = 展开（下方显示节点行）
 │ name │protocol│address:port │tcp │url │actions   │
 │ ...                                   │↻ ✎ ✕     │
-├──────────────────────────────────────────────────┤
-│ ▶ Custom Nodes (无订阅)                          │
 └──────────────────────────────────────────────────┘
 navbar_actions: [Check All] [+ New Node]
 ```
@@ -290,7 +293,10 @@ navbar_actions: [Check All] [+ New Node]
 1. **sing-box**：当前版本（`GET /api/status`）；`Check Update`（`GET /api/upgrade/status` → 显示 current/latest/has_update）；`Download Update`（`POST /api/upgrade/download`，下载期间按钮禁用 + 轮询 `/api/upgrade/status` 的 state 直到 done/error）。
 2. **Node check**：check_interval_normal、check_interval_failover、tcp_timeout、curl_timeout、test_url。
 3. **Clash API**：clash_api_port。
-4. **Web UI**：web_port、web_username、web_password + confirm password（脱敏 `******` 约定；清空密码 = 禁用认证，保存前 showConfirm 确认）。
+4. **Web UI**：web_port、web_username（这两个直接保存）；**密码单独操作**，用两个按钮：
+   - `Clear Password`：弹确认框，**需输入 `CLEAR` 确认**（输入框值匹配才允许点确认）→ `POST /api/settings {web_password: ""}` → 提示认证已禁用。
+   - `Change Password`：弹表单框（current password（已认证会话可不校验，直接覆盖）、new password、confirm new password，两次一致才提交）→ `POST /api/settings {web_password: "<new>"}`。
+   - 设置表单区不再出现 password 输入框；`GET /api/settings` 返回的 `******` 只用于显示"已设置"状态。
 5. **Logs**（§5）：
    - `<pre>` 等宽只读滚动区显示当前日志末尾 200 行（`GET /api/logs?tail=200`，进入页面时加载一次 + 手动 `Refresh` 按钮，**不自动轮询**）。
    - **`Download Log` 按钮**放此 section 头部右侧（`GET /api/logs/download`，浏览器直接下载）。
@@ -334,7 +340,7 @@ navbar_actions: [Check All] [+ New Node]
 ### 6.2 route 视图（首页）
 
 - sing-box 状态卡：状态点 + version + Start/Stop/Restart 大按钮。
-- 服务列表卡（10s 轮询 `GET /api/services` + `GET /api/services/current-nodes`）：每项显示 服务名、入站协议:端口、当前节点名、状态点。
+- 服务列表卡（10s 轮询 `GET /api/services` + `GET /api/services/current-nodes`，visibilitychange 立即刷新）：每项显示 服务名、入站协议:端口、当前节点名、状态点。
 - 每项操作：`⇄ switch`（底部 sheet 列出池节点，点选即 `POST /api/services/<id>/switch`）、`stop`/`start`。
 - 顶部下拉刷新或刷新按钮。
 
@@ -419,12 +425,34 @@ navbar_actions: [Check All] [+ New Node]
 
 ## 8. 前端通用约定
 
-1. **API 数据流**：列表页 `loadData()` 进入即拉，操作后重新拉取；状态类 10s 轮询；检测进度 1s 轮询。
-2. **操作反馈**：成功/失败用 `showMessage()`；危险/不可逆操作用 `showConfirm()`。
-3. **401 处理**：`api()` 封装统一跳登录（带 `next`）。
-4. **延迟数据统一策略**：节点渲染后，对可见节点并发 `GET /api/nodes/<id>/latency` 填充（`Promise.all`）；检测完成后重新拉一次。`null` → `—`，`-1` → `fail`，着色按 §2.3。
-5. **escapeHtml** 用于一切用户可控字符串（节点名、订阅名、服务名、日志行）。
-6. **localStorage**：折叠状态、移动端视图 hash；不存敏感信息。
+### 8.1 数据流与反馈
+
+1. **操作反馈**：成功/失败用 `showMessage()`；危险/不可逆操作用 `showConfirm()`。
+2. **401 处理**：`api()` 封装统一跳登录（带 `next`）。
+3. **延迟数据统一策略**：节点渲染后，对可见节点并发 `GET /api/nodes/<id>/latency` 填充（`Promise.all`）；检测完成后重新拉一次。`null` → `—`，`-1` → `fail`，着色按 §2.3。
+4. **escapeHtml** 用于一切用户可控字符串（节点名、订阅名、服务名、日志行）。
+
+### 8.2 轮询与切回页面立即刷新
+
+- 周期：状态栏 / route 页服务列表 / 移动端 route 视图等定时数据统一 **10s** 轮询；检测进度 1s 轮询。
+- **切回页面立即刷新**：所有轮询点同时挂 `document.addEventListener('visibilitychange', ...)`——`document.visibilityState === 'visible'` 时立刻执行一次同样的拉取（不等下一个周期）。移动端 browser 切换 tab / 切后台再回来同样生效。
+
+### 8.3 本地缓存秒开（localStorage）
+
+目标：切换页面或刷新时先渲染本地缓存，拿到真实数据后再更新，消除白屏等待。
+
+```
+页面加载
+  1. 同步读 localStorage['ph_cache_<page>'] → 有则立即 render(cached)（标注为旧数据，不禁用操作）
+  2. 异步 fetchData() → render(real) → 写 localStorage['ph_cache_<page>']（覆盖）
+  3. fetch 失败 → 保留缓存渲染 + showMessage 提示
+```
+
+- **缓存内容**：每页的主体列表数据（route：services + current-nodes + status；inbounds/outbounds/subscriptions/nodes：各自列表 + 延迟快照；settings：settings 字典 + sing-box 版本）。
+- **UI 状态另存**：折叠/展开状态（nodes 分组、outbounds 卡片、移动端出站卡片）、移动端当前视图 hash，独立 key（如 `ph_ui_collapse`），不进数据缓存。
+- **key 规范**：`ph_cache_<page>` / `ph_ui_*`；**不存任何敏感信息**（密码、订阅 URL 之外的密钥字段）；写入前序列化 JSON，读失败按无缓存处理。
+- **数据变更即失效**：本页内任何增删改/切换/测速成功后，用最新响应重写对应缓存，保证下次进入所见即最新。
+- 登出时清空全部 `ph_cache_*`（前端 `localStorage.clear()` 或按前缀删除）。
 
 ---
 
