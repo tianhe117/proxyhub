@@ -9,7 +9,6 @@ function renderLogs(data) {
 async function loadLogs() {
     try {
         var data = await api('/api/logs?tail=200');
-        saveCache('logs', data);
         renderLogs(data);
     } catch (e) {
         showMessage('Load logs failed: ' + e);
@@ -17,7 +16,5 @@ async function loadLogs() {
 }
 
 (function init() {
-    // Reuse the cache written by the former Settings log panel on first load.
-    renderLogs(loadCache('logs') || loadCache('settings_logs'));
     loadLogs();
 })();

@@ -1,4 +1,4 @@
-var _groups = [], _latencies = {};
+var _groups = [], _latencies = {}, _collapsedGroups = {};
 
 /* ---- 延迟着色 ---- */
 function latHtml(ms, isUrl) {
@@ -10,16 +10,13 @@ function latHtml(ms, isUrl) {
 }
 
 function isGroupCollapsed(key) {
-    var saved = loadUiState('nodes_collapsed', {});
-    return !!saved[key];
+    return !!_collapsedGroups[key];
 }
 function toggleGroup(hdr, key) {
     var body = hdr.nextElementSibling;
     var shown = body.classList.toggle('show');
     hdr.classList.toggle('collapsed', !shown);
-    var saved = loadUiState('nodes_collapsed', {});
-    saved[key] = !shown;
-    saveUiState('nodes_collapsed', saved);
+    _collapsedGroups[key] = !shown;
 }
 
 function nodeRowHtml(n) {
@@ -71,14 +68,11 @@ async function fetchNodes() {
             if (r.latency) _latencies[id] = r.latency;
         }).catch(function() {});
     }));
-    saveCache('nodes', { groups: _groups });
-    saveCache('nodes_lat', _latencies);
     renderGroups();
 }
 
 function updateRowLatency(nodeId, result) {
     _latencies[nodeId] = result;
-    saveCache('nodes_lat', _latencies);
     var tcp = document.getElementById('tcp-' + nodeId);
     var url = document.getElementById('url-' + nodeId);
     if (tcp) tcp.innerHTML = latHtml(result.tcp_latency_ms, false);
@@ -427,11 +421,7 @@ function delNode(id, name) {
     }, 'Delete', true);
 }
 
-/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
+/* ---- 进入页面时查询一次 ---- */
 (function init() {
-    var cached = loadCache('nodes');
-    if (cached && cached.groups) _groups = cached.groups;
-    _latencies = loadCache('nodes_lat') || {};
-    if (_groups.length) renderGroups();
     fetchNodes().catch(function() {});
 })();

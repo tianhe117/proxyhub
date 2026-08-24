@@ -7,7 +7,7 @@
     <div class="section-title">sing-box</div>
     <div class="section-body">
         <div class="row-flex" style="border:none;">
-            <span style="flex:1;">current: <strong id="sbCurrent">—</strong> &middot; latest: <strong id="sbLatest">—</strong></span>
+            <span style="flex:1;">current: <strong id="sbCurrent">{{ current_version }}</strong> &middot; latest: <strong id="sbLatest">—</strong></span>
             <button class="btn btn-sm" id="btnCheckUpd" onclick="checkUpgrade()">Check Update</button>
             <button class="btn btn-sm btn-primary" id="btnDownload" onclick="downloadUpgrade()" disabled>Download Update</button>
         </div>

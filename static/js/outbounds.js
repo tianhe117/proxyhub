@@ -1,6 +1,7 @@
 var _outbounds = [], _nodes = [], _currentNodes = [], _latencies = {};
 var _selectedNodes = [];
 var _poolAddObId = null;
+var _collapsedOutbounds = {};
 
 /* ---- 延迟着色 ---- */
 function latHtml(ms, isUrl) {
@@ -44,27 +45,22 @@ async function fetchOutbounds() {
     _outbounds = results[0].outbounds || [];
     _nodes = results[1].nodes || [];
     _currentNodes = results[2].services || [];
-    saveCache('outbounds', { outbounds: _outbounds, current: _currentNodes });
     var ids = [];
     _outbounds.forEach(function(o) {
         (o.pool || []).forEach(function(p) { if (ids.indexOf(p.node_id) < 0) ids.push(p.node_id); });
     });
     await fetchLatencies(ids);
-    saveCache('outbounds_lat', _latencies);
     renderOutbounds();
 }
 
 function isCollapsed(obId) {
-    var saved = loadUiState('ob_collapsed', {});
-    return !!saved[String(obId)];
+    return !!_collapsedOutbounds[String(obId)];
 }
 function toggleCollapse(hdr, obId) {
     var body = hdr.nextElementSibling;
     var shown = body.classList.toggle('show');
     hdr.classList.toggle('collapsed', !shown);
-    var saved = loadUiState('ob_collapsed', {});
-    saved[String(obId)] = !shown;
-    saveUiState('ob_collapsed', saved);
+    _collapsedOutbounds[String(obId)] = !shown;
 }
 
 function poolRowHtml(o, p, idx) {
@@ -269,14 +265,7 @@ async function checkNode(nodeId) {
     } catch (e) { showMessage('Check failed: ' + e); }
 }
 
-/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
+/* ---- 进入页面时查询一次 ---- */
 (function init() {
-    var cached = loadCache('outbounds');
-    if (cached) {
-        _outbounds = cached.outbounds || [];
-        _currentNodes = cached.current || [];
-    }
-    _latencies = loadCache('outbounds_lat') || {};
-    if (_outbounds.length) renderOutbounds();
     fetchOutbounds().catch(function() {});
 })();

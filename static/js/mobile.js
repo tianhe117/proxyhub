@@ -26,11 +26,6 @@ function showConfirm(title, msg, cb, label) {
 function openSheet(id) { document.getElementById(id).classList.add('show'); }
 function closeSheet(id) { document.getElementById(id).classList.remove('show'); }
 
-function loadCache(k) { try { var r = localStorage.getItem('ph_cache_' + k); return r ? JSON.parse(r) : null; } catch (e) { return null; } }
-function saveCache(k, v) { try { localStorage.setItem('ph_cache_' + k, JSON.stringify(v)); } catch (e) {} }
-function loadUi(k, f) { try { var r = localStorage.getItem('ph_ui_' + k); return r !== null ? JSON.parse(r) : f; } catch (e) { return f; } }
-function saveUi(k, v) { try { localStorage.setItem('ph_ui_' + k, JSON.stringify(v)); } catch (e) {} }
-
 /* ============ 视图切换 ============ */
 function switchView(name) {
     document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active'); });
@@ -38,12 +33,12 @@ function switchView(name) {
     document.getElementById('view-' + name).classList.add('active');
     document.querySelector('.tabbar .tab[data-view="' + name + '"]').classList.add('active');
     location.hash = name;
-    saveUi('m_view', name);
     loadMobileView(name);
 }
 
 /* ============ 数据 ============ */
 var _services = [], _inbounds = [], _outbounds = [], _nodes = [], _current = [], _lat = {};
+var _mobileCollapsed = {};
 
 function latHtml(ms, isUrl) {
     if (ms === null || ms === undefined) return '<span class="lat-pending">—</span>';
@@ -84,7 +79,6 @@ function renderSb(d) {
 async function refreshSb() {
     try {
         var d = await api('/api/status');
-        saveCache('m_status', d);
         renderSb(d);
     } catch (e) {}
 }
@@ -97,7 +91,6 @@ async function fetchRoute() {
     var r = await Promise.all([api('/api/services'), api('/api/inbounds'), api('/api/outbounds'), api('/api/nodes'), api('/api/services/current-nodes')]);
     _services = r[0].services || []; _inbounds = r[1].inbounds || []; _outbounds = r[2].outbounds || [];
     _nodes = r[3].nodes || []; _current = r[4].services || [];
-    saveCache('m_route', { services: _services, inbounds: _inbounds, outbounds: _outbounds, nodes: _nodes, current: _current });
     renderServices();
 }
 
@@ -105,7 +98,6 @@ async function fetchInboundView() {
     var r = await Promise.all([api('/api/services'), api('/api/inbounds')]);
     _services = r[0].services || [];
     _inbounds = r[1].inbounds || [];
-    saveCache('m_inbound', { services: _services, inbounds: _inbounds });
     renderInbounds();
 }
 
@@ -114,7 +106,6 @@ async function fetchOutboundView() {
     _outbounds = r[0].outbounds || [];
     _nodes = r[1].nodes || [];
     _current = r[2].services || [];
-    saveCache('m_outbound', { outbounds: _outbounds, nodes: _nodes, current: _current });
     await fetchOutboundLat();
     renderOutbounds();
 }
@@ -194,16 +185,14 @@ async function fetchOutboundLat() {
     await Promise.all(ids.map(function(id) {
         return api('/api/nodes/' + id + '/latency').then(function(r) { if (r.latency) _lat[id] = r.latency; }).catch(function() {});
     }));
-    saveCache('m_ob_lat', _lat);
 }
 
 function renderOutbounds() {
     var box = document.getElementById('mObList');
     if (!_outbounds.length) { box.innerHTML = '<div class="empty-state">No outbounds</div>'; return; }
-    var collapsed = loadUi('m_ob_collapsed', {});
     box.innerHTML = _outbounds.map(function(o) {
         var pool = o.pool || [];
-        var isCol = !!collapsed[String(o.id)];
+        var isCol = !!_mobileCollapsed[String(o.id)];
         var rows = pool.map(function(p) {
             var lat = _lat[p.node_id] || {};
             var isCur = currentNodeOfOutbound(o.id) === p.node_id;
@@ -230,9 +219,7 @@ function toggleOb(hdr, obId) {
     var body = hdr.nextElementSibling;
     var shown = body.classList.toggle('show');
     hdr.classList.toggle('collapsed', !shown);
-    var c = loadUi('m_ob_collapsed', {});
-    c[String(obId)] = !shown;
-    saveUi('m_ob_collapsed', c);
+    _mobileCollapsed[String(obId)] = !shown;
 }
 
 function switchOutbound(obId, nodeId, nodeName) {
@@ -250,7 +237,7 @@ async function checkNode(nodeId, btn) {
     if (btn) btn.disabled = true;
     try {
         var r = await api('/api/nodes/check', 'POST', { node_id: nodeId });
-        if (r.result) { _lat[nodeId] = r.result; saveCache('m_ob_lat', _lat); renderOutbounds(); }
+        if (r.result) { _lat[nodeId] = r.result; renderOutbounds(); }
     } catch (e) { showMsg('Check failed: ' + e); }
     if (btn) btn.disabled = false;
 }
@@ -266,32 +253,6 @@ async function checkAllInOutbound(obId) {
     } catch (e) { showMsg('Check failed: ' + e); }
 }
 
-/* ---- 当前视图: 先显示缓存, 再查询一次 ---- */
-function hydrateMobileView(name) {
-    var cached;
-    if (name === 'route') {
-        cached = loadCache('m_route');
-        if (cached) {
-            _services = cached.services || []; _inbounds = cached.inbounds || [];
-            _outbounds = cached.outbounds || []; _nodes = cached.nodes || []; _current = cached.current || [];
-            renderServices();
-        }
-    } else if (name === 'inbound') {
-        cached = loadCache('m_inbound');
-        if (cached) {
-            _services = cached.services || []; _inbounds = cached.inbounds || [];
-            renderInbounds();
-        }
-    } else if (name === 'outbound') {
-        cached = loadCache('m_outbound');
-        if (cached) {
-            _outbounds = cached.outbounds || []; _nodes = cached.nodes || []; _current = cached.current || [];
-        }
-        _lat = loadCache('m_ob_lat') || {};
-        if (cached) renderOutbounds();
-    }
-}
-
 function fetchMobileView(name) {
     if (name === 'route') return fetchRoute();
     if (name === 'inbound') return fetchInboundView();
@@ -299,7 +260,6 @@ function fetchMobileView(name) {
 }
 
 function loadMobileView(name) {
-    hydrateMobileView(name);
     fetchMobileView(name).catch(function() {});
 }
 
@@ -311,11 +271,10 @@ function refreshAll() {
     fetchMobileView(active ? active.getAttribute('data-view') : 'route').catch(function() {});
 }
 
-/* ---- 初始化: 缓存秒开 ---- */
+/* ---- 初始化: 只查询当前视图 ---- */
 (function init() {
-    var view = loadUi('m_view', null) || (location.hash || '#route').slice(1);
+    var view = (location.hash || '#route').slice(1);
     if (['route', 'inbound', 'outbound'].indexOf(view) < 0) view = 'route';
-    renderSb(loadCache('m_status'));
     switchView(view);
     refreshSb();
 })();

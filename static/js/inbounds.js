@@ -46,7 +46,6 @@ function renderInbounds() {
 async function fetchInbounds() {
     var d = await api('/api/inbounds');
     _inbounds = d.inbounds || [];
-    saveCache('inbounds', { inbounds: _inbounds });
     renderInbounds();
 }
 
@@ -184,9 +183,7 @@ function delIb(id, name) {
     }, 'Delete', true);
 }
 
-/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
+/* ---- 进入页面时查询一次 ---- */
 (function init() {
-    var cached = loadCache('inbounds');
-    if (cached && cached.inbounds) { _inbounds = cached.inbounds; renderInbounds(); }
     fetchInbounds().catch(function() {});
 })();

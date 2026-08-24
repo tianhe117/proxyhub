@@ -45,27 +45,6 @@ async function api(path, method, body) {
     return resp.json();
 }
 
-/* ---- localStorage 缓存秒开 ---- */
-function cacheKey(page) { return 'ph_cache_' + page; }
-function loadCache(page) {
-    try {
-        var raw = localStorage.getItem(cacheKey(page));
-        return raw ? JSON.parse(raw) : null;
-    } catch (e) { return null; }
-}
-function saveCache(page, data) {
-    try { localStorage.setItem(cacheKey(page), JSON.stringify(data)); } catch (e) {}
-}
-function loadUiState(key, fallback) {
-    try {
-        var raw = localStorage.getItem('ph_ui_' + key);
-        return raw !== null ? JSON.parse(raw) : fallback;
-    } catch (e) { return fallback; }
-}
-function saveUiState(key, val) {
-    try { localStorage.setItem('ph_ui_' + key, JSON.stringify(val)); } catch (e) {}
-}
-
 /* ---- 状态栏: sing-box 状态 + 节点数 ---- */
 function renderGlobalStatus(data) {
     if (!data) return;
@@ -83,7 +62,6 @@ async function checkSingboxStatus() {
         var results = await Promise.all([api('/api/status'), api('/api/nodes')]);
         var data = results[0];
         data.node_count = (results[1].nodes || []).length;
-        saveCache('global_status', data);
         renderGlobalStatus(data);
     } catch (e) {}
 }
@@ -92,6 +70,5 @@ async function checkSingboxStatus() {
 if (window.matchMedia('(max-width: 768px)').matches) {
     location.replace('/m');
 } else {
-    renderGlobalStatus(loadCache('global_status'));
     checkSingboxStatus();
 }

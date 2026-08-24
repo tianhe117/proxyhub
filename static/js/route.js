@@ -25,13 +25,6 @@ async function fetchRouteData() {
     _nodes = results[3].nodes || [];
     _currentNodes = {};
     (results[4].services || []).forEach(function(s) { _currentNodes[s.id] = s; });
-    saveCache('route', {
-        services: _services,
-        inbounds: _inbounds,
-        outbounds: _outbounds,
-        nodes: _nodes,
-        current: results[4].services || [],
-    });
     renderServices();
 }
 
@@ -87,7 +80,6 @@ function renderRouteStatus(d) {
 async function refreshSbStatus() {
     try {
         var d = await api('/api/status');
-        saveCache('route_status', d);
         renderRouteStatus(d);
     } catch (e) {}
 }
@@ -186,18 +178,8 @@ async function doSwitch(svcId, nodeId) {
     } catch (e) { showMessage('Switch failed: ' + e); }
 }
 
-/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
+/* ---- 进入页面时查询一次 ---- */
 (function init() {
-    var cached = loadCache('route');
-    if (cached) {
-        _services = cached.services || [];
-        _inbounds = cached.inbounds || [];
-        _outbounds = cached.outbounds || [];
-        _nodes = cached.nodes || [];
-        (cached.current || []).forEach(function(s) { _currentNodes[s.id] = s; });
-        renderServices();
-    }
-    renderRouteStatus(loadCache('route_status'));
     refreshSbStatus();
     fetchRouteData().catch(function() {});
 })();

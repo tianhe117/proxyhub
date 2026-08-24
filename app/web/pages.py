@@ -40,7 +40,11 @@ def nodes_page():
 @bp.route('/settings')
 @auth_required
 def settings_page():
-    return render_template('settings.html', page='settings')
+    from app.singbox import get_version
+
+    return render_template(
+        'settings.html', page='settings', current_version=get_version()
+    )
 
 
 @bp.route('/logs')

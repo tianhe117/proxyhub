@@ -3,7 +3,6 @@ var _settings = {};
 async function fetchSettings() {
     var d = await api('/api/settings');
     _settings = d.settings || {};
-    saveCache('settings', { settings: _settings });
     renderSettings();
 }
 
@@ -32,7 +31,6 @@ async function loadSbVersion() {
     try {
         var d = await api('/api/status');
         document.getElementById('sbCurrent').textContent = formatVersion(d.version);
-        saveCache('settings_status', d);
     } catch (e) {}
 }
 
@@ -109,12 +107,7 @@ function clearNodes() {
     }, 'Clear', true);
 }
 
-/* ---- 缓存秒开 ---- */
+/* ---- 进入页面时查询一次 ---- */
 (function init() {
-    var cached = loadCache('settings');
-    if (cached && cached.settings) { _settings = cached.settings; renderSettings(); }
-    var status = loadCache('settings_status');
-    if (status) document.getElementById('sbCurrent').textContent = formatVersion(status.version);
     fetchSettings().catch(function() {});
-    loadSbVersion();
 })();

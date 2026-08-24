@@ -67,7 +67,6 @@ async function fetchSubs() {
         if (g.sub) counts[g.sub.id] = g.nodes.length;
     });
     _subs.forEach(function(s) { s.node_count = counts[s.id] || 0; });
-    saveCache('subscriptions', { subs: _subs });
     renderSubs();
 }
 
@@ -141,9 +140,7 @@ async function saveKw() {
     } catch (e) { showMessage('Save failed: ' + e); }
 }
 
-/* ---- 缓存秒开 + 进入页面时查询一次 ---- */
+/* ---- 进入页面时查询一次 ---- */
 (function init() {
-    var cached = loadCache('subscriptions');
-    if (cached && cached.subs) { _subs = cached.subs; renderSubs(); }
     fetchSubs().catch(function() {});
 })();
