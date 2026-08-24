@@ -1,5 +1,7 @@
 # Service 级 API 设计（启停/切节点）
 
+> Archive: historical design document; not the current implementation status.
+
 > 层级：服务层 + 路由层。承接 [设计文档](design.md) §5 服务状态模型。
 > 状态：⏳ 待确认。
 
@@ -21,7 +23,7 @@ v2 架构下"启停服务"不再是起停进程（sing-box 是单常驻进程）
 
 ## 2. DB 层前置
 
-service 表结构（[db/service.py](../app/db/service.py)）：
+service 表结构（[db/service.py](../../app/db/service.py)）：
 ```sql
 services (
     id, name, inbound_id, outbound_id, auto_start

@@ -1,5 +1,7 @@
 # ProxyHub v2 — 前端设计文档（桌面端 + 移动端）
 
+> Archive: historical design document; not the current implementation status.
+
 > 本文件是前端实现的**唯一依据**。实现时仅参考本文档 + 既有后端代码。
 > 状态：⏳ 待审核（2026-08-24）。
 

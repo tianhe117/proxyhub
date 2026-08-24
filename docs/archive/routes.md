@@ -1,15 +1,17 @@
 # 路由层 + sing-box 编排 + CheckResult 重构实现计划
 
+> Archive: historical implementation plan; not the current implementation status.
+
 > 层级：Web/路由层 + 服务层 + 工具层。承接 [顶层设计](design.md) §5 的 Web/路由层 + 进程管理层细化。
 > 状态：⏳ 待确认。
 
 ## 1. 背景
 
-"从订阅到启动 sing-box"这条链目前断在第 4 环：[services.py](../app/services.py) 只做了订阅刷新，没有函数把 DB 状态组装成 `db_state` → `build_config` → `write_config` → `process.start/restart` 串起来。[config.py:101](../app/singbox/config.py#L101) docstring 写着"db_state 由调用方组装"但这个调用方不存在。
+"从订阅到启动 sing-box"这条链目前断在第 4 环：[services.py](../../app/services.py) 只做了订阅刷新，没有函数把 DB 状态组装成 `db_state` → `build_config` → `write_config` → `process.start/restart` 串起来。[config.py:101](../../app/singbox/config.py#L101) docstring 写着"db_state 由调用方组装"但这个调用方不存在。
 
 用户决定把第 4 环（sing-box 编排）和 routes 一起做——routes 需要 start/stop/restart/is_running 接口暴露给前端。本计划实现 `app/routes.py`（Flask Blueprint）+ 在 `app/services.py` 补 sing-box 编排函数 + `app/singbox/clash.py` 实现 clash_api 客户端（start/stop 依赖查询当前状态）+ `CheckResult` 重构（v2 检查机制变了，原结构已不适用）。`create_app()` 接上蓝图注册 + DB 初始化。
 
-不做前端模板（[base.html](../templates/base.html) 仍是占位），不做认证，不做节点/订阅 CRUD 页面——本轮只把"进程控制 + 配置应用"的后端 API 跑通。
+不做前端模板（[base.html](../../templates/base.html) 仍是占位），不做认证，不做节点/订阅 CRUD 页面——本轮只把"进程控制 + 配置应用"的后端 API 跑通。
 
 ## 2. 各环节状态回顾
 
@@ -39,7 +41,7 @@ def list_all_pool_entries():
     ).fetchall()
 ```
 
-返回 `sqlite3.Row`，字段名与 [config.py](../app/singbox/config.py) `_build_selectors` 读取的 `e['outbound_id']`/`e['node_id']`/`e['priority']` 对齐。
+返回 `sqlite3.Row`，字段名与 [config.py](../../app/singbox/config.py) `_build_selectors` 读取的 `e['outbound_id']`/`e['node_id']`/`e['priority']` 对齐。
 
 ### 3.2 `app/services.py` — 补 sing-box 编排
 
@@ -87,7 +89,7 @@ def get_proxy_now(group) -> str | None:
 - 超时用 `settings.get_setting('curl_timeout')`
 - `select_proxy` 返回 bool，HTTP 非 2xx → False
 - 失败不抛异常，返回带 `error` 的 dict / False，调用方（scheduler/checker）决定如何处理
-- clash_api 无 secret（[config.py](../app/singbox/config.py) 生成时 `secret: ''`），请求不带 Authorization
+- clash_api 无 secret（[config.py](../../app/singbox/config.py) 生成时 `secret: ''`），请求不带 Authorization
 
 ### 3.4 `app/routes.py` — Flask Blueprint（本轮只做进程控制 + 状态）
 
@@ -189,7 +191,7 @@ clash.py（被未来 checker / scheduler 消费，本轮不写消费者）
 
 ## 5. 不做的事
 
-- 不做前端模板 / CSS / JS（[base.html](../templates/base.html) 保持占位）
+- 不做前端模板 / CSS / JS（[base.html](../../templates/base.html) 保持占位）
 - 不做认证（routes 暂时裸暴露，后续加 `auth_required`）
 - 不做节点/订阅/出站/服务的 CRUD 路由（等前端页面一起做）
 - 不做 checker（tcp_check + url_check）/ scheduler（failover/fallback）——clash.py 实现后它们才有原料，但本轮不写

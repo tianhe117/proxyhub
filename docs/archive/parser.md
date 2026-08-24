@@ -1,5 +1,7 @@
 # 订阅解析模块设计（parser）
 
+> Archive: historical design document; not the current implementation status.
+
 > 层级：工具层 / 业务层。本文是 `app/parser/`（解析）+ `app/services/subscription.py`（业务）的设计稿。
 > 状态：⏳ 先方案，确认后再编码。
 

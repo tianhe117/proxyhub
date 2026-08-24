@@ -1,7 +1,11 @@
 # ProxyHub v2 — 项目进度总览
 
+> Archive: historical progress snapshot; not the current implementation status.
+
 > 最后更新：2026-08-21
 > 总代码量：4716 行（app/ + test/），41 个 API 端点，112 个测试
+
+> ⚠️ 本文是 2026-08-21 的阶段进度快照，checker、认证和前端等“待实现”描述已不再代表当前代码。2026-08-24 的实际审查结果见 [known-issues.md](../backlog/known-issues.md) 和 [architecture-improvements.md](../backlog/architecture-improvements.md)。
 
 ## 1. 后端能力完成度
 
@@ -89,7 +93,7 @@ v1 设计（§5.1）：
 
 ### 2.4 前端
 
-模板 + CSS/JS 全部内联进 [base.html](../templates/base.html)（[structure.md](structure.md) 原则：无 static/，无构建步骤）。
+模板 + CSS/JS 全部内联进 [base.html](../../templates/base.html)（[structure.md](structure.md) 原则：无 static/，无构建步骤）。
 
 **页面清单**（v1 §11）：
 | 页面 | 路由 | 功能 |

@@ -1,5 +1,7 @@
 # singbox 模块设计（引擎层）
 
+> Archive: historical design document; not the current implementation status.
+
 > 层级：引擎层。本文是 `app/singbox/` 包的设计稿，承接[顶层设计](design.md)核心决策与 [`settings.md`](settings.md) 的单引擎常量/路径布局。
 > 状态：⏳ 先方案，确认后再编码。
 

@@ -1,11 +1,13 @@
 # CRUD API 路由设计
 
+> Archive: historical design document; not the current implementation status.
+
 > 层级：Web/路由层。承接 [顶层设计](design.md) §4 路由设计 + [routes.md](routes.md) 的蓝图结构。
 > 状态：⏳ 待确认。
 
 ## 1. 背景
 
-DB 层全部就绪（[app/db/](../app/db/)），routes.py 已有进程控制蓝图（`/api/start|stop|restart|status`），但节点/订阅/入站/出站/服务/设置的 CRUD 路由未写。本轮实现纯翻译层——提取参数 → 调 db.* → 返回 JSON，不超过 10 行/函数。
+DB 层全部就绪（[app/db/](../../app/db/)），routes.py 已有进程控制蓝图（`/api/start|stop|restart|status`），但节点/订阅/入站/出站/服务/设置的 CRUD 路由未写。本轮实现纯翻译层——提取参数 → 调 db.* → 返回 JSON，不超过 10 行/函数。
 
 不做前端模板，不做认证，不做服务启停（归 service-level API，见 [service-api.md](service-api.md)）。
 

@@ -1,6 +1,8 @@
 # 节点测试（checker）设计
 
-> 层级：健康检查层。承接 [routes.md](routes.md) §3.6 CheckResult 定义 + [singbox/clash.py](../app/singbox/clash.py) 的 `get_delay`。
+> Archive: historical design document; not the current implementation status.
+
+> 层级：健康检查层。承接 [routes.md](routes.md) §3.6 CheckResult 定义 + [singbox/clash.py](../../app/singbox/clash.py) 的 `get_delay`。
 > 状态：⏳ 待确认。
 
 ## 1. 背景

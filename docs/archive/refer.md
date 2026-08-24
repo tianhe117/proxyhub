@@ -1,5 +1,7 @@
 # ProxyHub v2 — 单一 sing-box 架构设计
 
+> Archive: historical design document; not the current implementation status.
+
 ## 1. 背景与目标
 
 当前 ProxyHub 是「三引擎 + 多进程」架构：每个 service 起两个进程（inbound + outbound），引擎按协议分发到 xray / sslocal / sing-box，健康检查靠临时进程 + Socks5 探测。

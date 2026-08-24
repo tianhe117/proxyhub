@@ -1,5 +1,7 @@
 # logger 设计（utils 叶子工具）
 
+> Archive: historical design document; not the current implementation status.
+
 > 层级：工具层 / 日志。本文是 `app/utils/logger.py` 的设计稿，承接[顶层设计](design.md)核心决策与 [`settings.md`](settings.md) 的路径布局。
 > 状态：✅ 已编码。对外入口唯一：`from app.utils import log`。
 

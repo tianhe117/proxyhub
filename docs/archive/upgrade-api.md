@@ -1,6 +1,8 @@
 # 升级 API 路由设计
 
-> 层级：路由层。承接 [singbox/upgrade.py](../app/singbox/upgrade.py) 的下载/升级逻辑。
+> Archive: historical design document; not the current implementation status.
+
+> 层级：路由层。承接 [singbox/upgrade.py](../../app/singbox/upgrade.py) 的下载/升级逻辑。
 > 状态：⏳ 待确认。
 
 ## 1. 背景

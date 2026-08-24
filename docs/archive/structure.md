@@ -1,7 +1,9 @@
 # 目录结构优化方案
 
+> Archive: historical design document; not the current implementation status.
+
 > 层级：全局。本文是目录结构重构的定案稿，承接[顶层设计](design.md)核心决策。
-> 状态：✅ 定案，待执行迁移。
+> 状态：历史定案稿；大部分迁移已经完成，部分规模假设已过期。当前结构评估见 [architecture-improvements.md](../backlog/architecture-improvements.md)，已知问题见 [known-issues.md](../backlog/known-issues.md)。
 
 ## 1. 原则
 

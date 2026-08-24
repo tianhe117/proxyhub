@@ -1,5 +1,7 @@
 # ProxyHub v2 — 顶层设计
 
+> Archive: historical design document; not the current implementation status.
+
 > 本文是 v2 的**顶层设计**：只立核心决策与整体骨架，各层细节后续逐层细化。
 > 旧设计稿归档在 [`refer.md`](refer.md)，复用/重写边界以后续逐层讨论为准。
 

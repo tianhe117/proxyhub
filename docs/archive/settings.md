@@ -1,5 +1,7 @@
 # settings.py 设计（单引擎版）
 
+> Archive: historical design document; not the current implementation status.
+
 > 层级：数据层 / 配置持久化。本文是 `app/settings.py` 的分层细化稿，承接[顶层设计](design.md)核心决策与 [`refer.md` §9 复用清单](refer.md)。
 > 状态：⏳ 已按「单一 sing-box」改造，待数据层/Web 层联调校验。
 
