@@ -1,18 +1,15 @@
-"""Leaf utilities: pure helpers + latency store + log re-export.
+"""Leaf utilities: pure helpers, validators, and log re-export.
 
 Single import surface for callers:
 
     from app.utils import log, sha256, format_size, split_keywords
     from app.utils import is_valid_protocol, is_valid_inbound_protocol
-    from app.utils import get_latency, update_latency, CheckResult
 
 logger.py is a separate module (import-time side effect — creates the log
 file); it is re-exported here so callers still use `from app.utils import log`.
 """
 
 import hashlib
-import threading
-from dataclasses import dataclass
 
 from app.config import SUPPORTED_PROTOCOLS, VALID_INBOUND_PROTOCOLS
 from app.logger import log
@@ -76,42 +73,8 @@ def is_valid_inbound_protocol(protocol):
     return protocol in VALID_INBOUND_PROTOCOLS
 
 
-# ---------------------------------------------------------------------------
-# Node latency in-memory store
-# ---------------------------------------------------------------------------
-
-@dataclass
-class CheckResult:
-    tcp_latency_ms: int    # TCP 握手延迟（-1 = 失败）
-    url_latency_ms: int    # URL 测速延迟（-1 = 失败/未测）
-    error: str             # 失败原因（成功则 ''）—— 日志/排查用
-
-
-_lock = threading.Lock()   # 互斥锁（非队列）：写是纳秒级赋值，last-write-wins 即可
-_latency = {}  # {node_id: CheckResult}
-
-
-def get_latency(node_id: int) -> CheckResult | None:
-    """Return the node's latest CheckResult, or None if never checked."""
-    with _lock:
-        return _latency.get(node_id)
-
-
-def get_all_latencies() -> dict[int, CheckResult]:
-    """Return a snapshot of all latest node check results."""
-    with _lock:
-        return dict(_latency)
-
-
-def update_latency(node_id: int, result: CheckResult) -> None:
-    """Store (or overwrite) the CheckResult for *node_id*."""
-    with _lock:
-        _latency[node_id] = result
-
-
 __all__ = [
     'log',
     'sha256', 'format_size', 'split_keywords',
     'is_valid_protocol', 'is_valid_inbound_protocol',
-    'CheckResult', 'get_latency', 'get_all_latencies', 'update_latency',
 ]

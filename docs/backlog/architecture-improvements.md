@@ -112,6 +112,7 @@ app/web/
 
 ```text
 app/services/
+├── checker.py              # node checks, task progress, latency state
 ├── subscriptions.py        # refresh/fetch/decode
 ├── runtime.py              # apply_config/start/stop/restart/status
 └── routing.py              # start/stop/switch/get_service_status

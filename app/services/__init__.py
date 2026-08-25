@@ -1,5 +1,6 @@
 """Business service layer public API."""
 
+from app.services import checker
 from app.services.subscriptions import (
     decode_body,
     fetch_subscription,
@@ -22,6 +23,7 @@ from app.services.routing import (
 )
 
 __all__ = [
+    'checker',
     'refresh_subscription', 'fetch_subscription', 'parse_userinfo', 'decode_body',
     'apply_config', 'start_singbox', 'stop_singbox', 'restart_singbox', 'get_status',
     'start_service', 'stop_service', 'restart_service', 'switch_node',

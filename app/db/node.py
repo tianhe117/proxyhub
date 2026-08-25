@@ -9,7 +9,7 @@ Node dict structure (sqlite3.Row → dict):
     port        int       remote server port
     config_json str       JSON string, protocol-specific config
 
-Latency is stored in-memory (app.utils.latency), not in the DB.
+Latency is stored in-memory (app.services.checker), not in the DB.
 """
 
 import json

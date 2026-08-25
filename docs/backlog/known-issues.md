@@ -86,7 +86,7 @@
 
 ### KI-013（P1）节点测速无条件重启正在运行的 sing-box
 
-- 位置：`app/web/api/nodes.py::_ensure_singbox_with_nodes`、`app/services/runtime.py::apply_config`、`app/singbox/process.py::restart`
+- 位置：`app/services/checker.py::_ensure_singbox_with_nodes`、`app/services/runtime.py::apply_config`、`app/singbox/process.py::restart`
 - 现状：每次单节点或批量测速前，如果 sing-box 已运行，都会重新生成并写入配置，然后执行 `stop + start`；当前没有判断生成后的配置内容是否发生变化。
 - 影响：重复测速也会中断正在工作的代理连接；连续或并发测速可能造成频繁重启，影响所有绑定服务，而不仅是被测节点。
 - 原因：URL 测速通过 Clash API 访问 `n{id}`，需要保证节点已加载进 sing-box；当前用无条件重启保证配置新鲜，但粒度过大。
