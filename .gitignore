@@ -1,0 +1,45 @@
+# Nested worktree used for reference
+refact/
+
+# Runtime state
+bin/
+config/
+data/
+logs/
+temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+*.venv/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and environment files
+*.log
+.env
+.env.local
+
+# Local deployment overrides
+docker-compose.override.yml
+
+# Local assistant settings
+.claude/
+CLAUDE.md
