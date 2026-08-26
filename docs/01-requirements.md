@@ -46,38 +46,43 @@
 
 ### 2.1 核心关系
 
-```text
-Subscription ──包含──> Node
+Subscription 管理由该订阅产生的 Node。自建 Node 不属于任何 Subscription。
 
-Inbound ──0..1──> Route ──> Outbound
+Node 是全局对象，可以被不同的 Outbound 复用。
 
-Outbound
-├── Manual ──> 一个或多个 Node
-├── Auto ────> 一个 Emergency Node + 一个或多个有序 Candidate Node
-└── Direct ──> 不包含 Node
-```
+Route 表示一个 Inbound 到一个 Outbound 的映射。具体引用约束见 2.3 节。
+
+Outbound 分为以下三种类型：
+
+- Manual Outbound：包含一个或多个 Node；
+- Auto Outbound：包含一个 Emergency Node，以及一个或多个按人工优先级排序的 Candidate Node；
+- Direct Outbound：不包含 Node，流量直接访问目标地址。
 
 ### 2.2 名词
 
 - **Subscription**：用户保存的机场订阅及其 Filter/Exclude 设置。
 - **Node**：一个可生成 sing-box 远程出站的代理节点，来源为订阅或自建。
 - **Inbound**：向本机或其他设备提供服务的本地监听入口。
-- **Outbound**：route 的流量出口，分为 Manual、Auto 和 Direct。
-- **Route**：一个 Inbound 到一个 Outbound 的简单映射。
-- **Candidate**：Auto Outbound 中参与人工优先级排序的普通候选节点。
-- **Emergency**：Auto Outbound 故障时优先切换的独立应急节点，不参与 Candidate 排序。
-- **当前节点**：Manual 或 Auto Outbound 在 sing-box selector 中当前选中的节点。
-- **已生效 Auto Outbound**：至少被一条现存 route 引用的 Auto Outbound。
+- **Outbound**：Route 的流量出口，分为 Manual Outbound、Auto Outbound 和 Direct Outbound。
+- **Route**：一个 Inbound 到一个 Outbound 的映射。
+- **Manual Outbound**：由用户人工选择 Current Node，不执行自动故障切换的 Outbound。
+- **Auto Outbound**：由自动状态机管理 Current Node，并在节点故障时自动恢复代理能力的 Outbound。
+- **Direct Outbound**：不包含 Node，流量直接访问目标地址的 Outbound。
+- **Node Pool**：Manual Outbound 或 Auto Outbound 包含的 Node 集合。
+- **Candidate Node**：Auto Outbound 中参与人工优先级排序的普通候选 Node。
+- **Emergency Node**：Auto Outbound 故障时优先切换的独立应急 Node，不参与 Candidate Node 排序。
+- **Current Node**：Manual Outbound 或 Auto Outbound 当前在 sing-box selector 中选择的 Node。
+- **Routed Auto Outbound**：至少被一条 Route 引用的 Auto Outbound。该名称只表示 Route 引用关系，不表示 sing-box 当前一定处于 running 状态。
 
 ### 2.3 全局不变量
 
-**REQ-MODEL-001** 每条 route 必须同时引用一个 Inbound 和一个 Outbound。一个 Inbound 最多绑定一条 route；一个 Outbound 可以被零条、一条或多条 route 引用。
+**REQ-MODEL-001** 每条 Route 必须同时引用一个 Inbound 和一个 Outbound。一个 Inbound 最多绑定一条 Route；一个 Outbound 可以被零条、一条或多条 Route 引用。
 
-**REQ-MODEL-002** 多条 route 引用同一个 Outbound 时，共享该 Outbound 的节点池、当前节点和运行状态。
+**REQ-MODEL-002** 多条 Route 引用同一个 Outbound 时，共享该 Outbound 的 Node Pool、Current Node 和运行状态。
 
-**REQ-MODEL-003** Node 是全局实体。同一个 Node 可以加入多个 Manual 或 Auto Outbound，但在同一个 Outbound 节点池中只能出现一次。
+**REQ-MODEL-003** Node 是全局实体。同一个 Node 可以加入多个 Manual Outbound 或 Auto Outbound，但在同一个 Node Pool 中只能出现一次。
 
-**REQ-MODEL-004** 数据库只持久化 Subscription、Node、Inbound、Outbound、Route，以及 Manual Outbound 的人工当前选择。应用 Settings 持久化在独立的 `data/settings.json` 文件中。健康结果、延迟、检测状态、失败计数和 Auto Outbound 运行状态只保存在内存中。
+**REQ-MODEL-004** 数据库只持久化 Subscription、Node、Inbound、Outbound、Route，以及用户为 Manual Outbound 选择的 Current Node。应用 Settings 持久化在独立的 `data/settings.json` 文件中。健康结果、延迟、检测状态、失败计数和 Auto Outbound 运行状态只保存在内存中。
 
 ---
 
