@@ -77,7 +77,7 @@ Outbound
 
 **REQ-MODEL-003** Node 是全局实体。同一个 Node 可以加入多个 Manual 或 Auto Outbound，但在同一个 Outbound 节点池中只能出现一次。
 
-**REQ-MODEL-004** 数据库主要持久化 Subscription、Node、Inbound、Outbound、Route、Settings 以及 Manual Outbound 的人工当前选择。健康结果、延迟、检测状态、失败计数和 Auto Outbound 运行状态只保存在内存中。
+**REQ-MODEL-004** 数据库只持久化 Subscription、Node、Inbound、Outbound、Route，以及 Manual Outbound 的人工当前选择。应用 Settings 持久化在独立的 `data/settings.json` 文件中。健康结果、延迟、检测状态、失败计数和 Auto Outbound 运行状态只保存在内存中。
 
 ---
 
@@ -488,26 +488,37 @@ failure reason
 
 ### 12.1 Settings 行为
 
-**REQ-SETTINGS-001** Settings 页面允许修改检测、故障切换、登录用户名和密码设置。Web 端口和 Clash API 端口只通过简单配置文件修改，重启 ProxyHub 后生效。
+**REQ-SETTINGS-001** 所有应用设置使用单一 `data/settings.json` 文件持久化，并按 Web、Clash API、健康检测和认证等领域分组。Settings 不建立数据库表，也不使用数据库键值记录。
 
-**REQ-SETTINGS-002** 保存检测或故障设置不重启 sing-box，也不改变 selector 当前选择；清空健康结果、连续失败次数和检测计时，使新参数从下一控制周期重新计算。
+**REQ-SETTINGS-002** Settings 页面允许修改检测、故障切换、登录用户名和密码设置。Web 和 Clash API 的监听地址、端口不在页面修改，只能直接修改 JSON 并重启 ProxyHub。
+
+**REQ-SETTINGS-003** ProxyHub 启动时加载 `data/settings.json`。文件不存在时，使用内置默认值创建完整文件。Settings 页面保存时必须先校验完整设置，再通过同目录临时文件原子替换正式文件，并同步更新当前进程的内存设置。
+
+**REQ-SETTINGS-004** 通过 Settings 页面保存检测或故障设置不重启 sing-box，也不改变 selector 当前选择；系统清空健康结果、连续失败次数和检测计时，使新参数从下一控制周期重新计算。登录用户名和密码保存后立即生效。
+
+**REQ-SETTINGS-005** 用户直接编辑 `data/settings.json` 时，修改只在下次 ProxyHub 启动后生效。第一版不监视文件变化，也不为手工编辑提供运行时热加载。
+
+**REQ-SETTINGS-006** JSON 格式错误、存在未知结构或字段值非法时，ProxyHub 不得静默覆盖或使用部分配置，也不得启动 sing-box；程序应保留原文件并明确报告错误，等待用户修正后重新启动。
+
+**REQ-SETTINGS-007** JSON 中只保存密码安全哈希，不保存明文密码。用于签名登录会话的随机 secret 不属于普通 Settings，应保存在独立密钥文件中，不在 Settings 页面显示。
 
 ### 12.2 默认值
 
 | 设置 | 默认值 | 修改方式 |
 |---|---:|---|
-| 控制循环基础间隔 | 15 秒 | Settings |
-| 当前节点连续失败阈值 | 3 次 | Settings |
-| TCP 检测超时 | 3 秒 | Settings |
-| URL 检测超时 | 5 秒 | Settings |
-| 测试 URL | `https://www.gstatic.com/generate_204` | Settings |
-| 单批检测最大并发数 | 10 | Settings |
-| 全节点不可用等待时间 | 300 秒 | Settings |
-| Web 端口 | 8080 | 配置文件 |
-| Clash API 端口 | 9090 | 配置文件 |
-| Clash API 监听地址 | `127.0.0.1` | 固定默认边界 |
-| 登录用户名 | `admin` | Settings |
-| 登录密码 | 空 | Settings |
+| 控制循环基础间隔 | 15 秒 | Settings 页面或 JSON |
+| 当前节点连续失败阈值 | 3 次 | Settings 页面或 JSON |
+| TCP 检测超时 | 3 秒 | Settings 页面或 JSON |
+| URL 检测超时 | 5 秒 | Settings 页面或 JSON |
+| 测试 URL | `https://www.gstatic.com/generate_204` | Settings 页面或 JSON |
+| 单批检测最大并发数 | 10 | Settings 页面或 JSON |
+| 全节点不可用等待时间 | 300 秒 | Settings 页面或 JSON |
+| Web 监听地址 | `127.0.0.1` | JSON，重启生效 |
+| Web 端口 | 8080 | JSON，重启生效 |
+| Clash API 端口 | 9090 | JSON，重启生效 |
+| Clash API 监听地址 | `127.0.0.1` | JSON，重启生效 |
+| 登录用户名 | `admin` | Settings 页面或 JSON |
+| 登录密码 | 空 | Settings 页面；JSON 只保存哈希 |
 
 全局周期扫描间隔可以在实现中预留默认 180 秒，但第一版不启用该任务，也不要求在页面展示。
 

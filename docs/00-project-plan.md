@@ -271,10 +271,9 @@ Node
 Inbound
 Outbound
 Route
-Settings
 ```
 
-设计。
+设计数据库模型。Settings 是独立 JSON 持久化模块，不属于数据库实体。
 
 需要重点确定：
 
@@ -305,7 +304,14 @@ Settings
 * Outbound；
 * Route；
 * Manual 当前选择；
-* 用户设置。
+
+### JSON 设置
+
+例如：
+
+* Web 和 Clash API 监听设置；
+* 健康检测和故障切换设置；
+* 登录用户名和密码哈希。
 
 ### 内存运行状态
 
@@ -784,7 +790,7 @@ docs/07-acceptance-tests.md
 
 建议按照依赖关系开发。
 
-### 第一批：基础数据层
+### 第一批：基础数据与设置层
 
 ```text
 Settings
@@ -797,7 +803,8 @@ Route
 
 完成：
 
-* Schema；
+* Settings JSON 加载、校验和原子保存；
+* 数据库 Schema；
 * CRUD；
 * 基础校验；
 * 关系约束。
