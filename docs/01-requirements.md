@@ -66,7 +66,7 @@ Outbound 分为以下三种类型：
 - **Outbound**：Route 的流量出口，分为 Manual Outbound、Auto Outbound 和 Direct Outbound。
 - **Route**：一个 Inbound 到一个 Outbound 的映射。
 - **Manual Outbound**：由用户人工选择 Current Node，不执行自动故障切换的 Outbound。
-- **Auto Outbound**：由自动状态机管理 Current Node，并在节点故障时自动恢复代理能力的 Outbound。
+- **Auto Outbound**：由后台控制循环管理 Current Node，并在节点故障时自动恢复代理能力的 Outbound。
 - **Direct Outbound**：不包含 Node，流量直接访问目标地址的 Outbound。
 - **Node Pool**：Manual Outbound 或 Auto Outbound 包含的 Node 集合。
 - **Candidate Node**：Auto Outbound 中参与人工优先级排序的普通候选 Node。
@@ -104,11 +104,13 @@ Outbound 分为以下三种类型：
 ### 3.2 正常运行
 
 ```text
-已生效 Auto Outbound 初始选择 Fallback Node
-→ 下一控制周期扫描整个节点池
+sing-box 实际启动或重启成功
+→ 已生效 Auto Outbound 初始选择 Fallback Node
+→ 清空 Auto Outbound 临时运行状态并开始记录 Fallback 持续时间
+→ 下一控制周期扫描全部 Candidate Node
 → 选择可用 Candidate 中人工优先级最高者
-→ 后续每个控制周期检测当前节点
-→ 检测持续成功，保持当前节点
+→ 后续每个控制周期检测 Current Candidate
+→ Current Candidate 不是最高优先级时，按独立间隔扫描更高优先级 Candidate
 ```
 
 ### 3.3 当前节点故障恢复
@@ -116,20 +118,20 @@ Outbound 分为以下三种类型：
 ```text
 当前 Candidate 连续检测失败达到阈值
 → 本周期立即切换 Fallback Node
-→ 本周期不扫描该节点池
-→ 下一个控制周期扫描整个节点池
+→ 本 Auto Outbound 本周期处理结束
+→ 下一个控制周期扫描全部 Candidate Node
 → 有可用 Candidate：切换到最高优先级可用节点
 → 没有可用 Candidate：保持 Fallback Node
 ```
 
-### 3.4 全节点不可用
+### 3.4 Fallback 持续超时恢复
 
 ```text
 Auto Outbound 的 Current Node 为 Fallback Node
-→ 节点池所有节点内存健康状态均为 unavailable
-→ 开始全不可用计时
-→ 任一节点恢复 available：清零计时
-→ 持续到等待时间仍无节点恢复：重启整个 sing-box
+→ 每个控制周期先扫描全部 Candidate Node
+→ 有可用 Candidate：切换到最高优先级可用节点并结束 Fallback 状态
+→ 没有可用 Candidate：保持 Fallback Node
+→ 持续处于 Fallback 达到配置超时时间：重启整个 sing-box
 → 清空运行时状态并重新执行初始选择
 ```
 
@@ -164,6 +166,7 @@ sing-box stopped
 → 使用当前正式配置重新启动
 → 清空运行时健康及切换状态
 → Auto Outbound 从 Fallback Node 重新初始化
+→ 本控制周期结束，下一周期恢复检测和切换
 ```
 
 ---
@@ -279,11 +282,11 @@ sing-box stopped
 
 **REQ-OUTBOUND-007** Candidate 由用户手工排序。保存后系统生成连续、唯一的 1 至 N 优先级；系统不根据延迟或其他健康指标自动调整顺序。
 
-**REQ-OUTBOUND-008** Fallback Node 不参与 Candidate Node 排序。Auto Outbound 不允许用户临时手动切换或锁定 Current Node，Current Node 完全由自动状态机管理。
+**REQ-OUTBOUND-008** Fallback Node 不参与 Candidate Node 排序。Auto Outbound 不允许用户临时手动切换或锁定 Current Node，Current Node 完全由后台控制循环管理。
 
 **REQ-OUTBOUND-009** Manual Outbound 转为 Auto Outbound 时必须指定 Fallback Node 并完成 Candidate Node 排序；Auto Outbound 转为 Manual Outbound 时必须明确选择新的 Current Node，否则不允许保存。
 
-**REQ-OUTBOUND-010** 未被 route 引用的 Manual/Auto Outbound selector 仍写入 sing-box 配置，但未被引用的 Auto Outbound 不运行自动检测、切换或全不可用重启状态机。
+**REQ-OUTBOUND-010** 未被 route 引用的 Manual/Auto Outbound selector 仍写入 sing-box 配置，但未被引用的 Auto Outbound 不运行自动检测、切换、优先级恢复或 Fallback 超时重启控制。
 
 ### 6.5 Route 与级联
 
@@ -310,7 +313,7 @@ sing-box stopped
 
 **REQ-CONFIG-002** running 时允许：查看状态、人工检测 Node、切换 Manual 当前节点、修改 Auto Candidate 顺序、修改不改变 sing-box 结构的 Settings，以及停止或重启 sing-box。
 
-**REQ-CONFIG-003** Auto Candidate 顺序在 running 时保存后不立即检测、择优或切换；新顺序只在下一次自动状态机选择 Candidate 时生效。
+**REQ-CONFIG-003** Auto Candidate 顺序在 running 时保存后不立即检测、择优或切换；新顺序在后续 Fallback Recovery 或 Candidate Priority Recovery 选择 Candidate 时生效。
 
 ### 7.2 配置生成
 
@@ -332,6 +335,8 @@ sing-box stopped
 - 仅被 route 引用的 Inbound；
 - 现存 route 映射；
 - 仅监听本机的 Clash API。
+
+生成 Auto Outbound selector 时固定以其 Fallback Node 作为 sing-box 启动后的初始选择，不在配置生成或启动前检测 Candidate Node。
 
 **REQ-CONFIG-006** 系统保留上一份可用正式配置供人工排错，但新配置检查失败后不自动恢复或启动旧配置。
 
@@ -359,12 +364,12 @@ sing-box stopped
 - 人工 Start：重新生成并检查配置后启动；
 - 人工 Restart：停止后执行与 Start 相同的生成、检查和启动流程；
 - ProxyHub 程序启动：满足自动启动条件时重新生成、检查并启动；
-- 全节点不可用重启：使用当前正式配置直接重启；
+- Fallback 持续超时后的恢复性重启：使用当前正式配置直接重启；
 - 意外退出后的守护重启：使用当前正式配置直接重启。
 
-**REQ-RUNTIME-004** 每次 sing-box 实际启动或重启成功后，清空 Node 自动健康结果、连续失败次数、全不可用计时、检测状态和 Auto Outbound 临时状态；Manual Outbound 恢复持久化的人工选择，Routed Auto Outbound 从 Fallback Node 初始化。
+**REQ-RUNTIME-004** 每次 sing-box 实际启动或重启成功后，清空 Node 自动健康结果、检测状态，以及 Auto Outbound 的连续失败次数、相关计时和其他临时运行状态；Manual Outbound 恢复持久化的人工选择，Routed Auto Outbound 从 Fallback Node 初始化并从启动成功时开始记录 Fallback 持续时间。不得在 sing-box 启动前检测 Candidate 或据此决定初始 selector。
 
-**REQ-RUNTIME-005** 期望状态为 running 而进程意外退出时，单一控制循环在下一次获得执行机会时直接重启本项目管理的 sing-box。第一版不设置重启队列、指数退避或复杂冷却机制。
+**REQ-RUNTIME-005** 每个控制周期首先检查进程状态。期望状态为 running 而进程意外退出时，控制循环使用当前正式配置直接重启本项目管理的 sing-box；重启成功后按 REQ-RUNTIME-004 重新初始化，并立即结束本控制周期，从下一周期恢复健康检测和自动切换。第一版不设置重启队列、指数退避或复杂冷却机制。
 
 ---
 
@@ -394,17 +399,17 @@ failure reason
 
 `checking` 不覆盖上一次确定结果。状态不写入数据库，ProxyHub 或 sing-box 重启后重新检测。
 
-**REQ-HEALTH-006** 页面人工检测可以更新页面展示的最近结果，但不参与 Auto Outbound 连续失败计数、全节点不可用计时或自动切换判断。自动状态机只采用控制循环产生的自动健康状态。
+**REQ-HEALTH-006** 页面人工检测可以更新页面展示的最近结果，但不参与 Auto Outbound 连续失败计数、Fallback 持续时间、自动切换或 Priority Recovery 判断。自动控制只采用对应控制步骤产生的检测结果。
 
 **REQ-HEALTH-007** 健康结果属于 Node；连续失败次数、当前节点和故障切换状态属于 Auto Outbound。第一版不为同一 Node 被多个 Outbound 使用建立额外的跨周期缓存、有效期或复杂复用规则。
 
 ### 9.3 调度边界
 
-**REQ-HEALTH-008** 第一版后台自动检测只服务 Routed Auto Outbound：Current Node 不是 Fallback Node 时检测 Current Node，Current Node 是 Fallback Node 时扫描整个 Node Pool。全局全部 Node 周期扫描仅预留，不作为第一版后台任务。
+**REQ-HEALTH-008** 后台控制循环按可关闭的全局扫描设置周期性检测全部 Node，并更新最近健康状态、delay、最近检测时间、failure reason 及其他页面展示和日志信息。全局扫描结果不得增加或清零 Auto Outbound 连续失败次数、触发任何 selector 切换、修改 Current Node 或 Fallback 持续时间，也不得参与 Priority Recovery；Auto Outbound 控制只采用其当前 Candidate 检测、Fallback Recovery 和 Priority Recovery 各自批次的结果。
 
 **REQ-HEALTH-009** 页面人工检测只在 sing-box running 且当前没有检测批次时可用。stopped、未安装或已有批次运行时，页面不启动临时进程，分别提示不可检测或“检测进行中”。
 
-**REQ-HEALTH-010** 同一时刻只运行一个检测批次；批次内部使用数量受限的并发。控制循环等待批次全部完成后再串行处理状态，不允许检测批次重叠。
+**REQ-HEALTH-010** 同一时刻只运行一个检测批次；批次内部可以使用数量受限的并发。控制循环等待批次全部完成后再串行处理状态，不允许检测批次重叠。
 
 ---
 
@@ -412,56 +417,68 @@ failure reason
 
 ### 10.1 控制周期
 
-**REQ-FAILOVER-001** 单一控制循环串行承担进程守护、Auto Outbound 状态处理和检测调度。每个任务周期完成后固定 sleep 基础间隔，再开始下一周期；不补跑错过的墙钟周期。
+**REQ-FAILOVER-001** 单一后台控制循环串行承担 sing-box 进程守护、全局 Node 健康扫描、Auto Outbound 当前节点健康检测、Candidate 故障切换、Fallback Recovery、Candidate Priority Recovery 和 Fallback 持续超时后的恢复性重启。单个检测批次内部可以使用受限并发；批次结束后的判断和切换保持串行。每个任务周期完成后固定 sleep 基础间隔，再开始下一周期，不补跑错过的墙钟周期，也不引入多后台 worker、并行状态机或独立任务队列。
 
-**REQ-FAILOVER-002** 对每个 Current Node 不是 Fallback Node 的 Routed Auto Outbound，每个控制周期检测 Current Node。只有这种 Current Node 检测参与该 Outbound 的连续失败计数：失败加一，成功清零。
+**REQ-FAILOVER-002** 每个控制周期严格按以下顺序执行：
 
-故障池扫描、人工检测和后续全局扫描不增加或清零连续失败次数。
+1. sing-box 进程守护；
+2. 全局 Node 健康扫描到期时执行该批次；
+3. 逐个处理 Routed Auto Outbound；
+4. 对每个 Outbound，Current Node 不是 Fallback Node 时先执行当前 Candidate 检测和必要的故障切换，再执行到期的 Candidate Priority Recovery；周期开始处理时 Current Node 已是 Fallback Node 时，先执行 Fallback Recovery，再判断 Fallback 持续时间是否超时。
 
-### 10.2 切换到 Fallback Node
+进程守护触发并成功重启，或任何 Outbound 触发恢复性重启时，本控制周期立即结束。
 
-**REQ-FAILOVER-003** 当前节点连续失败达到阈值时：
+Auto Outbound 第一版运行状态由少量内存字段表达，至少包括 Current Node、连续失败次数、Fallback 开始时间和上次 Priority Recovery Scan 时间；状态可以由 Current Node 所处的 Candidate 优先级或是否为 Fallback 推导，不持久化或引入额外复杂状态机。
+
+### 10.2 当前 Candidate 健康检测与切换
+
+**REQ-FAILOVER-003** 对每个 Current Node 不是 Fallback Node 的 Routed Auto Outbound，每个控制周期检测 Current Node。只有这种当前 Candidate 自动检测参与该 Outbound 的连续失败计数：失败加一，成功清零。Fallback Recovery、Priority Recovery、全局扫描和人工检测均不得增加或清零该计数。
+
+**REQ-FAILOVER-004** 当前 Candidate 连续失败达到阈值时：
 
 1. 本周期通过 Clash API 立即切换到 Fallback Node；
-2. 同一周期有多个 Outbound 达到阈值时，先逐一切换这些 Outbound；
-3. 本周期不扫描刚切换到 Fallback Node 的 Outbound Node Pool；
-4. 成功切换后清零该 Outbound 连续失败次数。
+2. 切换成功后将 Current Node 更新为 Fallback Node，清零连续失败次数，并从切换成功时开始记录 Fallback 持续时间；
+3. 该 Outbound 本周期处理结束，不在同一周期执行 Fallback Recovery；
+4. 同一周期有多个 Outbound 达到阈值时，控制循环仍按顺序逐个处理。
 
 ### 10.3 从 Fallback Node 恢复
 
-**REQ-FAILOVER-004** 周期开始时 Current Node 已经是 Fallback Node 的 Auto Outbound，每个周期串行执行一次完整 Node Pool 检测；单个 Node Pool 内部有限并发，并包含 Fallback Node。
+**REQ-FAILOVER-005** 周期开始处理时 Current Node 已经是 Fallback Node 的 Routed Auto Outbound，每个周期检测该 Outbound 的全部 Candidate Node。检测批次不以 Fallback Node 自身为 Candidate；Fallback Node 可以由全局扫描等检测记录健康状态，用于页面展示和人工排错。
 
-**REQ-FAILOVER-005** 完整批次结束后：
+**REQ-FAILOVER-006** Candidate 检测批次结束后：
 
 - 存在 available Candidate：立即选择人工优先级最高者切换；
 - 不按 delay 排序；
 - 不要求连续成功次数或最短保持时间；
 - 没有 available Candidate Node：保持 Fallback Node。
 
-成功切换普通节点后清零连续失败次数。
+成功切换到 Candidate 后清除 Fallback 持续时间，连续失败次数保持为零；不得切换到已知 unavailable Candidate。
 
-### 10.4 全节点不可用
+### 10.4 Candidate Priority Recovery
 
-**REQ-FAILOVER-006** 控制循环直接读取已生效 Auto Outbound 节点池的自动健康状态：
+**REQ-FAILOVER-007** Current Node 不是 Fallback Node、Current Candidate 不是人工优先级最高的 Candidate，并且距离上次 Priority Recovery Scan 已达到配置间隔时，只检测优先级高于 Current Candidate 的全部 Candidate Node。不得检测当前 Candidate 或优先级更低的 Candidate。
 
-- 全部 Node 均为 unavailable 时开始或继续全不可用计时；
-- unknown 不视为 unavailable；
-- `checking` 不覆盖上次结果，计时只在批次结束后的串行状态处理时判断；
-- 任一 Node 恢复 available 时立即清零计时；
-- 连续达到配置等待时间仍没有 Node 恢复时，认为该 Outbound 全部节点不可用并重启整个 sing-box。
+**REQ-FAILOVER-008** Priority Recovery Scan 结束后，存在 available 的更高优先级 Candidate 时，立即选择其中人工优先级最高者切换；否则保持当前 Candidate。该机制不按 delay 排序，不要求连续成功多次，不设置最短节点保持时间，也不增加或清零当前 Candidate 故障检测使用的连续失败次数。Current Candidate 已是最高优先级时不执行 Priority Recovery Scan。
 
-**REQ-FAILOVER-007** 全节点不可用期间保持 selector 指向 Fallback Node，不停止 Inbound、不修改 Route，也不切到其他已知 unavailable Node。一次全局重启会清除其他 Outbound 已累计的临时计时。
+### 10.5 Fallback 持续超时后的恢复性重启
 
-### 10.5 切换失败
+**REQ-FAILOVER-009** 每个处于 Fallback 的 Routed Auto Outbound 必须先完成本周期 Fallback Recovery。完成后 Current Node 仍为 Fallback Node，且持续处于 Fallback 的时间达到配置的 Fallback Restart Timeout 时，使用当前正式配置重启整个 sing-box。触发条件不要求 Fallback Node unavailable，也不要求全部 Candidate 和 Fallback Node 均 unavailable；即使 Fallback available 而全部 Candidate unavailable，达到超时后也允许重启。
 
-**REQ-FAILOVER-008** 只有 Clash API 明确确认成功后才修改内存当前节点和相关状态。切换失败时：
+**REQ-FAILOVER-010** Fallback 持续超时重启是用于重新建立 DNS、连接和 sing-box 内部运行状态的主动恢复机制。重启成功后按 REQ-RUNTIME-004 初始化所有 Outbound；如果 Candidate 长时间无法恢复，允许系统在每次重新累计完整 Fallback Restart Timeout 后再次重启。第一版不设置指数退避、重启次数上限、复杂 cooldown 或基于 Fallback 健康状态的附加条件。
+
+**REQ-FAILOVER-011** Fallback Recovery 必须先于超时判断。若已达到超时但本周期发现 available Candidate 并成功切换，则清除 Fallback 持续时间，本周期不执行恢复性重启。保持 Fallback 时，不停止 Inbound、不修改 Route，也不切换到已知 unavailable Candidate；一次恢复性重启会清除其他 Outbound 的临时运行状态。
+
+### 10.6 切换失败
+
+**REQ-FAILOVER-012** 只有 Clash API 明确确认成功后才修改内存 Current Node 和相关状态。切换失败时：
 
 - 故障 Candidate Node 切换到 Fallback Node 失败：记录关键事件并重启 sing-box；
 - Fallback Node 恢复 Candidate Node 失败：保持 Fallback Node，下周期重新检测和尝试；
+- Priority Recovery 切换到更高优先级 Candidate 失败：保持当前 Candidate，后续到期时重新扫描和尝试；
 - Manual 人工切换失败：保持原选择并向页面返回失败；
 - 如果 sing-box 已退出，由同一串行生命周期处理完成重启，不并发执行第二个恢复动作。
 
-**REQ-FAILOVER-009** selector 切换需要中断仍绑定旧节点的已有连接，使后续重连使用新节点。准确 sing-box 配置和能力验证在集成设计阶段完成。
+**REQ-FAILOVER-013** selector 切换需要中断仍绑定旧节点的已有连接，使后续重连使用新节点。准确 sing-box 配置和能力验证在集成设计阶段完成。
 
 ---
 
@@ -499,7 +516,7 @@ failure reason
 
 **REQ-SETTINGS-003** ProxyHub 启动时加载 `data/settings.json`。文件不存在时，使用内置默认值创建完整文件。Settings 页面保存时必须先校验完整设置，再通过同目录临时文件原子替换正式文件，并同步更新当前进程的内存设置。
 
-**REQ-SETTINGS-004** 通过 Settings 页面保存检测或故障设置不重启 sing-box，也不改变 selector 当前选择；系统清空健康结果、连续失败次数和检测计时，使新参数从下一控制周期重新计算。登录用户名和密码保存后立即生效。
+**REQ-SETTINGS-004** 通过 Settings 页面保存检测或故障设置不重启 sing-box，也不改变 selector 当前选择；系统清空健康结果、连续失败次数和相关检测临时状态，使新参数从下一控制周期生效。登录用户名和密码保存后立即生效。
 
 **REQ-SETTINGS-005** 用户直接编辑 `data/settings.json` 时，修改只在下次 ProxyHub 启动后生效。第一版不监视文件变化，也不为手工编辑提供运行时热加载。
 
@@ -517,7 +534,10 @@ failure reason
 | URL 检测超时 | 5 秒 | Settings 页面或 JSON |
 | 测试 URL | `https://www.gstatic.com/generate_204` | Settings 页面或 JSON |
 | 单批检测最大并发数 | 10 | Settings 页面或 JSON |
-| 全节点不可用等待时间 | 300 秒 | Settings 页面或 JSON |
+| 全局 Node 周期健康扫描 | 启用 | Settings 页面或 JSON |
+| 全局 Node 周期健康扫描间隔 | 600 秒 | Settings 页面或 JSON |
+| Candidate Priority Recovery Interval | 60 秒 | Settings 页面或 JSON |
+| Fallback Restart Timeout | 300 秒 | Settings 页面或 JSON |
 | Web 监听地址 | `127.0.0.1` | JSON，重启生效 |
 | Web 端口 | 8080 | JSON，重启生效 |
 | Clash API 端口 | 9090 | JSON，重启生效 |
@@ -525,13 +545,11 @@ failure reason
 | 登录用户名 | `admin` | Settings 页面或 JSON |
 | 登录密码 | 空 | Settings 页面；JSON 只保存哈希 |
 
-全局周期扫描间隔可以在实现中预留默认 180 秒，但第一版不启用该任务，也不要求在页面展示。
-
 ### 12.3 日志
 
 **REQ-LOG-001** 后端文件日志记录足够的运行和排错信息。桌面页面只显示最近关键事件，不提供完整日志浏览，但允许下载日志文件。
 
-**REQ-LOG-002** Node 切换、全节点不可用、sing-box 启动/停止/重启、配置生成和升级属于关键事件。
+**REQ-LOG-002** Node 切换、Fallback 持续超时、全局 Node 扫描、sing-box 启动/停止/重启、配置生成和升级属于关键事件。
 
 **REQ-LOG-003** 第一版不实现消息推送。未来推送可以作为关键事件日志的附加处理，但不得预先引入推送平台抽象。
 
@@ -587,7 +605,6 @@ failure reason
 - 面向第三方的稳定公共 API；
 - 多 Web worker、多进程共享状态；
 - 分布式任务队列、任务历史和任务恢复；
-- 全局 Node 后台周期扫描；
 - 自动订阅刷新；
 - 配置热重载或独立“应用配置”；
 - 完整规则路由、分流规则和通用 sing-box 配置编辑器；
@@ -604,8 +621,8 @@ failure reason
 - [ ] 产品范围、协议范围和不做范围无冲突；
 - [ ] Subscription 跳过、差异确认及级联删除场景得到确认；
 - [ ] Manual/Auto/Direct Outbound 行为得到确认；
-- [ ] Auto Outbound 正常、故障、恢复和全不可用流程得到确认；
-- [ ] 人工检测与自动状态机边界得到确认；
+- [ ] Auto Outbound 正常、故障、Fallback Recovery、Candidate Priority Recovery 和 Fallback 超时重启流程得到确认；
+- [ ] 人工检测与 Auto Outbound 自动控制边界得到确认；
 - [ ] Start、Restart、守护重启和首次启动行为得到确认；
 - [ ] 页面、认证、Settings、日志和升级边界得到确认；
 - [ ] 至少完成本文第 3 节场景的验收描述；
