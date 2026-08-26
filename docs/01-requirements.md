@@ -55,7 +55,7 @@ Route 表示一个 Inbound 到一个 Outbound 的映射。具体引用约束见 
 Outbound 分为以下三种类型：
 
 - Manual Outbound：包含一个或多个 Node；
-- Auto Outbound：包含一个 Emergency Node，以及一个或多个按人工优先级排序的 Candidate Node；
+- Auto Outbound：包含一个 Fallback Node，以及一个或多个按人工优先级排序的 Candidate Node；
 - Direct Outbound：不包含 Node，流量直接访问目标地址。
 
 ### 2.2 名词
@@ -70,7 +70,7 @@ Outbound 分为以下三种类型：
 - **Direct Outbound**：不包含 Node，流量直接访问目标地址的 Outbound。
 - **Node Pool**：Manual Outbound 或 Auto Outbound 包含的 Node 集合。
 - **Candidate Node**：Auto Outbound 中参与人工优先级排序的普通候选 Node。
-- **Emergency Node**：Auto Outbound 故障时优先切换的独立应急 Node，不参与 Candidate Node 排序。
+- **Fallback Node**：Auto Outbound 故障时优先切换的独立备用 Node，不参与 Candidate Node 排序。
 - **Current Node**：Manual Outbound 或 Auto Outbound 当前在 sing-box selector 中选择的 Node。
 - **Routed Auto Outbound**：至少被一条 Route 引用的 Auto Outbound。该名称只表示 Route 引用关系，不表示 sing-box 当前一定处于 running 状态。
 
@@ -104,7 +104,7 @@ Outbound 分为以下三种类型：
 ### 3.2 正常运行
 
 ```text
-已生效 Auto Outbound 初始选择 Emergency
+已生效 Auto Outbound 初始选择 Fallback Node
 → 下一控制周期扫描整个节点池
 → 选择可用 Candidate 中人工优先级最高者
 → 后续每个控制周期检测当前节点
@@ -115,17 +115,17 @@ Outbound 分为以下三种类型：
 
 ```text
 当前 Candidate 连续检测失败达到阈值
-→ 本周期立即切换 Emergency
+→ 本周期立即切换 Fallback Node
 → 本周期不扫描该节点池
 → 下一个控制周期扫描整个节点池
 → 有可用 Candidate：切换到最高优先级可用节点
-→ 没有可用 Candidate：保持 Emergency
+→ 没有可用 Candidate：保持 Fallback Node
 ```
 
 ### 3.4 全节点不可用
 
 ```text
-Auto Outbound 位于 Emergency
+Auto Outbound 的 Current Node 为 Fallback Node
 → 节点池所有节点内存健康状态均为 unavailable
 → 开始全不可用计时
 → 任一节点恢复 available：清零计时
@@ -163,7 +163,7 @@ sing-box stopped
 → 控制循环发现 sing-box 已退出
 → 使用当前正式配置重新启动
 → 清空运行时健康及切换状态
-→ Auto Outbound 从 Emergency 重新初始化
+→ Auto Outbound 从 Fallback Node 重新初始化
 ```
 
 ---
@@ -275,13 +275,13 @@ sing-box stopped
 
 ### 6.4 Auto Outbound
 
-**REQ-OUTBOUND-006** Auto Outbound 必须包含一个 Emergency 和至少一个 Candidate。Emergency 与 Candidate 必须是不同 Node；同一 Node 不能同时承担两个角色。
+**REQ-OUTBOUND-006** Auto Outbound 必须包含一个 Fallback Node 和至少一个 Candidate Node。Fallback Node 与 Candidate Node 必须是不同 Node；同一 Node 不能同时承担两个角色。
 
 **REQ-OUTBOUND-007** Candidate 由用户手工排序。保存后系统生成连续、唯一的 1 至 N 优先级；系统不根据延迟或其他健康指标自动调整顺序。
 
-**REQ-OUTBOUND-008** Emergency 不参与 Candidate 排序。Auto Outbound 不允许用户临时手动切换或锁定当前节点，当前节点完全由自动状态机管理。
+**REQ-OUTBOUND-008** Fallback Node 不参与 Candidate Node 排序。Auto Outbound 不允许用户临时手动切换或锁定 Current Node，Current Node 完全由自动状态机管理。
 
-**REQ-OUTBOUND-009** Manual 转 Auto 时必须指定 Emergency 并完成 Candidate 排序；Auto 转 Manual 时必须明确选择新的人工当前节点，否则不允许保存。
+**REQ-OUTBOUND-009** Manual Outbound 转为 Auto Outbound 时必须指定 Fallback Node 并完成 Candidate Node 排序；Auto Outbound 转为 Manual Outbound 时必须明确选择新的 Current Node，否则不允许保存。
 
 **REQ-OUTBOUND-010** 未被 route 引用的 Manual/Auto Outbound selector 仍写入 sing-box 配置，但未被引用的 Auto Outbound 不运行自动检测、切换或全不可用重启状态机。
 
@@ -295,7 +295,7 @@ sing-box stopped
 
 - 从所有 Outbound 节点池中删除其引用；
 - Manual Outbound 失去全部 Node 时删除该 Outbound；
-- Auto Outbound 失去 Emergency 或失去全部 Candidate 时删除该 Outbound；
+- Auto Outbound 失去 Fallback Node 或失去全部 Candidate Node 时删除该 Outbound；
 - 删除上述 Outbound 后继续删除引用它们的 Route。
 
 人工删除 Node、删除 Subscription 和订阅刷新删除 Node 都使用同一规则，并在执行前展示完整影响。
@@ -362,7 +362,7 @@ sing-box stopped
 - 全节点不可用重启：使用当前正式配置直接重启；
 - 意外退出后的守护重启：使用当前正式配置直接重启。
 
-**REQ-RUNTIME-004** 每次 sing-box 实际启动或重启成功后，清空 Node 自动健康结果、连续失败次数、全不可用计时、检测状态和 Auto Outbound 临时状态；Manual Outbound 恢复持久化的人工选择，已生效 Auto Outbound 从 Emergency 初始化。
+**REQ-RUNTIME-004** 每次 sing-box 实际启动或重启成功后，清空 Node 自动健康结果、连续失败次数、全不可用计时、检测状态和 Auto Outbound 临时状态；Manual Outbound 恢复持久化的人工选择，Routed Auto Outbound 从 Fallback Node 初始化。
 
 **REQ-RUNTIME-005** 期望状态为 running 而进程意外退出时，单一控制循环在下一次获得执行机会时直接重启本项目管理的 sing-box。第一版不设置重启队列、指数退避或复杂冷却机制。
 
@@ -400,7 +400,7 @@ failure reason
 
 ### 9.3 调度边界
 
-**REQ-HEALTH-008** 第一版后台自动检测只服务已生效 Auto Outbound：正常状态检测当前节点，Emergency 状态扫描整个节点池。全局全部 Node 周期扫描仅预留，不作为第一版后台任务。
+**REQ-HEALTH-008** 第一版后台自动检测只服务 Routed Auto Outbound：Current Node 不是 Fallback Node 时检测 Current Node，Current Node 是 Fallback Node 时扫描整个 Node Pool。全局全部 Node 周期扫描仅预留，不作为第一版后台任务。
 
 **REQ-HEALTH-009** 页面人工检测只在 sing-box running 且当前没有检测批次时可用。stopped、未安装或已有批次运行时，页面不启动临时进程，分别提示不可检测或“检测进行中”。
 
@@ -414,29 +414,29 @@ failure reason
 
 **REQ-FAILOVER-001** 单一控制循环串行承担进程守护、Auto Outbound 状态处理和检测调度。每个任务周期完成后固定 sleep 基础间隔，再开始下一周期；不补跑错过的墙钟周期。
 
-**REQ-FAILOVER-002** 对每个未处于 Emergency 的已生效 Auto Outbound，每个控制周期检测当前节点。只有这种“当前节点检测”参与该 Outbound 的连续失败计数：失败加一，成功清零。
+**REQ-FAILOVER-002** 对每个 Current Node 不是 Fallback Node 的 Routed Auto Outbound，每个控制周期检测 Current Node。只有这种 Current Node 检测参与该 Outbound 的连续失败计数：失败加一，成功清零。
 
 故障池扫描、人工检测和后续全局扫描不增加或清零连续失败次数。
 
-### 10.2 进入 Emergency
+### 10.2 切换到 Fallback Node
 
 **REQ-FAILOVER-003** 当前节点连续失败达到阈值时：
 
-1. 本周期通过 Clash API 立即切换到 Emergency；
+1. 本周期通过 Clash API 立即切换到 Fallback Node；
 2. 同一周期有多个 Outbound 达到阈值时，先逐一切换这些 Outbound；
-3. 本周期不扫描刚进入 Emergency 的 Outbound 节点池；
+3. 本周期不扫描刚切换到 Fallback Node 的 Outbound Node Pool；
 4. 成功切换后清零该 Outbound 连续失败次数。
 
-### 10.3 从 Emergency 恢复
+### 10.3 从 Fallback Node 恢复
 
-**REQ-FAILOVER-004** 已经在周期开始时处于 Emergency 的 Auto Outbound，每个周期串行执行一次完整节点池检测；单个池内部有限并发，并包含 Emergency。
+**REQ-FAILOVER-004** 周期开始时 Current Node 已经是 Fallback Node 的 Auto Outbound，每个周期串行执行一次完整 Node Pool 检测；单个 Node Pool 内部有限并发，并包含 Fallback Node。
 
 **REQ-FAILOVER-005** 完整批次结束后：
 
 - 存在 available Candidate：立即选择人工优先级最高者切换；
 - 不按 delay 排序；
 - 不要求连续成功次数或最短保持时间；
-- 没有 available Candidate：保持 Emergency。
+- 没有 available Candidate Node：保持 Fallback Node。
 
 成功切换普通节点后清零连续失败次数。
 
@@ -450,14 +450,14 @@ failure reason
 - 任一 Node 恢复 available 时立即清零计时；
 - 连续达到配置等待时间仍没有 Node 恢复时，认为该 Outbound 全部节点不可用并重启整个 sing-box。
 
-**REQ-FAILOVER-007** 全节点不可用期间保持 selector 指向 Emergency，不停止 Inbound、不修改 Route，也不切到其他已知 unavailable Node。一次全局重启会清除其他 Outbound 已累计的临时计时。
+**REQ-FAILOVER-007** 全节点不可用期间保持 selector 指向 Fallback Node，不停止 Inbound、不修改 Route，也不切到其他已知 unavailable Node。一次全局重启会清除其他 Outbound 已累计的临时计时。
 
 ### 10.5 切换失败
 
 **REQ-FAILOVER-008** 只有 Clash API 明确确认成功后才修改内存当前节点和相关状态。切换失败时：
 
-- 故障 Candidate 切 Emergency 失败：记录关键事件并重启 sing-box；
-- Emergency 恢复 Candidate 失败：保持 Emergency，下周期重新检测和尝试；
+- 故障 Candidate Node 切换到 Fallback Node 失败：记录关键事件并重启 sing-box；
+- Fallback Node 恢复 Candidate Node 失败：保持 Fallback Node，下周期重新检测和尝试；
 - Manual 人工切换失败：保持原选择并向页面返回失败；
 - 如果 sing-box 已退出，由同一串行生命周期处理完成重启，不并发执行第二个恢复动作。
 

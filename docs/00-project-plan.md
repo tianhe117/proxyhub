@@ -67,7 +67,7 @@ Web 页面与内部 API 设计
 
 例如以下内容属于需求：
 
-* 当前节点连续失败达到阈值后切换应急节点；
+* Current Node 连续失败达到阈值后切换 Fallback Node；
 * 下一控制周期扫描出站池；
 * 从可用普通候选节点中选择人工优先级最高的节点。
 
@@ -216,7 +216,7 @@ REQ-DEPLOY-xxx
 1. 首次安装与配置；
 2. 正常运行；
 3. 自动出站当前节点故障；
-4. 应急节点及普通节点全部不可用；
+4. Fallback Node 及普通节点全部不可用；
 5. 手动刷新订阅失败；
 6. 订阅刷新删除节点并触发出站和 Route 级联删除；
 7. 人工停止、修改配置并重新启动；
@@ -282,7 +282,7 @@ Route
 * 自建节点与订阅节点的区别；
 * Outbound 与 Node 的多对多关系；
 * 自动出站普通候选节点顺序；
-* 自动出站应急节点；
+* Auto Outbound 的 Fallback Node；
 * Manual Outbound 保存的当前节点；
 * Route 与 Inbound 的一对零或一关系；
 * Route 与 Outbound 的多对一关系；
@@ -353,7 +353,7 @@ docs/02-data-model.md
 * [ ] 每一个需求实体均能映射到数据模型；
 * [ ] 不存在没有业务用途的表；
 * [ ] 自动/手动/direct Outbound 均可表达；
-* [ ] Emergency 和 Candidate 关系明确；
+* [ ] Fallback Node 和 Candidate Node 关系明确；
 * [ ] Manual 当前节点能够持久化；
 * [ ] 自动运行节点没有被错误持久化；
 * [ ] 订阅刷新可以稳定识别新增、修改、删除；
@@ -388,7 +388,7 @@ docs/02-data-model.md
     ↓
 处理达到连续失败阈值的出站
     ↓
-处理已经位于应急节点的出站
+处理 Current Node 已是 Fallback Node 的 Auto Outbound
     ↓
 执行其他到期任务
     ↓
@@ -416,7 +416,7 @@ sleep 15 秒
     ↓
 达到失败阈值
     ↓
-立即切 Emergency
+立即切换 Fallback Node
     ↓
 本周期结束
     ↓
@@ -426,13 +426,13 @@ sleep
     ↓
 存在普通可用节点？
     ├── 是 → 选择人工优先级最高节点 → 切换 → 正常状态
-    └── 否 → 保持 Emergency
+    └── 否 → 保持 Fallback Node
 ```
 
 并进一步定义：
 
 * 多个自动出站同时故障；
-* Emergency 本身不可用；
+* Fallback Node 本身不可用；
 * 全池不可用；
 * 全池恢复；
 * sing-box 重启；
@@ -876,7 +876,7 @@ Route
 
 * 当前节点检测；
 * 连续失败；
-* Emergency；
+* Fallback Node；
 * 下一周期 Pool Scan；
 * Candidate 选择；
 * 全池不可用；
@@ -1047,7 +1047,7 @@ Auto Outbound 使用普通节点
 
 ```text
 连续检测失败达到阈值
-→ 当前周期切 Emergency
+→ 当前周期切换 Fallback Node
 → sleep
 → 下一周期 Pool Scan
 → 找到普通节点
@@ -1060,9 +1060,9 @@ Auto Outbound 使用普通节点
 
 ```text
 普通节点故障
-→ Emergency
+→ Fallback Node
 → Pool Scan 全失败
-→ 保持 Emergency
+→ 保持 Fallback Node
 → 达到等待时间
 → sing-box 重启
 → Runtime 状态重新初始化
@@ -1094,7 +1094,7 @@ Auto Outbound 使用普通节点
 * 请求失败；
 * 格式错误；
 * 重复 Name；
-* 删除 Emergency；
+* 删除 Fallback Node；
 * 删除普通 Candidate；
 * 级联删除 Outbound；
 * 级联删除 Route。
