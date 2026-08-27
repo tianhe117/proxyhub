@@ -92,15 +92,15 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 - **DIRECT**：`type = direct` 的系统内置 Outbound，全局唯一、只读、不包含 Node 且不保存数据库记录，可被 Route 显式选择。
 
-- **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
-
-- **Node Pool**：一个 MANUAL 或 AUTO 包含的 Node 集合；每个 Node 在该 Pool 中具有连续、唯一的 priority。
-
 - **MANUAL**：`type = manual` 的用户 Outbound，保存于数据库并包含 Node Pool，由用户人工选择并持久化 Current Node，不执行自动故障切换。
 
 - **AUTO**：`type = auto` 的用户 Outbound，保存于数据库并包含 Node Pool，由后台控制循环管理运行时 Current Node，并在节点故障时自动恢复代理能力。
 
 - **MANUAL/AUTO**：同时指 MANUAL 和 AUTO，不包括 DIRECT。
+
+- **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
+
+- **Node Pool**：一个 MANUAL 或 AUTO 包含的 Node 集合；每个 Node 在该 Pool 中具有连续、唯一的 priority。
 
 - **Candidate Node**：AUTO 的 Node Pool 中除 Fallback Node 外的 Node。Candidate 直接使用其在完整 Node Pool 中的 priority 参与自动择优和 Priority Recovery，不单独重新编号。
 
