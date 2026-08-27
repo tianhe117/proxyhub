@@ -32,23 +32,22 @@
 
 ### Node TCP 与 URL Delay 状态
 
-- 修改 `REQ-HEALTH-005`，不为 TCP 检测建立单独的复杂结果状态。Node 运行时状态保持为以下简单字段：
+- 修改 `REQ-HEALTH-005`，Node 不保存检测中的中间状态，也不区分 `last result`、`cur result` 或 `checking`。Node 运行时健康状态保持为以下简单字段：
 
 ```text
-last result: unknown / available / unavailable
-cur result: available / unavailable
-checking: true / false
+result: unknown / available / unavailable
 tcp delay
 url delay
 last checked time
 failure reason
 ```
 
-- `cur result` 表示当前检测批次由 URL 检测得出的实际结果；`last result` 保留上一个已完成批次的结果。尚无已完成批次时，`last result` 为 `unknown`。
-- `tcp delay` 和 `url delay` 均以毫秒记录。TCP 或 URL 检测未取得有效 delay 时，对应字段为空，不得继续展示上一个批次的旧值。
-- TCP 检测无论成功或失败都继续 URL 检测。URL 检测成功时 `cur result` 为 `available`，失败时为 `unavailable`；TCP 检测结果不改变 `cur result`。
-- `failure reason` 只记录决定最终健康结果的 URL 检测失败原因；URL 检测成功时为空。TCP 检测未取得有效 delay 时只将 `tcp delay` 置空，不增加单独的 TCP 结果或失败原因字段。
-- `checking` 期间继续展示 `last result`；当前批次结束后，一次性更新 `cur result`、`tcp delay`、`url delay`、last checked time 和 failure reason，避免页面观察到不同批次拼接的状态。当前批次完成后，其 `cur result` 作为下一批次开始时的 `last result`。
+- `result` 始终表示最近一次已经完成的检测结果。尚无任何已完成检测时为 `unknown`。
+- `tcp delay` 和 `url delay` 均以毫秒记录。最近一次检测中 TCP 或 URL 未取得有效 delay 时，对应字段为空，不得继续保留更早批次的旧值。
+- TCP 检测无论成功或失败都继续 URL 检测。最终 `result` 只由 URL 检测决定：URL 检测成功时为 `available`，失败时为 `unavailable`；TCP 检测结果不改变 `result`。
+- `failure reason` 只记录最近一次已完成检测中决定最终健康结果的 URL 检测失败原因；URL 检测成功时为空。TCP 检测未取得有效 delay 时只将 `tcp delay` 置空，不增加单独的 TCP 结果或失败原因字段。
+- 一次检测过程中产生的 TCP delay、URL delay、result 和 failure reason 均作为该检测批次的临时数据，不立即修改 Node 已保存的运行时健康状态。检测全部完成后，一次性更新 `result`、`tcp delay`、`url delay`、`last checked time` 和 `failure reason`。
+- 检测执行期间，Node 继续保持最近一次已完成检测的完整状态，不向 Node 运行时状态增加 `checking` 字段。检测任务是否正在执行由检测调度逻辑自身管理。
 - 同步修改 `REQ-HEALTH-008` 以及页面、日志中的 delay 表述，明确展示或记录 TCP delay 与 URL delay，不再使用未注明类型的单一 delay。
 
 ### 认证需求精简
