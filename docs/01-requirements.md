@@ -466,7 +466,7 @@ Subscription 新增、修改、删除和刷新的运行状态限制统一由 REQ
 
 - 现存 Route 映射；
 
-- 仅监听本机的 Clash API。
+- 固定监听 `127.0.0.1:9090` 的 Clash API。
 
 MANUAL/AUTO、DIRECT、Node 和 Route 到 sing-box 配置对象、tag 及字段的具体映射由 sing-box 模块设计规定。实现必须满足本文关于 Node Pool priority、MANUAL 的 Current Node、AUTO 的 Fallback Node、启动初始化、连接中断和 DIRECT Route 的业务要求，不得由历史运行状态覆盖 MANUAL/AUTO 的初始化选择。
 
@@ -872,13 +872,13 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 ### 12.1 Settings 行为
 
-**REQ-SETTINGS-001** 所有应用设置使用单一 `data/settings.json` 文件持久化，并按 Web、Clash API、健康检测和认证等领域分组。Settings 不建立数据库表，也不使用数据库键值记录。
+**REQ-SETTINGS-001** 所有应用设置使用单一 `data/settings.json` 文件持久化，并按运行调度、健康检测、AUTO 故障切换、Web 和认证等领域分组。Settings 不建立数据库表，也不使用数据库键值记录。
 
-**REQ-SETTINGS-002** Settings 页面允许修改检测、故障切换、登录用户名和密码设置。Web 和 Clash API 的监听地址、端口不在页面修改，只能直接修改 JSON 并重启 ProxyHub。
+**REQ-SETTINGS-002** 各配置项是否允许通过 Settings 页面在线修改及其生效方式由 12.2 规定。不能在线修改的配置项只能直接修改 JSON，并在 ProxyHub 重启后生效。
 
 **REQ-SETTINGS-003** ProxyHub 启动时加载 `data/settings.json`。文件不存在时，使用内置默认值创建完整文件。Settings 页面保存时必须先校验完整设置，再通过同目录临时文件原子替换正式文件，并同步更新当前进程的内存设置。
 
-**REQ-SETTINGS-004** 通过 Settings 页面保存检测或故障设置不重启 sing-box，也不改变 Current Node；系统清空健康结果、连续失败次数和相关检测与控制状态，使新参数从下一控制周期生效。登录用户名和密码保存后立即生效。
+**REQ-SETTINGS-004** 通过 Settings 页面保存运行调度、健康检测或 AUTO 故障切换设置不重启 sing-box，也不改变 Current Node，修改后的参数从下一控制周期生效。保存健康检测或 AUTO 故障切换设置时，系统清空健康结果、连续失败次数和相关检测与控制状态；修改全局 Node 周期健康扫描开关或间隔时，从保存成功时间重新计算扫描间隔。登录用户名和密码保存后立即生效。
 
 **REQ-SETTINGS-005** 用户直接编辑 `data/settings.json` 时，修改只在下次 ProxyHub 启动后生效。第一版不监视文件变化，也不为手工编辑提供运行时热加载。
 
@@ -886,26 +886,26 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 **REQ-SETTINGS-007** JSON 中只保存密码安全哈希，不保存明文密码。用于签名登录会话的随机 secret 不属于普通 Settings，应保存在独立密钥文件中，不在 Settings 页面显示。
 
-### 12.2 默认值
+### 12.2 Settings 配置项与默认值
 
-| 设置 | 默认值 | 修改方式 |
-|---|---:|---|
-| 控制循环基础间隔 | 15 秒 | Settings 页面或 JSON |
-| 当前节点连续失败阈值 | 3 次 | Settings 页面或 JSON |
-| TCP 检测超时 | 3 秒 | Settings 页面或 JSON |
-| URL 检测超时 | 5 秒 | Settings 页面或 JSON |
-| 测试 URL | `https://www.gstatic.com/generate_204` | Settings 页面或 JSON |
-| 单批检测最大并发数 | 10 | Settings 页面或 JSON |
-| 全局 Node 周期健康扫描 | 启用 | Settings 页面或 JSON |
-| 全局 Node 周期健康扫描间隔 | 600 秒 | Settings 页面或 JSON |
-| Candidate Priority Recovery Interval | 60 秒 | Settings 页面或 JSON |
-| Fallback Restart Timeout | 300 秒 | Settings 页面或 JSON |
-| Web 监听地址 | `127.0.0.1` | JSON，重启生效 |
-| Web 端口 | 8080 | JSON，重启生效 |
-| Clash API 端口 | 9090 | JSON，重启生效 |
-| Clash API 监听地址 | `127.0.0.1` | JSON，重启生效 |
-| 登录用户名 | `admin` | Settings 页面或 JSON |
-| 登录密码 | 空 | Settings 页面；JSON 只保存哈希 |
+“在线修改”表示可以通过 Settings 页面修改且不需要重启 ProxyHub。运行调度、健康检测和 AUTO 故障切换设置的状态清理及生效方式遵循 REQ-SETTINGS-004；Username 和 Password 保存后立即生效。不能在线修改的设置只能直接修改 JSON，并在 ProxyHub 重启后生效。
+
+| Setting | 默认值 | 在线修改 | 备注 |
+|---|---:|:---:|---|
+| Control Interval | 15 秒 | 是 | 一个控制周期完成后，到下一周期开始前的等待时间 |
+| TCP Timeout | 3 秒 | 是 | 单个 Node 的 TCP 检测超时时间 |
+| URL Timeout | 5 秒 | 是 | 单个 Node 的 URL 检测超时时间 |
+| Test URL | `https://www.gstatic.com/generate_204` | 是 | 所有 Node 共用的 URL 健康检测地址 |
+| Max Concurrency | 10 | 是 | 单个检测批次内同时检测的最大 Node 数量 |
+| Global Scan | 启用 | 是 | 是否周期检测全部全局 Node |
+| Global Scan Interval | 600 秒 | 是 | 两次全局 Node 扫描之间的间隔 |
+| Failure Threshold | 3 次 | 是 | Current Candidate 连续 URL 检测失败达到该次数后切换到 Fallback |
+| Priority Recovery Interval | 60 秒 | 是 | Current Candidate 不是最高优先级时，扫描更高优先级 Candidate 的间隔 |
+| Fallback Restart Timeout | 300 秒 | 是 | AUTO 持续处于 Fallback 达到该时间后重启 sing-box |
+| Web Listen Address | `127.0.0.1` | 否 | ProxyHub Web 的监听地址 |
+| Web Port | 8080 | 否 | ProxyHub Web 的监听端口 |
+| Username | `admin` | 是 | 登录用户名 |
+| Password | 空 | 是 | 为空时跳过认证；JSON 只保存密码哈希 |
 
 ### 12.3 日志
 
