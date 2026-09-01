@@ -478,137 +478,373 @@ MANUAL/AUTO、DIRECT、Node 和 Route 到 sing-box 配置对象、tag 及字段�
 
 ## 8. ProxyHub 运行任务
 
-### 8.1 启动任务
+### 8.1 sing-box 运行状态
 
-**REQ-RUNTIME-001** ProxyHub 在内存中维护 sing-box 的期望状态。人工 Start 和 Restart 按 REQ-CONFIG-004 生成、检查配置并在成功后进入 running；人工 Stop 或配置检查失败后进入 stopped。stopped 时不执行进程守护。手动 Stop 状态不跨 ProxyHub 重启持久化。
+**REQ-RUNTIME-001** ProxyHub 在内存中维护 sing-box 的期望状态，只有 `running` 和 `stopped` 两种。
 
-**REQ-RUNTIME-002** ProxyHub 启动时，只有同时满足以下条件才自动生成、检查并启动 sing-box：
+- 用户执行 Start：生成完整配置并执行 `sing-box check`，检查和进程启动均成功后将期望状态设为 `running`，任一步失败均保持 `stopped`；
+- 用户执行 Restart：先停止当前 sing-box 并将期望状态设为 `stopped`，然后重新生成和检查完整配置，检查和进程启动均成功后将期望状态设为 `running`，任一步失败均保持 `stopped`；
+- 用户执行 Stop：停止 sing-box，并将期望状态设为 `stopped`；
+- Stop 或 Restart 遇到正在执行的检测批次时，等待该批次完成后执行，不中途取消检测；
+- `stopped` 状态不执行进程守护、AUTO 故障切换和全局 Node 周期扫描；
+- 手动 Stop 状态不跨 ProxyHub 自身重启持久化。
+
+### 8.2 ProxyHub 启动
+
+**REQ-RUNTIME-002** ProxyHub 自身启动时，只有同时满足以下条件才自动生成、检查并启动 sing-box：
 
 - sing-box 二进制存在；
-
 - Settings 已成功加载并通过校验；
+- 数据库中至少存在一条可以生成有效配置的 Route。
 
-- 数据库至少有一条能够生成有效配置的 Route，包括目标为系统内置 DIRECT 的 Route。
+Route 的目标可以是 DIRECT、MANUAL 或 AUTO。没有 Route 时不启动 sing-box；只有 DIRECT Route 时仍属于合法配置，可以正常启动。
 
-条件不满足或配置检查失败时，Web 正常运行并保持 sing-box stopped。没有 Route 与 Route 选择 DIRECT 的含义不同；只包含目标为 DIRECT 的 Route 的配置属于可启动的有效配置。
+条件不满足、配置检查失败或进程启动失败时，ProxyHub Web 仍正常运行，sing-box 保持 `stopped`。
 
-**REQ-RUNTIME-003** 每次 sing-box 实际启动或重启成功后，清空 Node 健康状态，以及 AUTO 的连续失败次数、相关计时和其他临时控制状态；被 Route 引用的 MANUAL 恢复持久化的 Current Node，Routed AUTO 从 Fallback Node 初始化并从启动成功时开始记录 Fallback 持续时间。不得在启动前检测 Candidate 或据此改变初始化选择。
+### 8.3 sing-box 启动和重启后的状态
 
-### 8.2 后台控制任务
+**REQ-RUNTIME-003** 每次 sing-box 实际启动或重启成功后，ProxyHub 都将其视为一次新的运行周期，清除并重新初始化全部既有运行时状态，包括：
 
-**REQ-RUNTIME-004** ProxyHub 只运行一个串行后台控制循环，每个周期严格按以下顺序执行：
+- 所有 Node 的健康状态、tcp delay、url delay、last checked time 和 failure reason；
+- AUTO 的 Current Node、连续失败次数、Fallback 持续时间和 Priority Recovery 计时；
+- 全局 Node 周期扫描计时；
+- 其他仅存在于内存中的检测和控制状态。
+
+重新初始化时：
+
+- 被 Route 引用的 MANUAL 使用数据库中持久化的 Current Node；
+- 被 Route 引用的 AUTO 使用其 Fallback Node 作为新的 Current Node；
+- AUTO 的 Fallback 持续时间从零开始累计；
+- 全局 Node 周期扫描间隔从启动成功时间重新计算；
+- 不在启动前检测 Candidate，也不根据历史健康状态改变初始选择。
+
+不尝试恢复 sing-box 重启前的 AUTO 运行状态。
+
+```text
+sing-box 启动或重启成功
+          ↓
+所有运行时状态清零
+          ↓
+MANUAL 恢复持久化 Current Node
+AUTO 回到 Fallback Node
+          ↓
+下一控制周期重新开始检测
+```
+
+### 8.4 后台控制循环
+
+**REQ-RUNTIME-004** ProxyHub 只运行一个后台控制循环，不建立任务队列、多 worker、并行状态机或独立调度器。
+
+每个控制周期严格按以下顺序执行：
 
 1. sing-box 进程守护；
+2. AUTO 故障切换；
+3. 全局 Node 周期健康扫描已启用且到期时，执行全局扫描。
 
-2. AUTO 故障检测与切换；
+如果进程守护或 AUTO 故障切换触发 sing-box 重启，本控制周期立即结束。一个正常控制周期完成后，等待配置的基础间隔，再开始下一个周期；不补跑因为任务执行时间而错过的周期。
 
-3. 全局 Node 扫描已启用且到期时，执行全局扫描。
+### 8.5 调度流程
 
-期望状态为 running 而 sing-box 意外退出时，进程守护使用当前正式配置重启 sing-box；重启成功后按 REQ-RUNTIME-003 初始化并结束本周期。AUTO 任务只处理 Routed AUTO，具体规则由第 10 章规定；任何 AUTO 触发恢复性重启后同样结束本周期。全局 Node 扫描可以通过 Settings 开启或关闭，检测结果只用于更新 Node 健康状态、页面展示和日志，不参与 AUTO 调度，也不修改任何 AUTO 控制状态。
+后台控制循环依次执行三个主要任务：
 
-本周期全部处理完成后等待配置的基础间隔，再开始下一周期，不补跑错过的墙钟周期。不同控制周期不得重叠，检测批次之间也不得重叠；单个检测批次内部可以使用受限并发。第一版不建立多后台 worker、并行状态机、重启队列、指数退避或复杂冷却机制。
+```text
+控制周期开始
+      ↓
+1. 进程守护
+      ├── sing-box 已退出
+      │       ↓
+      │   使用当前正式配置启动 sing-box
+      │       ├── 成功 → 重置全部状态 → 本周期结束
+      │       └── 失败 → 记录错误 → 本周期结束
+      ↓
+2. AUTO 故障切换
+      ├── 逐个处理 Routed AUTO
+      ├── 具体流程遵循第 10 章
+      └── AUTO 处于 Fallback 的持续时间超时
+              ↓
+          按 REQ-FAILOVER-010 主动重启 sing-box
+              ├── 成功 → 重置全部状态 → 本周期结束
+              └── 失败 → 记录错误 → 本周期结束
+      ↓
+3. 全局 Node 扫描
+      └── 启用且到期时检测全部 Node
+      ↓
+等待基础控制间隔
+      ↓
+下一控制周期
+```
+
+统一遵循以下原则：
+
+```text
+一个控制循环
+一个检测批次
+批次内部有限并发
+运行控制整体串行
+sing-box 每次启动或重启成功后，所有运行状态全部重置
+```
+
+### 8.6 进程守护
+
+**REQ-RUNTIME-005** 当期望状态为 `running` 时，每个控制周期首先检查 sing-box 是否仍在运行。
+
+sing-box 正常运行时，继续执行本周期后续任务。发现 sing-box 意外退出时：
+
+1. 使用当前正式配置重新启动 sing-box；
+2. 启动成功后按 REQ-RUNTIME-003 清空并重新初始化全部运行时状态；
+3. 本控制周期立即结束；
+4. 下一控制周期重新开始 AUTO 检测。
+
+进程守护或 AUTO 故障切换触发的自动启动、重启失败时，记录错误，保持期望状态为 `running` 并结束本周期；下一控制周期由进程守护再次尝试启动。
+
+第一版不记录连续崩溃次数，不执行指数退避，也不建立复杂进程恢复策略。
+
+### 8.7 AUTO 故障切换任务
+
+**REQ-RUNTIME-006** 进程守护未结束本周期时，逐个处理所有 Routed AUTO，具体检测、切换和恢复规则遵循第 10 章。
+
+AUTO 触发 sing-box 重启时，本控制周期立即结束。Fallback 持续超时按 REQ-FAILOVER-010 处理；切换失败需要重启时按 REQ-FAILOVER-011 处理。
+
+### 8.8 全局 Node 扫描
+
+**REQ-RUNTIME-007** 全局 Node 周期健康扫描可以通过 Settings 开启或关闭。启用后，在达到配置的扫描间隔时检测所有 Node。
+
+全局扫描结果只用于更新 Node 健康状态、页面展示和日志记录，不修改 AUTO 的连续失败次数、Current Node、Fallback 或 Priority Recovery 状态，也不触发 AUTO 切换。
+
+AUTO 调度只使用 AUTO 自己在控制流程中执行的检测结果。
+
+### 8.9 检测批次规则
+
+**REQ-RUNTIME-008** AUTO 检测、全局 Node 扫描和人工检测共用同一个检测批次限制。同一时刻只执行一个检测批次；批次内部可以按照 Settings 中配置的最大并发数并发检测多个 Node。
+
+控制循环等待当前检测批次完成后再处理后续状态，不并行执行多个检测批次。
 
 ---
 
 ## 9. 节点健康检测
 
-### 9.1 检测步骤
+### 9.1 检测流程
 
-**REQ-HEALTH-001** 所有 Node 均可执行健康检测。每次检测先执行 TCP 检测，再执行 URL 检测，并分别记录 tcp delay 和 url delay；TCP 检测无论成功或失败都继续执行 URL 检测。
+**REQ-HEALTH-001** 所有 Node 使用相同的健康检测流程。每次 Node 检测依次执行：
 
-**REQ-HEALTH-002** Node 的最终健康结果只由 URL 检测结果决定：URL 检测成功时 `result = available`，失败时 `result = unavailable`。TCP 检测结果和 tcp delay 只供页面查看、日志记录与人工排错，不参与健康判定或 AUTO 控制。
+```text
+TCP 检测
+    ↓
+URL 检测
+    ↓
+更新 Node 健康状态
+```
 
-**REQ-HEALTH-003** URL 检测必须通过被检测 Node 的真实代理流量，使用 sing-box Clash API delay 接口。API 返回 2xx 且 `delay > 0` 时 URL 检测成功，并记录该值为 url delay；其他结果均视为 URL 检测失败。
+无论 TCP 检测成功还是失败，都继续执行 URL 检测。TCP 和 URL 检测分别使用 Settings 中配置的超时时间。
 
-**REQ-HEALTH-004** 所有 Node 共用一个可配置 HTTPS 测试 URL。TCP 与 URL 检测使用不同的可配置超时。检测成功时，tcp delay 和 url delay 均以毫秒记录；超时和其他失败的取值遵循 REQ-HEALTH-005。
+### 9.2 TCP 检测
 
-### 9.2 Node 健康状态
+**REQ-HEALTH-002** TCP 检测用于检查 Node 服务器的基础 TCP 连接情况，其结果只用于页面展示、日志和人工排错，不参与 Node 最终健康判断，也不参与 AUTO 控制。
 
-**REQ-HEALTH-005** 每个 Node 在内存中保存最近一次已完成检测的 `result`、`tcp delay`、`url delay`、`last checked time` 和 `failure reason`；`result` 只有 `unknown`、`available` 和 `unavailable` 三种。首次检测前 `result = unknown`，两个 delay 均为空；检测成功时对应 delay 记录实际毫秒数，检测超时时记录为 `-1`，其他未取得有效 delay 的情况为空。URL 检测成功时 `failure reason` 为空，失败时记录 URL 检测失败原因。
+- 检测成功：`tcp delay` 记录实际毫秒数；
+- 检测超时：`tcp delay = -1`；
+- 其他无法取得有效 delay 的失败：`tcp delay = null`。
 
-TCP 超时时继续执行 URL 检测；`tcp delay = -1` 不影响最终健康结果。`url delay = -1` 表示 URL 检测超时，此时 `result = unavailable`。
+### 9.3 URL 检测
 
-**REQ-HEALTH-006** TCP 和 URL 检测全部完成后，一次性更新 Node 健康状态；检测期间继续展示最近一次已完成的结果。健康状态不写入数据库，ProxyHub 或 sing-box 重启后重新检测。
+**REQ-HEALTH-003** URL 检测必须通过被检测 Node 的真实代理流量完成。系统使用 sing-box Clash API delay 接口访问 Settings 中统一配置的 HTTPS 测试 URL。
 
-**REQ-HEALTH-007** 人工检测可以更新 Node 健康状态，但不修改 AUTO 的连续失败次数、Current Node、Fallback 状态或其他自动控制状态。Node 健康状态与 AUTO 控制状态分别管理；AUTO 控制只采用对应控制步骤产生的检测结果。
+Clash API 返回 HTTP 2xx 且 `delay > 0` 时检测成功：
 
-### 9.3 检测入口与并发
+```text
+result = available
+url delay = API 返回的 delay
+```
 
-**REQ-HEALTH-009** 页面人工检测只在 sing-box running 且当前没有检测批次时可用。stopped、未安装或已有批次运行时，页面不启动临时进程，分别提示不可检测或“检测进行中”。
+其他情况均为检测失败：
 
-**REQ-HEALTH-010** 同一时刻只运行一个检测批次；批次内部可以使用数量受限的并发。控制循环等待批次全部完成后再串行处理状态，不允许检测批次重叠。
+```text
+result = unavailable
+```
+
+- URL 检测超时：`url delay = -1`；
+- 其他没有取得有效 delay 的失败：`url delay = null`。
+
+Node 的最终健康状态只由 URL 检测结果决定。
+
+### 9.4 Node 健康状态
+
+**REQ-HEALTH-004** 每个 Node 在内存中保存最近一次完成检测的 `result`、`tcp delay`、`url delay`、`last checked time` 和 `failure reason`。
+
+`result` 只有 `unknown`、`available` 和 `unavailable` 三种。Node 首次检测前：
+
+```text
+result = unknown
+tcp delay = null
+url delay = null
+```
+
+URL 检测成功时 `failure reason = null`；URL 检测失败时记录简单失败原因。
+
+### 9.5 状态更新时间
+
+**REQ-HEALTH-005** TCP 和 URL 检测全部完成后，一次性更新该 Node 的健康状态。检测过程中页面继续显示该 Node 上一次已经完成的检测结果。
+
+健康状态只保存在内存中，不写入数据库。ProxyHub 重启、sing-box 启动或重启，以及按 REQ-SETTINGS-004 保存检测或故障设置后，全部 Node 健康状态重新变为 `unknown`。
+
+### 9.6 人工检测
+
+**REQ-HEALTH-006** 用户可以从页面人工检测 Node。人工检测：
+
+- 只允许在 sing-box running 时执行；
+- 当前已有检测批次时不再启动新的检测批次；
+- 可以更新 Node 健康状态；
+- 不修改 AUTO 连续失败次数；
+- 不修改 AUTO Current Node；
+- 不触发 AUTO 切换；
+- 不修改 Fallback 或 Priority Recovery 状态。
 
 ---
 
 ## 10. AUTO 故障切换
 
-本章中的 AUTO 均指 `type = auto` 的 Outbound。Fallback Node 虽具有完整 Node Pool 中的 priority，但始终排除在 Candidate 检测、自动择优和 Candidate Priority Recovery 之外；Candidate 之间直接比较其在完整 Node Pool 中的 priority，不单独重新编号。
+本章中的 AUTO 指 `type = auto` 的 Outbound。
 
-### 10.1 AUTO 处理顺序与状态
+每个 AUTO 包含一个 Fallback Node 和一个或多个 Candidate Node。Fallback Node 不参与 Candidate 自动择优；Candidate 直接使用完整 Node Pool 中的 priority，数值越小、优先级越高。
 
-**REQ-FAILOVER-001** 后台控制任务逐个处理 Routed AUTO。对每个 AUTO，Current Node 不是 Fallback Node 时，先执行当前 Candidate 检测和必要的故障切换，再执行到期的 Candidate Priority Recovery；周期开始处理时 Current Node 已是 Fallback Node 时，先执行 Fallback Recovery，再判断 Fallback 持续时间是否超时。
+### 10.1 总体流程
 
-**REQ-FAILOVER-002** AUTO 的运行状态只保存在内存中，至少包括 Current Node、连续失败次数、Fallback 开始时间和上次 Priority Recovery Scan 时间；状态可以由 Current Node 是否为 Fallback 或其 Node Pool priority 推导，不引入额外复杂状态机。
+```text
+sing-box 启动或重启
+        ↓
+Current = Fallback，持续时间从零开始累计
+        ↓
+逐个处理 Routed AUTO
+        ↓
+Current == Fallback？
+        ├── 是 → 扫描全部 Candidate
+        │          ├── 成功切换 → Current = 最高 priority 的可用 Candidate
+        │          └── 仍在 Fallback → 持续时间超时？
+        │                                  ├── 否 → 处理下一个 AUTO
+        │                                  └── 是 → 重启 sing-box，本周期结束
+        │
+        └── 否 → 检测 Current Candidate
+                   ├── 连续失败达到阈值 → 成功切换 Fallback，本 AUTO 处理结束
+                   └── 未达到阈值 → Priority Recovery 到期？
+                                          ├── 否 → 处理下一个 AUTO
+                                          └── 是 → 扫描更高 priority Candidate
+                                                       ├── 有可用 → 切换
+                                                       └── 无可用 → 保持 Current
+```
 
-### 10.2 当前 Candidate 健康检测与切换
+核心原则：
 
-**REQ-FAILOVER-003** 对每个 Current Node 不是 Fallback Node 的 Routed AUTO，每个控制周期检测 Current Node。只有这种当前 Candidate 自动检测的 URL 最终结果参与该 AUTO 的连续失败计数：失败加一，成功清零。TCP 结果、Fallback Recovery、Priority Recovery、全局扫描和人工检测均不得增加或清零该计数。
+```text
+能切换就切换
+无法恢复就待在 Fallback
+Fallback 太久就重启 sing-box
+sing-box 每次启动或重启成功后，所有运行状态全部重新开始
+```
 
-**REQ-FAILOVER-004** 当前 Candidate 连续失败达到阈值时：
+### 10.2 运行状态和初始化
 
-1. 本周期通过 Clash API 立即切换到 Fallback Node；
+**REQ-FAILOVER-001** AUTO 只在内存中保存 Current Node、当前 Candidate 连续失败次数、Fallback 持续时间和 Priority Recovery 计时，不建立额外状态机。
 
-2. 切换成功后将 Current Node 更新为 Fallback Node，清零连续失败次数，并从切换成功时开始记录 Fallback 持续时间；
+Current Node 为 Fallback 时累计实际经过的 Fallback 持续时间；不在 Fallback 时该时间为零。sing-box 每次启动或重启成功后，按 REQ-RUNTIME-003 清除上述状态，Routed AUTO 以 `Current Node = Fallback Node`、`failure count = 0`、`Fallback 持续时间 = 0` 重新开始。
 
-3. 该 AUTO 本周期处理结束，不在同一周期执行 Fallback Recovery；
+按 REQ-SETTINGS-004 保存检测或故障设置时，Current Node 不变且连续失败次数清零；Current Node 为 Fallback 时从零重新累计 Fallback 持续时间，否则从保存成功时间重新计算 Priority Recovery Interval。
 
-4. 同一周期有多个 AUTO 达到阈值时，控制循环仍按顺序逐个处理。
+### 10.3 每周期处理顺序
 
-Current Node 切换后的已有连接中断行为由 REQ-OUTBOUND-005 规定，本章不重复定义配置实现。
+**REQ-FAILOVER-002** 后台控制循环逐个处理 Routed AUTO：
 
-### 10.3 从 Fallback Node 恢复
+- Current Node 为 Fallback：执行 Fallback Recovery，然后判断 Fallback 持续时间是否超时；
+- Current Node 为 Candidate：检测 Current Candidate，必要时切回 Fallback；未切回 Fallback 时，到期后执行 Priority Recovery。
 
-**REQ-FAILOVER-005** 周期开始处理时 Current Node 已经是 Fallback Node 的 Routed AUTO，每个周期检测该 AUTO 的全部 Candidate Node。Fallback Node 不作为 Candidate；它可以由全局扫描等检测记录健康状态，用于页面展示和人工排错。
+未被 Route 引用的 AUTO 不执行检测或自动切换。
 
-**REQ-FAILOVER-006** Candidate 检测批次结束后：
+### 10.4 Current Candidate 检测和故障切换
 
-- 存在 available Candidate：立即选择其中 Node Pool priority 最高者切换；
+**REQ-FAILOVER-003** Current Node 为 Candidate 时，每个控制周期检测一次 Current Candidate。只有本次检测的 URL 最终结果参与连续失败计数：
 
-- 不按 tcp delay 或 url delay 排序；
+- 成功：`failure count = 0`；
+- 失败：`failure count += 1`。
 
-- 不要求连续成功次数或最短保持时间；
+TCP 检测、人工检测、全局 Node 扫描、Fallback Recovery 和 Priority Recovery 的检测结果本身均不影响该计数。
 
-- 没有 available Candidate Node：保持 Fallback Node。
+**REQ-FAILOVER-004** 连续失败达到配置阈值时，立即通过 Clash API 切换到 Fallback。切换成功后：
 
-成功切换到 Candidate 后清除 Fallback 持续时间，连续失败次数保持为零；不得切换到已知 unavailable Candidate。
+```text
+Current Node = Fallback Node
+failure count = 0
+Fallback 持续时间 = 0，并开始累计
+```
 
-### 10.4 Candidate Priority Recovery
+该 AUTO 本周期处理结束，下一控制周期再执行 Fallback Recovery。
 
-**REQ-FAILOVER-007** Current Node 不是 Fallback Node、Current Candidate 不是全部 Candidate 中 Node Pool priority 最高者，并且距离上次 Priority Recovery Scan 已达到配置间隔时，只检测 priority 高于 Current Candidate 的全部 Candidate Node。Fallback Node 即使 priority 更高也不参与；不得检测当前 Candidate 或 priority 更低的 Candidate。
+### 10.5 Fallback Recovery
 
-**REQ-FAILOVER-008** Priority Recovery Scan 结束后，存在 available 的更高 priority Candidate 时，立即选择其中 priority 最高者切换；否则保持当前 Candidate。该机制不按 tcp delay 或 url delay 排序，不要求连续成功多次，不设置最短节点保持时间，也不增加或清零当前 Candidate 故障检测使用的连续失败次数。Current Candidate 已是全部 Candidate 中最高 priority 时不执行 Priority Recovery Scan。
+**REQ-FAILOVER-005** AUTO 在周期开始处理时已经处于 Fallback，则扫描其全部 Candidate。Fallback Node 不参与扫描。
 
-### 10.5 Fallback 持续超时后的恢复性重启
+扫描完成后，只按 available 和 priority 选择：
 
-**REQ-FAILOVER-009** 每个处于 Fallback 的 Routed AUTO 必须先完成本周期 Fallback Recovery。完成后 Current Node 仍为 Fallback Node，且持续处于 Fallback 的时间达到配置的 Fallback Restart Timeout 时，使用当前正式配置重启整个 sing-box。触发条件不要求 Fallback Node unavailable，也不要求全部 Candidate 和 Fallback Node 均 unavailable；即使 Fallback available 而全部 Candidate unavailable，达到超时后也允许重启。
+- 存在 available Candidate：选择 priority 最高者并通过 Clash API 切换；
+- 不存在 available Candidate：保持 Fallback。
 
-**REQ-FAILOVER-010** Fallback 持续超时重启是用于重新建立 DNS、连接和 sing-box 内部运行状态的主动恢复机制。重启成功后按 REQ-RUNTIME-003 重新初始化；如果 Candidate 长时间无法恢复，允许系统在每次重新累计完整 Fallback Restart Timeout 后再次重启。第一版不设置指数退避、重启次数上限、复杂 cooldown 或基于 Fallback 健康状态的附加条件。
+不按 delay 排序，不要求连续成功，也不设置最短节点保持时间。
 
-**REQ-FAILOVER-011** Fallback Recovery 必须先于超时判断。若已达到超时但本周期发现 available Candidate 并成功切换，则清除 Fallback 持续时间，本周期不执行恢复性重启。保持 Fallback 时，不停止 Inbound、不修改 Route，也不切换到已知 unavailable Candidate；一次恢复性重启会清除其他 AUTO 的临时控制状态。
+**REQ-FAILOVER-006** 从 Fallback 成功切换到 Candidate 后：
 
-### 10.6 切换失败
+```text
+Current Node = 选中的 Candidate
+failure count = 0
+Fallback 持续时间 = 0
+Priority Recovery Interval 从切换成功时间重新计算
+```
 
-**REQ-FAILOVER-012** 只有 Clash API 明确确认成功后才修改内存 Current Node 和相关状态。切换失败时：
+下一个控制周期开始检测新的 Current Candidate。
 
-- 故障 Candidate Node 切换到 Fallback Node 失败：记录关键事件并重启 sing-box；
+### 10.6 Candidate Priority Recovery
 
-- Fallback Node 恢复 Candidate Node 失败：保持 Fallback Node，下周期重新检测和尝试；
+**REQ-FAILOVER-007** Current Node 为 Candidate、当前 Candidate 不是全部 Candidate 中 priority 最高者，并且达到 Priority Recovery Interval 时，执行 Priority Recovery。
 
-- Priority Recovery 切换到更高 priority Candidate 失败：保持当前 Candidate，后续到期时重新扫描和尝试；
+只检测 priority 高于 Current Candidate 的 Candidate，不检测当前 Candidate、priority 更低的 Candidate 或 Fallback Node。当前 Candidate 已经是最高 priority Candidate 时不执行。
 
-- MANUAL 的人工切换失败：保持原选择并向页面返回失败；
+**REQ-FAILOVER-008** Priority Recovery 完成后：
 
-- 如果 sing-box 已退出，由同一串行后台控制循环完成重启，不并发执行第二个恢复动作。
+- 存在 available 的更高 priority Candidate：选择 priority 最高者并切换；
+- 不存在：保持 Current Candidate。
+
+检测本身不影响连续失败次数。成功切换后将连续失败次数清零，并从切换成功时间重新计算 Priority Recovery Interval；没有成功切换时，从本次扫描完成时间重新计算该 Interval。
+
+### 10.7 Fallback 超时重启
+
+**REQ-FAILOVER-009** 每个周期先执行 Fallback Recovery。完成后仍在 Fallback，并且：
+
+```text
+Fallback 持续时间 >= Fallback Restart Timeout
+```
+
+则按 REQ-FAILOVER-010 主动重启 sing-box。不额外判断 Fallback 或其他 Node 的健康状态及既往重启次数。
+
+**REQ-FAILOVER-010** Fallback 超时后使用当前正式配置重启 sing-box：
+
+```text
+重启成功
+    ↓
+按 REQ-RUNTIME-003 清空全部运行时状态
+    ↓
+所有 Routed AUTO 回到 Fallback，持续时间从零开始
+    ↓
+本控制周期结束
+```
+
+重启失败时按 REQ-RUNTIME-005 记录错误，下一控制周期由进程守护再次尝试。Candidate 长时间无法恢复时，每次重新累计完整超时时间后可以再次重启。
+
+第一版不设置重启次数上限、指数退避、cooldown、历史统计或其他恢复条件。
+
+### 10.8 切换失败
+
+**REQ-FAILOVER-011** 只有 Clash API 明确返回成功后，才修改 Current Node 和相关状态。切换失败时：
+
+- Current Candidate → Fallback：记录错误并使用当前正式配置重启 sing-box；成功后重置全部状态，失败后由下一周期的进程守护再次尝试；
+- Fallback → Candidate：保持 Fallback 并继续累计持续时间，然后执行本周期的超时判断；
+- Priority Recovery：保持 Current Candidate 和连续失败次数，从本次扫描完成时间重新计算 Priority Recovery Interval。
 
 ---
 
