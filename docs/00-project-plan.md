@@ -3,7 +3,7 @@
 > 文档版本：v1.0
 > 适用范围：ProxyHub 新版本第一版
 > 文档用途：规定需求冻结后，从设计、开发、测试到第一版发布的实施顺序、阶段产出和完成条件。
-> 当前阶段：Requirements v1.0 已冻结，进入核心设计。
+> 当前阶段：Requirements v1.0 已冻结，进入 Architecture 设计。
 
 ---
 
@@ -104,7 +104,9 @@ docs/01-requirements.md
 ```text
 Requirements 冻结
         ↓
-核心设计
+Architecture 设计
+        ↓
+专项核心设计
         ↓
 核心后端开发
         ↓
@@ -117,7 +119,7 @@ Web / API 开发
 部署与发布
 ```
 
-其中：
+Architecture 先确定全局技术和结构基线，随后完成三份专项核心设计：
 
 ```text
 数据模型
@@ -125,7 +127,7 @@ sing-box 集成
 运行控制
 ```
 
-属于核心设计，原则上应在对应核心代码大规模开发前确定。
+上述设计原则上应在对应核心代码大规模开发前确定。
 
 Web UI、内部 API 和部署细节可以在核心后端结构稳定后继续完善。
 
@@ -190,13 +192,14 @@ docs/
 docs/
 ├── 00-project-plan.md
 ├── 01-requirements.md
-├── 02-data-model.md
-├── 03-singbox-design.md
-├── 04-runtime-control.md
-├── 05-web-ui.md
-├── 06-api.md
-├── 07-test-plan.md
-├── 08-deployment.md
+├── 02-architecture.md
+├── 03-data-model.md
+├── 04-singbox-design.md
+├── 05-runtime-control.md
+├── 06-web-ui.md
+├── 07-api.md
+├── 08-test-plan.md
+├── 09-deployment.md
 └── history/
     └── requirements-discussion.md
 ```
@@ -207,13 +210,14 @@ docs/
 |---|---|
 | `00-project-plan.md` | 项目阶段、实施顺序、交付物和完成条件 |
 | `01-requirements.md` | 第一版正式业务需求 |
-| `02-data-model.md` | 数据库实体、字段、关系、约束、事务和持久化边界 |
-| `03-singbox-design.md` | Node / Inbound / Outbound / Route 到 sing-box 的映射，以及 Clash API、配置生成和升级 |
-| `04-runtime-control.md` | 应用运行状态、内存状态、控制循环、运行控制锁、健康检测和 AUTO 控制实现 |
-| `05-web-ui.md` | Desktop / Mobile 页面、信息结构和用户操作流程 |
-| `06-api.md` | Web 前端使用的内部 API |
-| `07-test-plan.md` | 单元测试、集成测试和场景验收 |
-| `08-deployment.md` | Docker Compose 和 Ubuntu venv 部署 |
+| `02-architecture.md` | 技术栈、运行模型、模块边界、依赖方向、目录结构和全局实现约束 |
+| `03-data-model.md` | 数据库实体、字段、关系、约束、事务和持久化边界 |
+| `04-singbox-design.md` | Node / Inbound / Outbound / Route 到 sing-box 的映射，以及 Clash API、配置生成和升级 |
+| `05-runtime-control.md` | 应用运行状态、内存状态、控制循环、运行控制锁、健康检测和 AUTO 控制实现 |
+| `06-web-ui.md` | Desktop / Mobile 页面、信息结构和用户操作流程 |
+| `07-api.md` | Web 前端使用的内部 API |
+| `08-test-plan.md` | 单元测试、集成测试和场景验收 |
+| `09-deployment.md` | Docker Compose 和 Ubuntu venv 部署 |
 | `history/` | 历史讨论和决策记录，不作为开发直接依据 |
 
 ---
@@ -262,15 +266,147 @@ Requirements 冻结后，普通实现问题不再修改需求。
 
 ---
 
-# 5. 第二阶段：数据模型设计
+# 5. 第二阶段：Architecture 设计
 
 产出：
 
 ```text
-docs/02-data-model.md
+docs/02-architecture.md
 ```
 
 ## 5.1 目标
+
+在各专项设计开始前，确定 ProxyHub 第一版共同遵循的技术和结构基线，使数据模型、sing-box 集成、运行控制、Web UI、内部 API、测试和部署使用一致的架构假设。
+
+Architecture 只定义全局结构和跨模块约束，不重复 Requirements 中的业务规则，也不替代后续专项设计。
+
+---
+
+## 5.2 技术栈
+
+明确并记录：
+
+- Python 版本和支持范围；
+- Web 框架及其运行方式；
+- 数据库、数据库访问和迁移方案；
+- Settings 与其他文件的读写方案；
+- 请求和领域数据校验方案；
+- Desktop / Mobile Web 的前端实现方式；
+- 后台控制循环和并发实现方式；
+- 测试框架、代码质量工具和依赖管理方式。
+
+技术选择必须兼容 Requirements 规定的 Ubuntu 20.04+、amd64、Docker Compose 和 Python/venv 部署，并符合单实例、单 Web 进程、单 sing-box 进程和单后台控制循环的边界。
+
+---
+
+## 5.3 运行模型
+
+明确：
+
+- ProxyHub Web、后台控制循环和 sing-box 子进程之间的关系；
+- 应用启动、正常关闭和异常退出的顺序；
+- 同步、线程或异步边界；
+- 运行控制锁所在层级及其统一入口；
+- 数据库连接、事务和内存 Runtime State 的进程内所有权；
+- 单实例保护的实现位置。
+
+本节只确定总体运行方式。Start / Stop / Restart、健康检测和 AUTO 控制的详细流程由 Runtime 设计规定。
+
+---
+
+## 5.4 模块边界和依赖方向
+
+需要说明：
+
+- Web / Internal API、业务用例、核心业务规则和外部设施分别由哪些模块承载；
+- 采用的整体软件架构及选择理由；
+- 每个模块允许包含的职责；
+- 模块之间的依赖方向；
+- CRUD、Subscription Sync、生命周期控制、MANUAL Switch、Node Detection 和 AUTO Control 的应用入口；
+- 数据库事务由谁开启和提交；
+- 外部 HTTP、文件系统、时钟和 sing-box 交互的封装边界；
+- Web 入口不得重复实现核心业务规则；
+- 后台控制代码不得绕过统一业务入口直接修改业务数据。
+
+不为第一版建立通用 Event Bus、任务队列、Plugin、Repository 抽象体系或其他 Requirements 未要求的基础设施。
+
+---
+
+## 5.5 状态和数据所有权
+
+从架构层明确以下数据分别由哪个模块拥有：
+
+```text
+SQLite 持久化业务数据
+settings.json
+secret key
+日志文件
+sing-box binary 和配置文件
+management state
+sing-box process state
+Node Health State
+AUTO Runtime State
+```
+
+字段、关系和具体状态转换仍由对应专项设计规定。
+
+---
+
+## 5.6 项目目录结构
+
+在开始编码前确定顶层目录，包括：
+
+- 应用入口和装配代码；
+- 核心业务、业务用例、外部设施和 Web 入口对应的模块；
+- 数据库模型和迁移；
+- 页面资源；
+- 单元测试、集成测试和验收测试；
+- 部署文件；
+- `data/` 中的持久化数据、生成配置、二进制、临时文件和日志。
+
+目录名称应能直接映射到 Architecture 中定义的模块职责，避免在开发阶段重新划分边界。
+
+---
+
+## 5.7 全局实现约束
+
+明确所有模块共同遵循的最小规则：
+
+- 错误分类、传播和用户提示边界；
+- 日志记录和敏感信息脱敏；
+- 原子文件替换；
+- 输入校验与业务不变量校验的分工；
+- 时间、网络、文件系统和 sing-box 调用的可测试方式；
+- 配置路径和部署差异不得进入 Domain 规则；
+- 不为第一版增加兼容层、通用抽象或多进程能力。
+
+---
+
+## 5.8 完成条件
+
+- 技术栈不存在阻塞后续设计的待定项；
+- 运行和并发模型明确；
+- 模块职责、调用关系和依赖方向明确；
+- 数据、文件和 Runtime State 的所有权明确；
+- 顶层目录结构明确；
+- 数据库、sing-box、文件系统和网络交互边界明确；
+- 测试所需的替换边界明确；
+- Docker Compose 与 Ubuntu venv 使用同一套应用架构；
+- 没有引入 Requirements 明确排除的复杂基础设施。
+
+完成后，后续专项设计必须遵循本文确定的架构基线。Architecture 发生变化时，应先更新本文并评估所有专项设计的影响。
+
+---
+
+# 6. 第三阶段：数据模型设计
+
+产出：
+
+```text
+docs/03-data-model.md
+```
+
+## 6.1 目标
 
 把 Requirements 中需要持久化的数据转换为最小数据库模型。
 
@@ -295,7 +431,7 @@ DIRECT → 系统内置对象
 
 ---
 
-## 5.2 重点设计
+## 6.2 重点设计
 
 需要确定：
 
@@ -347,7 +483,7 @@ Route
 
 ---
 
-## 5.3 事务和级联设计
+## 6.3 事务和级联设计
 
 重点设计统一业务事务：
 
@@ -380,7 +516,7 @@ Route
 
 ---
 
-## 5.4 完成条件
+## 6.4 完成条件
 
 - 每个持久化需求都能够映射到明确字段；
 - 没有无业务用途的数据表；
@@ -397,15 +533,15 @@ Route
 
 ---
 
-# 6. 第三阶段：sing-box 集成设计
+# 7. 第四阶段：sing-box 集成设计
 
 产出：
 
 ```text
-docs/03-singbox-design.md
+docs/04-singbox-design.md
 ```
 
-## 6.1 目标
+## 7.1 目标
 
 定义：
 
@@ -413,7 +549,7 @@ docs/03-singbox-design.md
 
 ---
 
-## 6.2 Node 映射
+## 7.2 Node 映射
 
 为以下协议建立字段矩阵：
 
@@ -445,7 +581,7 @@ Hysteria2
 
 ---
 
-## 6.3 Inbound 映射
+## 7.3 Inbound 映射
 
 定义各类 Inbound 到 sing-box 的转换。
 
@@ -459,7 +595,7 @@ Hysteria2
 
 ---
 
-## 6.4 Outbound 和 Route 映射
+## 7.4 Outbound 和 Route 映射
 
 明确：
 
@@ -486,7 +622,7 @@ Route
 
 ---
 
-## 6.5 Selector
+## 7.5 Selector
 
 明确：
 
@@ -518,7 +654,7 @@ interrupt_exist_connections
 
 ---
 
-## 6.6 Clash API
+## 7.6 Clash API
 
 设计最小 Client，支持：
 
@@ -532,7 +668,7 @@ interrupt_exist_connections
 
 ---
 
-## 6.7 配置生命周期
+## 7.7 配置生命周期
 
 实现模型：
 
@@ -558,7 +694,7 @@ sing-box check
 
 ---
 
-## 6.8 sing-box 二进制管理
+## 7.8 sing-box 二进制管理
 
 明确：
 
@@ -576,7 +712,7 @@ sing-box check
 
 ---
 
-## 6.9 完成条件
+## 7.9 完成条件
 
 - 五种 Node 协议映射明确；
 - Inbound 映射完整；
@@ -592,19 +728,19 @@ sing-box check
 
 ---
 
-# 7. 第四阶段：运行控制设计
+# 8. 第五阶段：运行控制设计
 
 产出：
 
 ```text
-docs/04-runtime-control.md
+docs/05-runtime-control.md
 ```
 
 第一版不设计额外复杂状态机。
 
 ---
 
-## 7.1 目标
+## 8.1 目标
 
 实现 Requirements 已经确定的：
 
@@ -619,7 +755,7 @@ AUTO Runtime State
 
 ---
 
-## 7.2 状态边界
+## 8.2 状态边界
 
 明确三类数据。
 
@@ -664,7 +800,7 @@ sing-box Process State
 
 ---
 
-## 7.3 管理状态和进程状态
+## 8.3 管理状态和进程状态
 
 实现：
 
@@ -687,7 +823,7 @@ not installed
 
 ---
 
-## 7.4 运行控制锁
+## 8.4 运行控制锁
 
 系统只使用一把进程内运行控制锁。
 
@@ -715,7 +851,7 @@ Settings 保存
 
 ---
 
-## 7.5 后台控制循环
+## 8.5 后台控制循环
 
 实现固定流程：
 
@@ -739,7 +875,7 @@ AUTO 控制
 
 ---
 
-## 7.6 Node 健康检测
+## 8.6 Node 健康检测
 
 统一 Node 检测实现：
 
@@ -767,7 +903,7 @@ URL Delay
 
 ---
 
-## 7.7 AUTO 控制
+## 8.7 AUTO 控制
 
 不额外建立状态枚举。
 
@@ -798,7 +934,7 @@ Current == Candidate
 
 ---
 
-## 7.8 完成条件
+## 8.8 完成条件
 
 - 任意运行数据属于 DB / Settings / Memory 中哪一类都明确；
 - Start / Stop / Restart 顺序明确；
@@ -814,9 +950,9 @@ Current == Candidate
 
 ---
 
-# 8. 第五阶段：核心后端开发
+# 9. 第六阶段：核心后端开发
 
-完成前三份核心设计后，可以正式进入核心后端实现。
+完成 Architecture 和三份专项核心设计后，可以正式进入核心后端实现。
 
 不需要等待 Web UI、API 和 Deployment 文档全部完成。
 
@@ -824,11 +960,11 @@ Current == Candidate
 
 ---
 
-## 8.1 第一批：应用基础和 Settings
+## 9.1 第一批：应用基础和 Settings
 
 实现：
 
-- 项目目录结构；
+- 按 Architecture 建立项目目录和模块骨架；
 - 配置路径；
 - data 目录；
 - Settings 默认值；
@@ -843,7 +979,7 @@ Current == Candidate
 
 ---
 
-## 8.2 第二批：数据库与基础业务模型
+## 9.2 第二批：数据库与基础业务模型
 
 实现：
 
@@ -870,7 +1006,7 @@ Route
 
 ---
 
-## 8.3 第三批：Subscription 和 Node
+## 9.3 第三批：Subscription 和 Node
 
 实现：
 
@@ -897,7 +1033,7 @@ Route
 
 ---
 
-## 8.4 第四批：sing-box Config Builder
+## 9.4 第四批：sing-box Config Builder
 
 实现：
 
@@ -919,7 +1055,7 @@ Route
 
 ---
 
-## 8.5 第五批：sing-box 生命周期
+## 9.5 第五批：sing-box 生命周期
 
 实现：
 
@@ -941,7 +1077,7 @@ Route
 
 ---
 
-## 8.6 第六批：Node Health
+## 9.6 第六批：Node Health
 
 实现：
 
@@ -957,7 +1093,7 @@ Route
 
 ---
 
-## 8.7 第七批：AUTO 控制
+## 9.7 第七批：AUTO 控制
 
 实现：
 
@@ -975,18 +1111,18 @@ Route
 
 ---
 
-# 9. 第六阶段：Web UI 与内部 API 设计
+# 10. 第七阶段：Web UI 与内部 API 设计
 
 核心后端结构基本稳定后，完成：
 
 ```text
-docs/05-web-ui.md
-docs/06-api.md
+docs/06-web-ui.md
+docs/07-api.md
 ```
 
 ---
 
-## 9.1 UI 设计原则
+## 10.1 UI 设计原则
 
 页面直接围绕 Requirements 中已有对象和操作设计。
 
@@ -1010,7 +1146,7 @@ sing-box Management
 
 ---
 
-## 9.2 stopped / running 页面状态
+## 10.2 stopped / running 页面状态
 
 页面必须根据管理状态明确表现：
 
@@ -1045,7 +1181,7 @@ hidden
 
 ---
 
-## 9.3 内部 API
+## 10.3 内部 API
 
 API 只服务 ProxyHub 自己的 Web 前端。
 
@@ -1084,9 +1220,9 @@ API 应清晰表达：
 
 ---
 
-# 10. 第七阶段：Web 开发
+# 11. 第八阶段：Web 开发
 
-## 10.1 后端 API
+## 11.1 后端 API
 
 先实现：
 
@@ -1102,7 +1238,7 @@ API 应清晰表达：
 
 ---
 
-## 10.2 Desktop
+## 11.2 Desktop
 
 完成完整配置管理页面。
 
@@ -1122,7 +1258,7 @@ API 应清晰表达：
 
 ---
 
-## 10.3 Mobile
+## 11.3 Mobile
 
 只实现：
 
@@ -1137,12 +1273,12 @@ API 应清晰表达：
 
 ---
 
-# 11. 第八阶段：测试与验收
+# 12. 第九阶段：测试与验收
 
 产出：
 
 ```text
-docs/07-test-plan.md
+docs/08-test-plan.md
 ```
 
 测试从开发开始同步建立，本阶段主要进行完整集成和场景验收。
@@ -1151,7 +1287,7 @@ docs/07-test-plan.md
 
 ---
 
-## 11.1 单元测试
+## 12.1 单元测试
 
 重点：
 
@@ -1168,7 +1304,7 @@ docs/07-test-plan.md
 
 ---
 
-## 11.2 集成测试
+## 12.2 集成测试
 
 重点：
 
@@ -1185,7 +1321,7 @@ docs/07-test-plan.md
 
 ---
 
-## 11.3 必测场景
+## 12.3 必测场景
 
 ### 首次安装
 
@@ -1357,17 +1493,17 @@ management_state = running
 
 ---
 
-# 12. 第九阶段：部署和发布
+# 13. 第十阶段：部署和发布
 
 产出：
 
 ```text
-docs/08-deployment.md
+docs/09-deployment.md
 ```
 
 ---
 
-## 12.1 Docker Compose
+## 13.1 Docker Compose
 
 验证：
 
@@ -1381,7 +1517,7 @@ docs/08-deployment.md
 
 ---
 
-## 12.2 Ubuntu Python / venv
+## 13.2 Ubuntu Python / venv
 
 验证：
 
@@ -1403,7 +1539,7 @@ Python / venv
 
 ---
 
-# 13. 开发批次总览
+# 14. 开发批次总览
 
 推荐最终开发顺序：
 
@@ -1450,7 +1586,7 @@ Python / venv
 
 ---
 
-# 14. AI / Codex 使用原则
+# 15. AI / Codex 使用原则
 
 Codex 主要负责：
 
@@ -1460,7 +1596,7 @@ Codex 主要负责：
 
 ---
 
-## 14.1 单次任务尽量小
+## 15.1 单次任务尽量小
 
 推荐：
 
@@ -1470,7 +1606,8 @@ Codex 主要负责：
 
 依据：
 - docs/01-requirements.md
-- docs/02-data-model.md
+- docs/02-architecture.md
+- docs/03-data-model.md
 
 范围：
 - subscription service
@@ -1496,12 +1633,14 @@ Codex 主要负责：
 
 ---
 
-## 14.2 AI 必须遵循文档优先级
+## 15.2 AI 必须遵循文档优先级
 
 优先级：
 
 ```text
 01-requirements.md
+        ↓
+02-architecture.md
         ↓
 对应设计文档
         ↓
@@ -1516,7 +1655,7 @@ Codex 主要负责：
 
 ---
 
-## 14.3 发现设计问题时停止扩展
+## 15.3 发现设计问题时停止扩展
 
 出现以下情况时，不应由 AI 自行发挥：
 
@@ -1531,7 +1670,7 @@ Codex 主要负责：
 
 ---
 
-# 15. Commit 和 Review
+# 16. Commit 和 Review
 
 提交应围绕单一功能。
 
@@ -1569,11 +1708,12 @@ feat: implement proxyhub
 
 ---
 
-# 16. 第一版完成标准
+# 17. 第一版完成标准
 
 ProxyHub v1 只有同时满足以下条件才视为完成：
 
 - Requirements v1.0 已全部实现；
+- Architecture 与实际代码结构一致；
 - 数据模型稳定；
 - Subscription / Node 完整可用；
 - 删除和同步级联事务正确；
@@ -1599,7 +1739,7 @@ ProxyHub v1 只有同时满足以下条件才视为完成：
 
 ---
 
-# 17. 后续需求变更
+# 18. 后续需求变更
 
 Requirements v1.0 冻结后，新需求不直接进入代码。
 
@@ -1615,6 +1755,7 @@ Requirements v1.0 冻结后，新需求不直接进入代码。
 修改 Requirements
     ↓
 评估影响：
+Architecture
 Data Model
 sing-box Design
 Runtime
@@ -1641,20 +1782,22 @@ Tests
 
 ---
 
-# 18. 当前项目下一步
+# 19. 当前项目下一步
 
 当前执行顺序建议为：
 
 ```text
-1. 编写 docs/02-data-model.md
+1. 编写并评审 docs/02-architecture.md
 
-2. 编写 docs/03-singbox-design.md
+2. 编写 docs/03-data-model.md
 
-3. 编写 docs/04-runtime-control.md
+3. 编写 docs/04-singbox-design.md
 
-4. Review 三份核心设计
+4. 编写 docs/05-runtime-control.md
 
-5. 开始核心后端开发：
+5. Review 三份专项核心设计及其与 Architecture 的一致性
+
+6. 开始核心后端开发：
    Settings
    → Database
    → Subscription / Node
@@ -1664,22 +1807,18 @@ Tests
    → Health
    → AUTO
 
-6. 核心后端接口稳定后：
-   编写 docs/05-web-ui.md
-   编写 docs/06-api.md
+7. 核心后端接口稳定后：
+   编写 docs/06-web-ui.md
+   编写 docs/07-api.md
 
-7. 开发 Desktop / Mobile Web
+8. 开发 Desktop / Mobile Web
 
-8. 完善 docs/07-test-plan.md
+9. 完善 docs/08-test-plan.md
    明确验收标准并执行完整集成与场景验收
 
-9. 完成 docs/08-deployment.md
+10. 完成 docs/09-deployment.md
 
-10. Docker / Ubuntu 实机验收
+11. Docker / Ubuntu 实机验收
 
-11. 发布 ProxyHub v1
+12. 发布 ProxyHub v1
 ```
-
-目前最直接的下一项工作是：
-
-> **编写并评审 `docs/02-data-model.md`。**
