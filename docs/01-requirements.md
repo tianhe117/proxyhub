@@ -4,7 +4,7 @@
 
 > 文档状态：待评审
 
-> 更新日期：2026-08-28
+> 更新日期：2026-09-03
 
 > 适用范围：ProxyHub 新版本第一版
 
@@ -66,7 +66,7 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 - **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
 
-- **Node Pool**：一个 MANUAL 或 AUTO 包含的 Node 集合；每个 Node 在该 Pool 中具有连续、唯一的 priority。
+- **Node Pool**：一个 MANUAL 或 AUTO 包含的有序 Node 集合；每个 Node 在该 Pool 中具有连续、唯一的 `1...N` priority。
 
 - **Candidate Node**：AUTO 的 Node Pool 中除 Fallback Node 外的 Node。Candidate 直接使用其在完整 Node Pool 中的 priority 参与自动择优和 Priority Recovery，不单独重新编号。
 
@@ -266,147 +266,48 @@ Subscription 新增、修改、删除和同步订阅节点在 running 时均禁�
 
 ### 4.3 保存校验
 
-**REQ-NODE-006** Node 只有在必填字段、端口范围、协议字段和 sing-box 配置映射通过校验后才能保存或导入。所有已保存的全局 Node 都必须能够生成 sing-box 出站配置片段。
+**REQ-NODE-006** Node 只有在必填字段、端口范围、协议字段组合和 sing-box 配置映射通过校验后才能保存或导入。所有已保存的全局 Node 都必须能够由应用映射器生成字段结构完整的 sing-box Remote Outbound 配置片段。Node 保存阶段不组装完整配置，也不单独调用 `sing-box check`；对象间引用、tag、Route、监听冲突和当前 sing-box 版本兼容性统一在生成完整配置并启动时校验。
 
-**REQ-NODE-007** 节点凭据、完整订阅 URL、UUID、密码和密钥不得写入日志或不必要地显示在差异预览中。
-
----
-
-## 5. 订阅管理
-
-### 5.1 添加与请求
-
-**REQ-SUB-001** 系统允许维护多个订阅。同步订阅节点只在用户从页面明确发起时执行，不执行后台定时同步。
-
-**REQ-SUB-002** 第一版订阅 URL 只接受具有正常有效证书的 HTTPS 地址，不支持 HTTP、局域网订阅地址、自签名证书或忽略证书校验。
-
-**REQ-SUB-003** 订阅请求使用程序内置、固定的 Clash 兼容 User-Agent 和请求头，不允许为单个订阅配置自定义请求头。
-
-**REQ-SUB-004** 系统可以读取并显示 Subscription 提供的流量使用情况、到期时间等订阅信息。用户可以在管理状态为 running 或 stopped 时刷新订阅信息；该操作只更新 Subscription 信息，不同步、增加、修改或删除任何 Node。
-
-Subscription 新增、修改、删除和同步订阅节点的运行状态限制统一由 REQ-CONFIG-001 规定，本章不重复定义。
-
-### 5.2 Filter 与 Exclude
-
-**REQ-SUB-005** Filter/Exclude 只匹配 Node 的 `name`：
-
-- 忽略大小写；
-
-- 关键词使用逗号或换行分隔，并去除关键词自身首尾空白及空项；
-
-- 多个 Filter 关键词为 OR；Filter 为空表示不过滤；
-
-- 多个 Exclude 关键词为 OR；
-
-- 同时命中时 Exclude 优先；
-
-- 不支持正则表达式、自动地区分组或复杂筛选规则。
-
-### 5.3 解析、匹配与跳过
-
-**REQ-SUB-006** 同步订阅节点时，无效节点和不支持协议节点全部跳过。预览需要显示跳过数量、可安全显示的节点标识和原因。只要过滤后至少剩一个合法节点，就允许进入差异确认。
-
-**REQ-SUB-007** 如果请求失败、订阅整体格式无法识别、没有任何合法节点，或经过 Filter/Exclude 后结果为空，本次同步失败，不产生可确认结果，原数据不变。
-
-**REQ-SUB-008** 同步同一订阅的节点时，只使用 parser 产出的 `name` 完整内容作为节点身份匹配键。匹配区分大小写，不自动修剪、改写或进行 Unicode 归一化：
-
-- 完全相同视为同一 Node；
-
-- name 相同而其他字段变化视为修改；
-
-- name 变化视为删除旧 Node 并新增新 Node；
-
-- 不同订阅允许存在相同 name；
-
-- 同一订阅出现完全相同的重复 name 时，由于身份不明确，本次同步整体失败。
-
-### 5.4 差异确认与事务
-
-**REQ-SUB-009** 同步请求成功解析后，页面显示新增、修改、删除和跳过节点的数量及明细；用户确认前不得修改数据库。用户只能确认或取消整个差异结果，不提供逐条选择导入或删除的能力。
-
-**REQ-SUB-010** 差异预览必须同时显示 Node 删除引起的 MANUAL 的 Current Node 或 AUTO 的 Fallback Node 自动替换、被删除的 MANUAL/AUTO 和被删除的 Route。用户确认后在一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部相关变更；用户取消时任何数据都不改变。
-
-**REQ-SUB-011** 被跳过的节点不进入新订阅结果。因此它可能使原有同名 Node 出现在删除预览中；最终是否导入及执行自动替换、级联删除由用户查看完整预览后确认。
-
-**REQ-SUB-012** 订阅 Node 为只读，不能人工修改协议参数；其内容只能通过同步订阅节点更新。自建 Node 与订阅 Node 在页面中必须显示不同来源。
-
-**REQ-SUB-013** 明确删除订阅时，先展示其全部 Node 及 Current/Fallback 自动替换、MANUAL/AUTO 删除和 Route 删除等完整级联影响，用户确认后使用与同步订阅节点删除相同的规则和事务边界处理。
+**REQ-NODE-007** 凭据、UUID、密码、密钥、分享 URI、完整 Subscription URL 和包含上述内容的原始 parser 输入不得写入日志，也不得在 Subscription 同步或删除的差异预览中显示原文。差异预览只展示确认业务变化所需的 Node name、来源、协议类型、变化类型、脱敏后的字段类别和失败原因；底层 HTTP、parser 或 sing-box 错误在记录和展示前必须移除上述敏感内容。
 
 ---
 
-## 6. Inbound、Outbound 与 Route
+## 5. 配置修改与生效
 
-### 6.1 Inbound
+### 5.1 结构配置修改限制
 
-**REQ-INBOUND-001** 系统允许创建任意数量的 Inbound，支持 HTTP、SOCKS、Mixed、Shadowsocks 和 VMess。
+**REQ-CONFIG-001** 系统将以下操作统一定义为结构配置写操作；除本文明确规定的在线操作外，结构配置写操作只允许在管理状态为 `stopped` 时执行：
 
-**REQ-INBOUND-002** 每个 Inbound 独立定义名称、监听协议、监听地址、监听端口和该协议所需的认证参数。Mixed 在同一端口兼容 HTTP 和 SOCKS。
+- Subscription 新增、修改、删除和同步订阅节点；
+- Node、Inbound 和 Route 的新增、修改和删除；
+- MANUAL/AUTO 的新增和删除，以及名称、type、Node Pool、priority、AUTO Fallback Node 和通过结构编辑修改 MANUAL Current Node；
+- 其他会改变下一次生成的 sing-box 完整配置结构、对象定义或初始选择的业务数据修改。
 
-### 6.2 Outbound 通用约束
+管理状态为 `running` 时统一禁止上述操作。即使 sing-box 实际进程已经退出或恢复失败，只要管理状态仍为 `running`，限制继续有效，用户必须先执行 Stop。DIRECT 始终为只读系统对象，不允许修改。
 
-**REQ-OUTBOUND-001** 每个 MANUAL/AUTO 独立定义名称，由用户创建并保存于数据库，其 Node Pool 由全局 Node 组成。
+**REQ-CONFIG-002** 管理状态为 `running` 时允许执行以下非结构配置操作：
 
-**REQ-OUTBOUND-002** 每个 MANUAL 和 AUTO 必须始终至少包含两个不同 Node。Node 是全局对象，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。用户正常创建或编辑 Node Pool 时，少于两个 Node 不允许保存；全局 Node 删除、Subscription 删除或同步订阅节点造成不足两个 Node 时，按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览及级联删除。
+- 查看状态和日志；
+- 刷新 Subscription 的流量、有效期等信息；
+- 按 REQ-HEALTH-006 人工批量检测 Node；
+- 按 REQ-OUTBOUND-007 在线切换 MANUAL Current Node；
+- 修改 12.2 明确支持在线生效的 Settings；
+- Stop；
+- Restart。
 
-**REQ-OUTBOUND-003** MANUAL/AUTO 的 Node Pool 中，每个 Node 都必须具有连续、唯一的 1 至 N priority，数值越小、优先级越高。页面按 priority 数值升序显示，`priority = 1` 的 Node 显示在最前；priority 的运行用途由 Outbound type 决定。
+上述“允许”表示操作不受结构配置冻结规则禁止；人工检测仍要求 sing-box 实际进程正在运行，MANUAL Current Node 在线切换仍要求目标 MANUAL 已写入当前配置、sing-box 实际进程正在运行且 Clash API 可用。Subscription 信息刷新只更新展示所需的 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node，因此不属于结构配置写操作。
 
-**REQ-OUTBOUND-004** 新建 MANUAL/AUTO 时，前端必须提交确定的 Node 顺序：逐个选择 Node 时按选择先后排序；一次同时选择多个 Node 时按 Node name 排序，name 相同时按 Node 的稳定标识排序。后端按前端提交顺序生成 priority。后续调整顺序时，保存后重新整理为连续、唯一的 1 至 N priority；修改 priority 不改变 MANUAL 的 Current Node 或 AUTO 的 Fallback Node。
+### 5.2 修改与生效
 
-**REQ-OUTBOUND-005** MANUAL 的 Current Node 和 AUTO 的 Fallback Node 必须属于各自 Node Pool。正常编辑 Node Pool 时，如果移除 MANUAL 的 Current Node 或 AUTO 的 Fallback Node，但仍保留至少两个 Node，则以保存后 priority 最高的 Node 自动替代。Current Node 发生运行时切换时，必须中断仍绑定旧节点的已有入站连接，使后续重连使用新的 Current Node；具体 sing-box 配置映射由模块设计规定。
+**REQ-CONFIG-003** 在 `stopped` 状态进行结构配置写操作时，只更新数据库，不生成、检查或替换 sing-box 配置，也不自动启动 sing-box。结构配置在下一次从最新数据库成功生成完整配置并实际启动 sing-box 时生效；该生成可能由人工 Start、Restart、ProxyHub 自身启动时的自动启动或运行期间的进程守护恢复触发。
 
-### 6.3 MANUAL/AUTO
+MANUAL Current Node 在线切换是明确例外：它先修改正在运行的 sing-box selector，仅在 Clash API 明确确认成功后持久化新选择，并在以后生成完整配置时作为 MANUAL 的初始 Current Node。Settings、Subscription 信息刷新和 Node 检测分别按各自章节规定写入 Settings 文件、Subscription 元信息或运行时展示状态，不适用“结构配置只写数据库”的规则。
 
-**REQ-OUTBOUND-006** 用户新建的 Outbound type 只能是 `manual` 或 `auto`，默认为 `manual`。只有管理状态为 stopped 时才能在 MANUAL 与 AUTO 之间修改 type；修改 type 只改变运行策略，不增加、删除或重新排序 Node。DIRECT 不可转换为 MANUAL/AUTO，MANUAL/AUTO 也不可转换为 DIRECT。
+系统不提供独立 Apply 按钮，不建立 Pending Config、待生效状态或配置版本状态机。
 
-**REQ-OUTBOUND-007** MANUAL 不执行自动故障切换。priority 只用于页面展示和配置中的 Node 顺序；新建 MANUAL 时不要求用户指定 Current Node，保存后 `priority = 1` 的 Node 自动成为初始持久化 Current Node。MANUAL 被 Route 引用并已写入当前 sing-box 配置时，用户可以在管理状态为 running 且 sing-box 实际进程正在运行时人工切换 Current Node，只有 Clash API 明确确认成功后才持久化新选择；切换失败时保留原选择并在页面提示失败。人工切换不改变 priority。
+### 5.3 配置生成
 
-**REQ-OUTBOUND-008** 新建 AUTO 时不要求用户指定 Fallback Node，保存后 `priority = 1` 的 Node 自动成为 Fallback Node；用户后续可以在管理状态为 stopped 时手动修改。除 Fallback Node 外的其他 Node 全部是 Candidate Node。Fallback Node 的 priority 只用于页面展示和配置顺序，不参与 Candidate 自动择优；Candidate 按 priority 执行自动选择和 Candidate Priority Recovery。
-
-**REQ-OUTBOUND-009** AUTO 的运行时 Current Node 完全由后台控制循环管理，不持久化，用户不能临时人工切换或锁定。只有被 Route 引用的 AUTO 才执行 AUTO 控制；每次 sing-box 实际启动或重启成功后，其 Current Node 从 Fallback Node 初始化。
-
-**REQ-OUTBOUND-010** 将 type 从 `manual` 改为 `auto` 时，原持久化 Current Node 直接作为 Fallback Node；将 type 从 `auto` 改为 `manual` 时，原 Fallback Node 直接作为持久化 Current Node，修改前 AUTO 的运行时 Current Node 不保留。修改 type 时保留原 Node Pool 和全部 priority，不要求用户重新选择 Node 或排序，并清除该 MANUAL/AUTO 的临时控制状态。
-
-### 6.4 Route
-
-**REQ-ROUTE-001** Route 只表达一个 Inbound 的流量目标，不提供规则分流或额外“服务”业务层。每条 Route 必须引用一个 Inbound 和一个 Outbound；目标 Outbound 可以是系统内置 DIRECT，也可以是数据库中现存的 MANUAL 或 AUTO。不得以目标缺失、空引用或无效引用表示 DIRECT。
-
-**REQ-ROUTE-002** 一个 Inbound 最多被一条 Route 引用；一个 Outbound 可以被零条、一条或多条 Route 引用。多条 Route 引用同一个 MANUAL/AUTO 时，共享其 Node Pool、Current Node 和运行状态；任意数量的 Route 可以选择系统内置 DIRECT。
-
-**REQ-ROUTE-003** 前端和内部 API 使用稳定的系统标识表示 DIRECT；创建或修改 Route 时，该标识可以作为合法的 Outbound 引用。
-
-**REQ-ROUTE-004** 未被 Route 引用的 Inbound 和 MANUAL/AUTO 只保存于数据库，不生成其对应的 Inbound 或 MANUAL/AUTO 运行时配置；被 Route 引用的对象才生成对应配置。Route 选择 DIRECT 时，相关 Inbound 和系统内置 DIRECT 正常写入配置并对外监听，流量直接访问目标地址。DIRECT 的具体 sing-box 配置映射由模块设计规定。
-
-**REQ-ROUTE-005** 删除 Inbound、MANUAL 或 AUTO 时，一并删除引用它的 Route。删除 MANUAL/AUTO 不得把原 Route 自动或静默改为 DIRECT；DIRECT 不可删除。
-
-**REQ-ROUTE-006** 删除一个或多个 Node 时，以本次操作全部 Node 删除完成后的剩余 Node Pool 为准，对所有受影响的 MANUAL/AUTO 按以下规则处理：
-
-- MANUAL/AUTO 剩余至少两个 Node：保留其余 Node 的相对顺序，重新整理为连续、唯一的 1 至 N priority；
-
-- MANUAL 的持久化 Current Node 被删除时，以剩余 Node 中 priority 最高者作为新的持久化 Current Node；
-
-- AUTO 的 Fallback Node 被删除时，以剩余 Node 中 priority 最高者作为新的 Fallback Node；
-
-- MANUAL/AUTO 剩余不足两个 Node：删除该 MANUAL/AUTO，并继续删除引用它的全部 Route。
-
-**REQ-ROUTE-007** 人工删除一个或多个 Node、删除 Subscription，以及同步订阅节点删除 Node，都使用相同的级联规则。执行前必须向用户展示完整影响，包括 Current/Fallback Node 的自动替换、MANUAL/AUTO 删除和 Route 删除；用户确认后，在同一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部变更。
-
-**REQ-ROUTE-008** 正常编辑 MANUAL/AUTO 的 Node Pool 时，用户必须保持至少两个 Node；如果移除 Current/Fallback Node 但仍满足最少节点数，则按 REQ-OUTBOUND-005 自动替换。由全局 Node 删除、Subscription 删除或同步订阅节点造成的 Node Pool 缩减不按普通编辑拒绝保存，而按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览、替换和级联删除。
-
----
-
-## 7. 配置编辑与 sing-box 配置生命周期
-
-### 7.1 运行期间允许的修改
-
-**REQ-CONFIG-001** 管理状态为 running 时，禁止新增、修改、删除 Subscription 或同步订阅节点，禁止新增、修改或删除 Node、Inbound 和 Route，禁止新增或删除 MANUAL/AUTO，以及修改 MANUAL/AUTO 的名称、type、Node Pool、priority、AUTO 的 Fallback Node 或通过结构编辑修改 MANUAL 的 Current Node 等会改变 sing-box 完整配置的业务数据。即使实际进程已退出或恢复失败，只要管理状态仍为 running，上述限制继续有效；用户必须先执行 Stop 才能修改。DIRECT 始终只读，不受运行状态影响。
-
-**REQ-CONFIG-002** 管理状态为 running 时允许：查看状态和日志、刷新 Subscription 的流量使用情况和到期时间等信息、按 REQ-HEALTH-006 人工批量检测 Node、人工切换 MANUAL 的 Current Node、修改允许在线生效的 Settings，以及执行 Stop 或 Restart。
-
-**REQ-CONFIG-003** MANUAL/AUTO 的 Node priority 属于结构配置，只允许在管理状态为 stopped 时调整，保存后不自动启动 sing-box，也不改变 MANUAL 的持久化 Current Node 或 AUTO 的 Fallback Node。下次 Start 使用新的 priority；AUTO 启动后先以 Fallback Node 作为 Current Node，下一控制周期再按新 priority 执行 Fallback Recovery。Current Candidate 已经是最高 priority Candidate 时不执行 Priority Recovery。
-
-### 7.2 配置生成
-
-**REQ-CONFIG-004** 系统不提供独立“应用配置”按钮。Start 自动执行：
+**REQ-CONFIG-004** 每次需要实际启动 sing-box 时，统一执行以下完整配置生成流程：
 
 ```text
 
@@ -416,9 +317,9 @@ Subscription 新增、修改、删除和同步订阅节点的运行状态限制�
 
 → 执行 sing-box check
 
-→ 成功：替换正式配置，启动 sing-box 并确认进程正在运行
+→ 成功：替换正式配置，启动 sing-box 并确认进程正在运行，再按本次启动来源更新管理状态
 
-→ 失败：保持 stopped，数据库不回滚
+→ 失败：数据库不回滚；管理状态按本次启动来源的运行状态规则处理
 
 ```
 
@@ -441,6 +342,120 @@ MANUAL/AUTO、DIRECT、Node 和 Route 到 sing-box 配置对象、tag 及字段�
 **REQ-CONFIG-006** 系统保留上一份可用正式配置供人工排错，但新配置检查失败后不自动恢复或启动旧配置。
 
 **REQ-CONFIG-007** 对会写入配置的 Inbound 执行基本监听地址和端口冲突校验，包括 Inbound 之间以及与 ProxyHub Web、Clash API 的明显冲突。不执行通用操作系统端口扫描。
+
+---
+
+## 6. Subscription 管理
+
+### 6.1 添加、修改与请求
+
+**REQ-SUB-001** 系统允许维护多个 Subscription。同步订阅节点只在用户从页面明确发起时执行，不执行后台定时同步。新建 Subscription 后允许暂时不包含任何 Node，直到用户首次明确执行同步订阅节点。
+
+修改 Subscription URL、Filter 或 Exclude 只更新 Subscription 自身配置，不请求或解析订阅，也不增加、修改或删除已有 Node。新的 URL、Filter 和 Exclude 只在下一次用户明确执行同步订阅节点时用于 Node 同步；修改 Subscription 不等于自动同步 Node。
+
+**REQ-SUB-002** 第一版 Subscription URL 只接受具有正常有效证书的 HTTPS 地址，不支持 HTTP、局域网订阅地址、自签名证书或忽略证书校验。
+
+**REQ-SUB-003** Subscription 请求使用程序内置、固定的 Clash 兼容 User-Agent 和请求头，不允许为单个 Subscription 配置自定义请求头。
+
+**REQ-SUB-004** 系统可以读取并显示 Subscription 提供的已使用流量、总流量、到期时间等元信息。用户可以在管理状态为 `running` 或 `stopped` 时刷新 Subscription 信息；刷新使用当时保存的 Subscription URL，只更新 Subscription 元信息，不执行 Node parser，也不同步、增加、修改或删除任何 Node。
+
+Subscription 新增、修改、删除和同步订阅节点的运行状态限制统一由 REQ-CONFIG-001 规定，本章不重复定义。
+
+### 6.2 Filter 与 Exclude
+
+**REQ-SUB-005** Filter/Exclude 只匹配 Node 的 `name`：
+
+- 忽略大小写；
+- 关键词使用逗号或换行分隔，并去除关键词自身首尾空白及空项；
+- 多个 Filter 关键词为 OR；Filter 为空表示不过滤；
+- 多个 Exclude 关键词为 OR；
+- 同时命中时 Exclude 优先；
+- 不支持正则表达式、自动地区分组或复杂筛选规则。
+
+### 6.3 解析、匹配与跳过
+
+**REQ-SUB-006** 同步订阅节点时依次执行 Subscription 请求、parser、Filter/Exclude、Node 校验和差异计算。无效节点和不支持协议节点全部跳过；预览需要显示跳过数量、可安全显示的节点标识和脱敏原因。只要过滤后至少剩一个合法节点，就允许进入差异确认。
+
+**REQ-SUB-007** 如果请求失败、订阅整体格式无法识别、没有任何合法节点，或经过 Filter/Exclude 后结果为空，本次同步失败，不产生可确认结果，原数据不变。
+
+**REQ-SUB-008** 同步同一 Subscription 的 Node 时，以“Subscription + parser 产出的 `name` 完整内容”作为 Node 身份判断基础。`name` 匹配区分大小写，不自动修剪、改写或进行 Unicode 归一化：
+
+- name 完全相同视为同一 Node；
+- name 相同而其他字段变化视为修改；
+- name 变化视为删除旧 Node 并新增新 Node；
+- 不同 Subscription 允许存在相同 name；
+- 同一 Subscription 出现完全相同的重复 name 时，由于身份不明确，本次同步整体失败。
+
+系统不根据地址、端口、UUID 或其他协议字段猜测两个不同 name 的 Node 是否只是被重命名。
+
+### 6.4 差异确认与事务
+
+**REQ-SUB-009** 同步请求成功解析后，页面显示新增、修改、删除和跳过 Node 的数量及脱敏明细；用户确认前不得修改数据库。用户只能确认或取消整个差异结果，不提供逐条选择导入或删除的能力。
+
+**REQ-SUB-010** 差异预览必须同时显示 Node 删除引起的 MANUAL Current Node 或 AUTO Fallback Node 自动替换、被删除的 MANUAL/AUTO 和被删除的 Route。用户确认提交时，后端必须取得运行控制锁，再次确认管理状态为 `stopped`，并确认预览所依据的相关数据没有变化；状态或数据已经变化时拒绝提交并要求重新生成预览。校验通过后，在一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部相关变更；用户取消时任何数据都不改变。
+
+**REQ-SUB-011** 被跳过的 Node 不进入新订阅结果。因此它可能使原有同名 Node 出现在删除预览中；最终是否导入及执行自动替换、级联删除由用户查看完整预览后确认。
+
+**REQ-SUB-012** Subscription Node 为只读，不能人工修改协议参数；其内容只能通过同步订阅节点更新。自建 Node 与 Subscription Node 在页面中必须显示不同来源。
+
+**REQ-SUB-013** 明确删除 Subscription 时，先展示其全部 Node 及 Current/Fallback 自动替换、MANUAL/AUTO 删除和 Route 删除等完整级联影响，用户确认时执行与 REQ-SUB-010 相同的状态复核、数据变化校验和事务处理。
+
+---
+
+## 7. Inbound、Outbound 与 Route
+
+### 7.1 Inbound
+
+**REQ-INBOUND-001** 系统允许创建任意数量的 Inbound，支持 HTTP、SOCKS、Mixed、Shadowsocks 和 VMess。
+
+**REQ-INBOUND-002** 每个 Inbound 独立定义名称、监听协议、监听地址、监听端口和该协议所需的认证参数。Mixed 在同一端口兼容 HTTP 和 SOCKS。
+
+### 7.2 Outbound 通用约束
+
+**REQ-OUTBOUND-001** 每个 MANUAL/AUTO 独立定义名称，由用户创建并保存于数据库，其 Node Pool 由全局 Node 组成。
+
+**REQ-OUTBOUND-002** 每个 MANUAL 和 AUTO 必须始终至少包含两个不同 Node。Node 是全局对象，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。用户正常创建或编辑 Node Pool 时，少于两个 Node 不允许保存；全局 Node 删除、Subscription 删除或同步订阅节点造成不足两个 Node 时，按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览及级联删除。
+
+**REQ-OUTBOUND-003** MANUAL/AUTO 的 Node Pool 是有序 Node 集合；每个 Node 都必须具有连续、唯一的 `1...N` priority，数值越小、优先级越高。页面按 priority 数值升序显示，`priority = 1` 的 Node 显示在最前；priority 的运行用途由 Outbound type 决定。
+
+**REQ-OUTBOUND-004** 新建 MANUAL/AUTO 时，前端必须提交确定的 Node 顺序：逐个选择 Node 时按选择先后排序；一次同时选择多个 Node 时按 Node name 排序，name 相同时按 Node 的稳定标识排序。后端按前端提交顺序生成 priority。后续调整顺序时，保存后重新整理为连续、唯一的 `1...N` priority；修改 priority 不改变 MANUAL 的持久化 Current Node 或 AUTO 的 Fallback Node，也不自动启动 sing-box。下次启动使用新的 priority；AUTO 启动后先以 Fallback Node 作为 Current Node，下一控制周期再按新 priority 执行 Fallback Recovery。Current Candidate 已经是最高 priority Candidate 时不执行 Priority Recovery。
+
+**REQ-OUTBOUND-005** MANUAL 的 Current Node 和 AUTO 的 Fallback Node 必须属于各自 Node Pool。正常编辑 Node Pool 时，如果移除 MANUAL 的 Current Node 或 AUTO 的 Fallback Node，但仍保留至少两个 Node，则以保存后 priority 最高的 Node 自动替代。Current Node 发生运行时切换时，必须中断仍绑定旧节点的已有入站连接，使后续重连使用新的 Current Node；具体 sing-box 配置映射由模块设计规定。
+
+### 7.3 MANUAL/AUTO
+
+**REQ-OUTBOUND-006** 用户新建的 Outbound type 只能是 `manual` 或 `auto`，默认为 `manual`。用户可以在 MANUAL 与 AUTO 之间修改 type，运行状态限制统一遵循 REQ-CONFIG-001。修改 type 只改变运行策略，不增加、删除或重新排序 Node。DIRECT 不可转换为 MANUAL/AUTO，MANUAL/AUTO 也不可转换为 DIRECT。
+
+**REQ-OUTBOUND-007** MANUAL 不执行自动故障切换。priority 只用于页面展示和配置中的 Node 顺序；新建 MANUAL 时不要求用户指定 Current Node，保存后 `priority = 1` 的 Node 自动成为初始持久化 Current Node。用户可以在结构编辑时修改持久化 Current Node，其运行状态限制遵循 REQ-CONFIG-001。MANUAL 被 Route 引用并已写入当前 sing-box 配置时，用户也可以在管理状态为 `running`、sing-box 实际进程正在运行且 Clash API 可用时人工在线切换 Current Node；只有 Clash API 明确确认成功后才持久化新选择，切换失败时保留原选择并在页面提示失败。人工切换不改变 priority。
+
+**REQ-OUTBOUND-008** 新建 AUTO 时不要求用户指定 Fallback Node，保存后 `priority = 1` 的 Node 自动成为 Fallback Node；用户后续可以手动修改，运行状态限制统一遵循 REQ-CONFIG-001。除 Fallback Node 外的其他 Node 全部是 Candidate Node。Fallback Node 的 priority 只用于页面展示和配置顺序，不参与 Candidate 自动择优；Candidate 按 priority 执行自动选择和 Candidate Priority Recovery。
+
+**REQ-OUTBOUND-009** AUTO 的运行时 Current Node 完全由后台控制循环管理，不持久化，用户不能临时人工切换或锁定。只有被 Route 引用的 AUTO 才执行 AUTO 控制；每次 sing-box 实际启动或重启成功后，其 Current Node 从 Fallback Node 初始化。
+
+**REQ-OUTBOUND-010** 将 type 从 `manual` 改为 `auto` 时，原持久化 Current Node 直接作为 Fallback Node；将 type 从 `auto` 改为 `manual` 时，原 Fallback Node 直接作为持久化 Current Node，修改前 AUTO 的运行时 Current Node 不保留。修改 type 时保留原 Node Pool 和全部 priority，不要求用户重新选择 Node 或排序，并清除该 MANUAL/AUTO 的临时控制状态。
+
+### 7.4 Route
+
+**REQ-ROUTE-001** Route 只表达一个 Inbound 的流量目标，不提供规则分流或额外“服务”业务层。每条 Route 必须引用一个 Inbound 和一个 Outbound；目标 Outbound 可以是系统内置 DIRECT，也可以是数据库中现存的 MANUAL 或 AUTO。不得以目标缺失、空引用或无效引用表示 DIRECT。
+
+**REQ-ROUTE-002** 一个 Inbound 最多被一条 Route 引用；一个 Outbound 可以被零条、一条或多条 Route 引用。多条 Route 引用同一个 MANUAL/AUTO 时，共享其 Node Pool、Current Node 和运行状态；任意数量的 Route 可以选择系统内置 DIRECT。
+
+**REQ-ROUTE-003** 前端和内部 API 使用稳定的系统标识表示 DIRECT；创建或修改 Route 时，该标识可以作为合法的 Outbound 引用。
+
+**REQ-ROUTE-004** 未被 Route 引用的 Inbound 和 MANUAL/AUTO 只保存于数据库，不生成其对应的 Inbound 或 MANUAL/AUTO 运行时配置；被 Route 引用的对象才生成对应配置。Route 选择 DIRECT 时，相关 Inbound 和系统内置 DIRECT 正常写入配置并对外监听，流量直接访问目标地址。DIRECT 的具体 sing-box 配置映射由模块设计规定。
+
+**REQ-ROUTE-005** 删除 Inbound、MANUAL 或 AUTO 时，一并删除引用它的 Route。删除 MANUAL/AUTO 不得把原 Route 自动或静默改为 DIRECT；DIRECT 不可删除。
+
+**REQ-ROUTE-006** 删除一个或多个 Node 时，以本次操作全部 Node 删除完成后的剩余 Node Pool 为准，对所有受影响的 MANUAL/AUTO 按以下规则处理：
+
+- MANUAL/AUTO 剩余至少两个 Node：保留其余 Node 的相对顺序，重新整理为连续、唯一的 `1...N` priority；
+- MANUAL 的持久化 Current Node 被删除时，以剩余 Node 中 priority 最高者作为新的持久化 Current Node；
+- AUTO 的 Fallback Node 被删除时，以剩余 Node 中 priority 最高者作为新的 Fallback Node；
+- MANUAL/AUTO 剩余不足两个 Node：删除该 MANUAL/AUTO，并继续删除引用它的全部 Route。
+
+**REQ-ROUTE-007** 人工删除一个或多个 Node、删除 Subscription，以及同步订阅节点删除 Node，都使用相同的级联规则。执行前必须向用户展示完整影响，包括 Current/Fallback Node 的自动替换、MANUAL/AUTO 删除和 Route 删除；用户确认后，在同一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部变更。
+
+**REQ-ROUTE-008** 正常编辑 MANUAL/AUTO 的 Node Pool 时，用户必须保持至少两个 Node；如果移除 Current/Fallback Node 但仍满足最少节点数，则按 REQ-OUTBOUND-005 自动替换。由全局 Node 删除、Subscription 删除或同步订阅节点造成的 Node Pool 缩减不按普通编辑拒绝保存，而按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览、替换和级联删除。
 
 ---
 
@@ -825,7 +840,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 **REQ-UI-001** 桌面页面提供 Subscription、Node、Inbound、Outbound、Route、Settings、状态、关键日志和 sing-box 管理功能。Outbound 页面和 Route 目标选择中统一展示 DIRECT、MANUAL 和 AUTO：DIRECT 为只读系统项；用户创建的 Outbound type 只能是 `manual` 或 `auto`，仅允许按 REQ-OUTBOUND-006 在二者之间修改 type。DIRECT 不显示 Node、Current Node 或健康状态。
 
-**REQ-UI-002** 桌面页面支持新增、修改、删除 Subscription、同步订阅节点、刷新订阅信息、按自建 Node、指定 Subscription 或全部全局 Node 发起人工批量检测、切换 MANUAL 的 Current Node、调整 MANUAL/AUTO 的 Node priority、Start、Stop、Restart、下载日志以及人工检查和升级 sing-box。Subscription 相关操作的运行状态限制遵循 REQ-CONFIG-001，删除和同步订阅节点产生的差异预览、级联影响与事务规则遵循第 5 章。
+**REQ-UI-002** 桌面页面支持新增、修改、删除 Subscription、同步订阅节点、刷新订阅信息、按自建 Node、指定 Subscription 或全部全局 Node 发起人工批量检测、切换 MANUAL 的 Current Node、调整 MANUAL/AUTO 的 Node priority、Start、Stop、Restart、下载日志以及人工检查和升级 sing-box。Subscription 相关操作的运行状态限制遵循 REQ-CONFIG-001，删除和同步订阅节点产生的差异预览、级联影响与事务规则遵循第 6 章。
 
 **REQ-UI-003** 移动页面只提供整体管理状态和实际进程状态、MANUAL/AUTO 状态、Node 健康状态、只读 DIRECT 状态项和 MANUAL 的 Current Node 切换，不提供结构配置、priority 编辑、Settings、升级或完整日志管理。
 
