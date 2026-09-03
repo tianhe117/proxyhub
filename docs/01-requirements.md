@@ -1,8 +1,8 @@
 # ProxyHub 个人版第一版需求规范
 
-> 文档版本：v0.2（评审修订稿）
+> 文档版本：v1.0
 
-> 文档状态：待评审
+> 文档状态：待冻结
 
 > 更新日期：2026-09-03
 
@@ -989,37 +989,3 @@ Fallback 持续时间 >= Fallback Restart Timeout
 - v1/v2 数据库、Settings、运行状态或内部 API 兼容迁移；
 
 - 企业级高可用、复杂安全风控和所有理论异常的专项恢复机制。
-
----
-
-## 16. 正式冻结前检查清单
-
-- [ ] 产品范围、协议范围和不做范围无冲突；
-
-- [ ] Subscription 新增、修改、删除、同步订阅节点和刷新订阅信息在 running/stopped 状态下的限制一致，跳过、差异确认及事务边界得到确认；
-
-- [ ] Outbound 的 `direct` / `manual` / `auto` 三种 type、DIRECT 不持久化、MANUAL/AUTO 至少两个 Node、统一 1 至 N priority，以及新建时由 `priority = 1` 的 Node 自动成为 MANUAL 的 Current Node 或 AUTO 的 Fallback Node 等行为得到确认；
-
-- [ ] 无 Route、目标为 DIRECT 的 Route、目标为 MANUAL/AUTO 的 Route 三种场景语义明确；DIRECT 为前后端可见、只读、全局唯一且不持久化的系统对象，删除 MANUAL/AUTO 不会把 Route 静默改为 DIRECT；
-
-- [ ] Node 删除、Subscription 删除和同步订阅节点导致的 Current/Fallback 自动替换、MANUAL/AUTO 删除和 Route 删除级联行为得到确认；
-
-- [ ] AUTO 正常、故障、Fallback Recovery、Candidate Priority Recovery 和 Fallback 超时重启流程得到确认，Fallback 不参与 Candidate 择优且 Candidate 直接使用完整 Node Pool priority；
-
-- [ ] 所有 Node 统一执行 TCP + URL 检测，TCP 不阻断 URL，最终健康结果仅由 URL 决定；tcp delay、url delay、超时记为 `-1` 和健康状态更新规则得到确认；
-
-- [ ] 单 Node 检测及三种批量检测范围、并发规则及其与 AUTO 控制状态相互独立的行为得到确认；
-
-- [ ] 管理状态与实际进程状态的区分、Start 成功后才进入 running、Restart 严格执行 Stop + Start、守护恢复始终使用最新数据库及单一运行控制锁的行为得到确认；
-
-- [ ] 首次启动、仅有目标为 DIRECT 的 Route 时启动，以及只为被 Route 引用的 MANUAL/AUTO 生成运行时配置并按 Current/Fallback 规则初始化的行为得到确认；
-
-- [ ] 页面、认证、Settings、日志和 sing-box `amd64` 下载/升级边界得到确认；
-
-- [ ] Settings JSON 缺失字段补全与非法文件/非法值失败处理得到确认；
-
-- [ ] 至少完成本文第 3 节场景以及无 Route、目标为 DIRECT 的 Route、目标为 MANUAL/AUTO 的 Route、type 修改、最少两个 Node、priority 和级联删除的验收描述；
-
-- [ ] 后续数据模型和状态机设计不需要自行补充新的业务规则。
-
-全部通过后，将本文标记为 `Requirements v1.0`，再进入数据模型和运行时状态机设计。
