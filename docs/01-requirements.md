@@ -262,7 +262,7 @@ Subscription 新增、修改、删除和同步订阅节点在 running 时均禁�
 
 **REQ-NODE-004** 用户可以逐项填写协议参数创建自建节点，也可以粘贴一条受支持的分享 URI，由页面解析并回填表单。第一版不提供多条 URI 或文件批量导入。
 
-**REQ-NODE-005** 自建节点允许查看、修改和删除，并可以纳入 REQ-HEALTH-006 规定的人工批量检测。
+**REQ-NODE-005** 自建节点允许查看、修改和删除，并可以纳入 REQ-HEALTH-006 规定的人工检测。
 
 ### 4.3 保存校验
 
@@ -289,7 +289,7 @@ Subscription 新增、修改、删除和同步订阅节点在 running 时均禁�
 
 - 查看状态和日志；
 - 刷新 Subscription 的流量、有效期等信息；
-- 按 REQ-HEALTH-006 人工批量检测 Node；
+- 按 REQ-HEALTH-006 人工检测 Node；
 - 按 REQ-OUTBOUND-007 在线切换 MANUAL Current Node；
 - 修改 12.2 明确支持在线生效的 Settings；
 - Stop；
@@ -301,7 +301,9 @@ Subscription 新增、修改、删除和同步订阅节点在 running 时均禁�
 
 **REQ-CONFIG-003** 在 `stopped` 状态进行结构配置写操作时，只更新数据库，不生成、检查或替换 sing-box 配置，也不自动启动 sing-box。结构配置在下一次从最新数据库成功生成完整配置并实际启动 sing-box 时生效；该生成可能由人工 Start、Restart、ProxyHub 自身启动时的自动启动或运行期间的进程守护恢复触发。
 
-MANUAL Current Node 在线切换是明确例外：它先修改正在运行的 sing-box selector，仅在 Clash API 明确确认成功后持久化新选择，并在以后生成完整配置时作为 MANUAL 的初始 Current Node。Settings、Subscription 信息刷新和 Node 检测分别按各自章节规定写入 Settings 文件、Subscription 元信息或运行时展示状态，不适用“结构配置只写数据库”的规则。
+MANUAL Current Node 在线切换是结构配置冻结规则的明确例外。MANUAL Current Node 同时具有数据库中的持久化选择和 sing-box selector 的运行时实际选择，具体修改、在线切换、持久化和页面展示规则由 REQ-OUTBOUND-007 规定。
+
+Settings、Subscription 信息刷新和 Node 检测分别按各自章节规定写入 Settings 文件、Subscription 元信息或运行时展示状态，不适用“结构配置只写数据库”的规则。
 
 系统不提供独立 Apply 按钮，不建立 Pending Config、待生效状态或配置版本状态机。
 
@@ -426,7 +428,11 @@ Subscription 新增、修改、删除和同步订阅节点的运行状态限制�
 
 **REQ-OUTBOUND-006** 用户新建的 Outbound type 只能是 `manual` 或 `auto`，默认为 `manual`。用户可以在 MANUAL 与 AUTO 之间修改 type，运行状态限制统一遵循 REQ-CONFIG-001。修改 type 只改变运行策略，不增加、删除或重新排序 Node。DIRECT 不可转换为 MANUAL/AUTO，MANUAL/AUTO 也不可转换为 DIRECT。
 
-**REQ-OUTBOUND-007** MANUAL 不执行自动故障切换。priority 只用于页面展示和配置中的 Node 顺序；新建 MANUAL 时不要求用户指定 Current Node，保存后 `priority = 1` 的 Node 自动成为初始持久化 Current Node。用户可以在结构编辑时修改持久化 Current Node，其运行状态限制遵循 REQ-CONFIG-001。MANUAL 被 Route 引用并已写入当前 sing-box 配置时，用户也可以在管理状态为 `running`、sing-box 实际进程正在运行且 Clash API 可用时人工在线切换 Current Node；只有 Clash API 明确确认成功后才持久化新选择，切换失败时保留原选择并在页面提示失败。人工切换不改变 priority。
+**REQ-OUTBOUND-007** MANUAL 不执行自动故障切换。priority 只用于页面展示和配置中的 Node 顺序；新建 MANUAL 时不要求用户指定 Current Node，保存后 `priority = 1` 的 Node 自动成为初始持久化 Current Node。
+
+MANUAL Current Node 持久化在数据库中。管理状态为 `stopped` 时，用户可以通过结构编辑修改持久化 Current Node，该操作只更新数据库，不生成或修改 sing-box 配置。生成 sing-box 完整配置时，系统从数据库读取 Current Node，并将其设置为对应 selector 的默认节点；页面在 `stopped` 时显示数据库中保存的 Current Node。
+
+MANUAL 被 Route 引用并已写入当前 sing-box 配置时，用户可以在管理状态为 `running`、sing-box 实际进程正在运行且 Clash API 可用时人工在线切换 Current Node。系统先通过 Clash API 修改 selector，只有 Clash API 明确确认成功后才将新选择持久化到数据库；切换失败时数据库保持原值，并在页面提示失败。sing-box 正常运行时，页面通过 Clash API 查询并显示 selector 的运行时 Current Node，不使用数据库值推断当前实际选择；Clash API 不可用时，页面将运行时 Current Node 显示为不可用，数据库中的持久化 Current Node 仍作为下一次生成配置时的默认选择。人工在线切换不改变 priority。
 
 **REQ-OUTBOUND-008** 新建 AUTO 时不要求用户指定 Fallback Node，保存后 `priority = 1` 的 Node 自动成为 Fallback Node；用户后续可以手动修改，运行状态限制统一遵循 REQ-CONFIG-001。除 Fallback Node 外的其他 Node 全部是 Candidate Node。Fallback Node 的 priority 只用于页面展示和配置顺序，不参与 Candidate 自动择优；Candidate 按 priority 执行自动选择和 Candidate Priority Recovery。
 
@@ -591,14 +597,14 @@ AUTO 触发 sing-box 重启时，本控制周期立即结束。Fallback 持续�
 - 结构配置写操作取得锁后再次确认管理状态为 `stopped`，避免 Start 执行期间修改数据库；
 - Restart 在一次持锁期间依次完成 Stop 和 Start，中间不释放锁，也不允许插入结构配置修改；
 - Stop 或 Restart 到来时，如果后台控制周期正在执行，则等待该周期完整结束，不取消正在执行的 AUTO 检测；
-- Settings 保存和人工批量检测不持有运行控制锁；
+- Settings 保存和人工检测不持有运行控制锁；
 - 多个生命周期请求同时发生时，按取得锁的顺序执行，不实现任务取消、请求合并或任务队列。
 
 ### 8.9 检测并发
 
-**REQ-RUNTIME-008** 删除后台自动全局 Node 周期扫描。AUTO 检测和人工批量检测不在全局范围内互斥，可以同时执行。
+**REQ-RUNTIME-008** 删除后台自动全局 Node 周期扫描。AUTO 检测和人工检测不在全局范围内互斥，可以同时执行。
 
-每个 AUTO 检测过程和每个人工批量检测请求分别受 Settings 中 `Max Concurrency` 限制。第一版不限制用户同时发起的人工批量检测请求数量，不保证系统级检测总并发上限，也不实现检测请求合并、去重或排队。
+每个 AUTO 检测过程和每个人工检测请求分别受 Settings 中 `Max Concurrency` 限制；单 Node 人工检测请求只包含一个 Node。第一版不限制用户同时发起的人工检测请求数量，不保证系统级检测总并发上限，也不实现检测请求合并、去重或排队。
 
 ---
 
@@ -670,22 +676,23 @@ URL 检测成功时 `failure reason = null`；URL 检测失败时记录简单失
 
 ### 9.6 人工检测
 
-**REQ-HEALTH-006** 用户可以从页面发起人工批量检测，每次选择以下一种检测范围：
+**REQ-HEALTH-006** 用户可以从页面发起人工检测，每次选择以下一种检测范围：
 
+- 任意一个现存的全局 Node，包括自建 Node 或 Subscription Node；
 - 全部自建 Node；
 - 某一个 Subscription 下的全部 Node；
 - 全部全局 Node，包括自建 Node 和所有 Subscription Node。
 
-人工批量检测遵循以下规则：
+人工检测遵循以下规则：
 
 - 只允许在管理状态为 `running` 且 sing-box 实际进程正在运行时发起；
 - 发起时确定本次 Node 集合，空集合直接返回没有可检测节点；
-- 不持有运行控制锁，可以与 AUTO 控制、其他人工批量检测、Stop 或 Restart 并发；
+- 不持有运行控制锁，可以与 AUTO 控制、其他人工检测、Stop 或 Restart 并发；
 - 检测过程中 sing-box 因 Stop、Restart 或意外退出而不可用时，尚未完成的检测允许失败；
 - 检测完成时只更新仍然存在的 Node 健康展示状态和日志，Node 已不存在时丢弃其状态结果；
 - 不修改 AUTO 的连续失败次数、Current Node、Fallback 或 Priority Recovery 状态，也不触发 AUTO 切换。
 
-**REQ-HEALTH-007** AUTO 检测和人工批量检测都在每个 Node 的 TCP 和 URL 检测全部完成后更新其最近健康状态。同一 Node 存在并发检测时，按检测完成顺序更新，后完成的结果覆盖先完成的结果。AUTO 只使用其自身控制流程本次取得的检测结果作出判断，Node 最近健康状态只用于页面展示、日志和排错。
+**REQ-HEALTH-007** AUTO 检测和人工检测都在每个 Node 的 TCP 和 URL 检测全部完成后更新其最近健康状态。同一 Node 存在并发检测时，按检测完成顺序更新，后完成的结果覆盖先完成的结果。AUTO 只使用其自身控制流程本次取得的检测结果作出判断，Node 最近健康状态只用于页面展示、日志和排错。
 
 ---
 
@@ -751,7 +758,7 @@ Current Node 为 Fallback 时累计实际经过的 Fallback 持续时间；不�
 - 成功：`failure count = 0`；
 - 失败：`failure count += 1`。
 
-TCP 检测、人工批量检测、Fallback Recovery 和 Priority Recovery 的检测结果本身均不影响该计数。
+TCP 检测、人工检测、Fallback Recovery 和 Priority Recovery 的检测结果本身均不影响该计数。
 
 **REQ-FAILOVER-004** 连续失败达到配置阈值时，立即通过 Clash API 切换到 Fallback。切换成功后：
 
@@ -840,7 +847,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 **REQ-UI-001** 桌面页面提供 Subscription、Node、Inbound、Outbound、Route、Settings、状态、关键日志和 sing-box 管理功能。Outbound 页面和 Route 目标选择中统一展示 DIRECT、MANUAL 和 AUTO：DIRECT 为只读系统项；用户创建的 Outbound type 只能是 `manual` 或 `auto`，仅允许按 REQ-OUTBOUND-006 在二者之间修改 type。DIRECT 不显示 Node、Current Node 或健康状态。
 
-**REQ-UI-002** 桌面页面支持新增、修改、删除 Subscription、同步订阅节点、刷新订阅信息、按自建 Node、指定 Subscription 或全部全局 Node 发起人工批量检测、切换 MANUAL 的 Current Node、调整 MANUAL/AUTO 的 Node priority、Start、Stop、Restart、下载日志以及人工检查和升级 sing-box。Subscription 相关操作的运行状态限制遵循 REQ-CONFIG-001，删除和同步订阅节点产生的差异预览、级联影响与事务规则遵循第 6 章。
+**REQ-UI-002** 桌面页面支持新增、修改、删除 Subscription、同步订阅节点、刷新订阅信息、对单个 Node 发起人工检测、按全部自建 Node、指定 Subscription 或全部全局 Node 发起人工批量检测、切换 MANUAL 的 Current Node、调整 MANUAL/AUTO 的 Node priority、Start、Stop、Restart、下载日志以及人工检查和升级 sing-box。Subscription 相关操作的运行状态限制遵循 REQ-CONFIG-001，删除和同步订阅节点产生的差异预览、级联影响与事务规则遵循第 6 章。
 
 **REQ-UI-003** 移动页面只提供整体管理状态和实际进程状态、MANUAL/AUTO 状态、Node 健康状态、只读 DIRECT 状态项和 MANUAL 的 Current Node 切换，不提供结构配置、priority 编辑、Settings、升级或完整日志管理。
 
@@ -886,7 +893,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 | TCP Timeout | 3 秒 | 是 | 单个 Node 的 TCP 检测超时时间 |
 | URL Timeout | 5 秒 | 是 | 单个 Node 的 URL 检测超时时间 |
 | Test URL | `https://www.gstatic.com/generate_204` | 是 | 所有 Node 共用的 URL 健康检测地址 |
-| Max Concurrency | 10 | 是 | 每个 AUTO 检测过程或每个人工批量检测请求内同时检测的最大 Node 数量 |
+| Max Concurrency | 10 | 是 | 每个 AUTO 检测过程或每个人工检测请求内同时检测的最大 Node 数量 |
 | Failure Threshold | 3 次 | 是 | Current Candidate 连续 URL 检测失败达到该次数后切换到 Fallback |
 | Priority Recovery Interval | 60 秒 | 是 | Current Candidate 不是最高优先级时，扫描更高优先级 Candidate 的间隔 |
 | Fallback Restart Timeout | 300 秒 | 是 | AUTO 持续处于 Fallback 达到该时间后重启 sing-box |
@@ -899,7 +906,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 **REQ-LOG-001** 后端文件日志记录足够的运行和排错信息。桌面页面只显示最近关键事件，不提供完整日志浏览，但允许下载日志文件。Node 健康检测相关展示和日志必须明确区分 tcp delay 与 url delay，不使用未注明类型的单一 delay 表述。
 
-**REQ-LOG-002** Node 切换、Fallback 持续超时、人工批量检测、sing-box 启动/停止/重启、配置生成和升级属于关键事件。
+**REQ-LOG-002** Node 切换、Fallback 持续超时、人工检测、sing-box 启动/停止/重启、配置生成和升级属于关键事件。
 
 **REQ-LOG-003** 第一版不实现消息推送。未来推送可以作为关键事件日志的附加处理，但不得预先引入推送平台抽象。
 
@@ -935,7 +942,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 ## 14. 最低可靠性要求
 
-**REQ-REL-001** 结构配置写操作、配置生成、sing-box 启停、MANUAL Current Node 人工切换和 sing-box 升级替换按 REQ-RUNTIME-007 使用同一把进程内运行控制锁串行执行。刷新订阅信息、Settings 保存和人工批量检测不使用该锁。第一版不建立跨进程锁或分布式事务。
+**REQ-REL-001** 结构配置写操作、配置生成、sing-box 启停、MANUAL Current Node 人工切换和 sing-box 升级替换按 REQ-RUNTIME-007 使用同一把进程内运行控制锁串行执行。刷新订阅信息、Settings 保存和人工检测不使用该锁。第一版不建立跨进程锁或分布式事务。
 
 **REQ-REL-002** 同步订阅节点的请求、解析或预览失败时原数据不变；用户确认后，Subscription（适用时）、Node、Current/Fallback 自动替换、MANUAL/AUTO 更新或删除和 Route 删除作为一个业务事务完成。
 
@@ -999,7 +1006,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 - [ ] 所有 Node 统一执行 TCP + URL 检测，TCP 不阻断 URL，最终健康结果仅由 URL 决定；tcp delay、url delay、超时记为 `-1` 和健康状态更新规则得到确认；
 
-- [ ] 人工批量检测的三种范围、并发规则及其与 AUTO 控制状态相互独立的行为得到确认；
+- [ ] 单 Node 检测及三种批量检测范围、并发规则及其与 AUTO 控制状态相互独立的行为得到确认；
 
 - [ ] 管理状态与实际进程状态的区分、Start 成功后才进入 running、Restart 严格执行 Stop + Start、守护恢复始终使用最新数据库及单一运行控制锁的行为得到确认；
 
