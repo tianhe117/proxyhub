@@ -471,9 +471,9 @@ MANUAL 被 Route 引用并已写入当前 sing-box 配置时，用户可以在�
 
 **REQ-RUNTIME-001** ProxyHub 分别维护 sing-box 的管理状态和实际进程状态。管理状态只有 `running` 和 `stopped` 两种，配置修改限制按管理状态判断；页面同时展示实际运行、已退出或启动失败等进程状态。
 
-- Start 开始后管理状态仍为 `stopped`；从最新数据库生成完整配置并执行 `sing-box check`，只有检查通过、sing-box 启动成功并确认进程正在运行后才进入 `running`，任一步失败都保持 `stopped`；
+- Start 开始后管理状态仍为 `stopped`；数据库中没有 Route 时 Start 失败，提示用户至少创建一条 Route，只有 DIRECT Route 时允许启动；存在 Route 时从最新数据库生成完整配置并执行 `sing-box check`，只有检查通过、sing-box 启动成功并确认进程正在运行后才进入 `running`，任一步失败都保持 `stopped`；
 - Stop 停止 sing-box，并停止进程守护和 AUTO 控制，进入 `stopped`；
-- Restart 严格等于在同一次运行控制加锁操作中依次执行 Stop 和 Start；检查或启动失败时保持 `stopped`，不恢复或自动启动旧进程；
+- 用户发起的 Restart 严格等于在同一次运行控制加锁操作中依次执行 Stop 和 Start；检查或启动失败时保持 `stopped`，不恢复或自动启动旧进程；
 - 管理状态为 `running` 但实际进程已退出或恢复失败时，仍禁止结构修改；
 - `stopped` 状态不执行进程守护或 AUTO 控制；
 - 手动 Stop 状态不跨 ProxyHub 自身重启持久化；
@@ -816,6 +816,8 @@ Fallback 持续时间 >= Fallback Restart Timeout
 则按 REQ-FAILOVER-010 主动重启 sing-box。不额外判断 Fallback 或其他 Node 的健康状态及既往重启次数。
 
 **REQ-FAILOVER-010** Fallback 超时后按 Restart 的 Stop + Start 流程从最新数据库重新生成、检查并启动 sing-box：
+
+后台恢复重启复用与用户发起的 Restart 相同的 Stop + Start 进程操作流程，但不改变管理层的运行意图；失败时管理状态仍为 `running`。
 
 ```text
 重启成功
