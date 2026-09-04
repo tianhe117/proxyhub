@@ -3,7 +3,7 @@
 > 文档版本：v1.0
 > 适用范围：ProxyHub 新版本第一版
 > 文档用途：规定需求冻结后，从设计、开发、测试到第一版发布的实施顺序、阶段产出和完成条件。
-> 当前阶段：Requirements v1.0 已冻结，进入 Architecture 设计。
+> 当前阶段：Requirements v1.0 已冻结，Architecture v1.0 已冻结，当前进入专项核心设计阶段。
 
 ---
 
@@ -71,7 +71,7 @@ docs/01-requirements.md
 - Fallback Node；
 - Route 引用规则；
 - 结构配置修改限制；
-- Subscription 同步和级联删除；
+- Subscription Sync 和级联删除；
 - sing-box Start / Stop / Restart；
 - 运行控制锁；
 - Node 健康检测；
@@ -253,7 +253,7 @@ Requirements v1.0
 - MANUAL / AUTO / DIRECT 行为明确；
 - Route 行为明确；
 - stopped / running 下允许和禁止的操作明确；
-- Subscription 同步和级联删除明确；
+- Subscription Sync 和级联删除明确；
 - sing-box 生命周期明确；
 - Node 健康检测明确；
 - AUTO 故障恢复流程明确；
@@ -267,6 +267,8 @@ Requirements 冻结后，普通实现问题不再修改需求。
 ---
 
 # 5. 第二阶段：Architecture 设计
+
+阶段状态：已完成，Architecture v1.0 已冻结。
 
 产出：
 
@@ -441,7 +443,7 @@ DIRECT → 系统内置对象
 - Subscription 与 Node 的关系；
 - 自建 Node 与订阅 Node 的来源表达；
 - Node 的稳定身份；
-- Subscription 同步匹配需要的字段；
+- Subscription Sync 匹配需要的字段；
 - Subscription 元信息。
 
 ### Outbound
@@ -464,6 +466,8 @@ AUTO
 - Node 在多个 Outbound 中复用。
 
 DIRECT 不建立普通数据库记录。
+
+priority 是 Outbound Node Pool 的持久化排序和策略数据，只保存在 SQLite，不属于 sing-box Config。数据模型必须支持在一个事务中完成整体重排，保证最终 priority 为连续、唯一的 `1...N`，并保证在线重排不增加或删除 Node Pool 成员。
 
 ### Route
 
@@ -490,7 +494,7 @@ Route
 ```text
 删除 Node
 删除 Subscription
-同步 Subscription 删除 Node
+Subscription Sync 删除 Node
 ```
 
 需要能够：
@@ -508,7 +512,7 @@ Route
 
 并实现 Requirements 中规定的：
 
-- priority 重排；
+- priority 在一个事务中原子重排；
 - Current Node 自动替换；
 - Fallback Node 自动替换；
 - Node Pool 少于两个时删除 Outbound；
@@ -522,11 +526,11 @@ Route
 - 没有无业务用途的数据表；
 - MANUAL / AUTO 可以完整表达；
 - DIRECT 不被错误建模成普通 Outbound；
-- priority 有稳定数据结构；
+- priority 有稳定数据结构并能保证连续、唯一的 `1...N`；
 - MANUAL Current Node 可以持久化；
 - AUTO Current Node 没有被持久化；
 - AUTO Fallback Node 可以持久化；
-- Subscription 同步能够稳定识别节点；
+- Subscription Sync 能够稳定识别节点；
 - 所有删除和级联规则能够在一个事务中实现。
 
 完成后可以开始数据库和 Domain 层开发。
@@ -620,6 +624,8 @@ Route
 
 未被 Route 引用的 Inbound、MANUAL、AUTO 不生成对应运行对象。
 
+priority 不映射到 sing-box 配置：不生成 priority 字段，不通过 selector Node 顺序表达 priority，不因 priority 修改生成新配置或触发 Restart。
+
 ---
 
 ## 7.5 Selector
@@ -635,6 +641,8 @@ Route
 → selector 默认节点
 ```
 
+MANUAL selector 默认节点只来自持久化 Current Node，不由 priority 决定。
+
 ### AUTO
 
 生成配置时：
@@ -643,6 +651,8 @@ Route
 Fallback Node
 → selector 默认节点
 ```
+
+AUTO selector 初始节点只来自持久化 Fallback Node，不由 priority 决定。
 
 并支持：
 
@@ -838,6 +848,7 @@ Restart
 MANUAL 在线切换
 sing-box 下载 / 升级替换
 后台恢复 Restart
+priority online reorder
 ```
 
 以及哪些操作不持锁：
@@ -845,7 +856,10 @@ sing-box 下载 / 升级替换
 ```text
 Settings 保存
 人工 Node 检测
+Subscription Metadata Refresh
 ```
+
+priority online reorder 持有 `runtime_control_lock`，但不要求管理状态为 stopped；它只修改 SQLite，AUTO 后续需要依据 Candidate priority 决策时读取数据库中的最新值。不得为此增加第二把锁、任务队列或新的并发机制。
 
 实现时不得另外建立任务队列或复杂锁体系。
 
@@ -1015,7 +1029,7 @@ Route
 - Filter；
 - Exclude；
 - Diff；
-- Subscription 信息刷新；
+- Subscription Metadata Refresh；
 - 自建 Node；
 - URI Parser；
 - Node 修改和删除。
@@ -1030,6 +1044,8 @@ Route
 ```
 
 以及完整级联规则。
+
+本批次必须拆清两个功能：Subscription Metadata Refresh 只读取流量、总流量、到期时间等元信息并更新 Subscription，不进入 Parser；Subscription Sync 执行 request、parser、Filter/Exclude、validation、diff、impact、Preview、Confirm 和 Transaction，用于更新 Node。
 
 ---
 
@@ -1083,13 +1099,15 @@ Route
 
 - TCP Test；
 - URL Delay；
-- Hysteria2 检测；
+- 统一 Node 检测流程；
 - Health State；
 - 检测并发；
 - 单 Node 人工检测；
 - 批量人工检测。
 
 完成独立测试后再进入 AUTO。
+
+Hysteria2 不建立协议专用健康检测分支，与其他 Node 一样执行 TCP Test → URL Delay；Hysteria2 TCP Test 失败仍继续 URL Delay。协议 Parser 和 sing-box 字段映射仍可按 Hysteria2 协议实现。
 
 ---
 
@@ -1167,17 +1185,30 @@ hidden
 
 ### running
 
-禁止结构修改。
+禁止以下结构修改：
+
+- Subscription CRUD / Sync；
+- Node CRUD；
+- Inbound CRUD；
+- Outbound CRUD；
+- Node Pool 成员增加或删除；
+- type 修改；
+- AUTO Fallback 修改；
+- Route CRUD；
+- MANUAL 结构 Current 修改。
 
 但仍允许 Requirements 明确规定的在线行为，例如：
 
 - 查看状态；
-- Subscription 信息刷新；
+- Subscription Metadata Refresh；
 - Node 人工检测；
 - MANUAL 在线 Current Node 切换；
+- MANUAL/AUTO priority reorder；
 - 在线 Settings；
 - Stop；
 - Restart。
+
+页面不得因为 `management_state = running` 而禁用 MANUAL/AUTO priority 排序控件；该控件只能重排现有成员，不能借此增删 Node Pool 成员。
 
 ---
 
@@ -1211,12 +1242,16 @@ API 应清晰表达：
 - Start / Stop / Restart；
 - MANUAL switch；
 - Node detect；
-- Subscription info refresh；
-- Subscription sync；
+- Subscription Metadata Refresh；
+- Subscription Sync；
+- Outbound structural update；
+- priority reorder；
 - Settings；
 - status；
 - logs；
 - upgrade。
+
+Outbound structural update 与 priority reorder 必须表达为不同业务操作，避免 priority reorder 因复用普通 Outbound update 而被 stopped-only 校验拒绝；具体 URL 和 Method 由 `07-api.md` 决定。
 
 ---
 
@@ -1246,7 +1281,7 @@ API 应清晰表达：
 
 - stopped / running 状态；
 - 级联删除 Preview；
-- Subscription sync Preview；
+- Subscription Sync Preview；
 - Node priority；
 - MANUAL Current；
 - AUTO Fallback；
@@ -1354,20 +1389,41 @@ Inbound
 
 ```text
 running
-→ 尝试修改 Subscription / Node / Inbound / Outbound / Route
+→ 尝试执行结构配置修改
 → 禁止
 ```
+
+典型结构修改包括 Subscription CRUD / Sync、Node CRUD、Inbound CRUD、Outbound 新增/删除、name/type 修改、Node Pool 成员增删、Fallback 修改和 Route CRUD；纯 priority reorder 不属于结构修改。
 
 ### running 在线操作
 
 验证：
 
-- Subscription 信息刷新；
+- Subscription Metadata Refresh；
 - Node 人工检测；
 - MANUAL 在线切换；
+- MANUAL/AUTO priority reorder；
 - 允许在线生效的 Settings；
 - Stop；
 - Restart。
+
+priority reorder 至少覆盖：
+
+1. `running` 时 priority 调整成功；
+2. `stopped` 时 priority 调整成功；
+3. 排序后数据库 priority 为连续、唯一的 `1...N`；
+4. Node Pool 成员不变；
+5. MANUAL Current 不变；
+6. AUTO Fallback 不变；
+7. AUTO Runtime Current 不被直接修改，Failure Count、Fallback Started Time 和 Priority Recovery Timer 也不重置；
+8. 不生成 config；
+9. 不执行 `sing-box check`；
+10. 不调用 Clash API；
+11. 不触发 Restart；
+12. AUTO 后续 Fallback Recovery 使用新 priority；
+13. AUTO 后续 Priority Recovery 使用新 priority；
+14. 当前 Candidate 因重排不再最高时不立即切换，仍遵循既有 Priority Recovery Timer；
+15. MANUAL 当前运行节点不因 priority 调整变化。
 
 ### Subscription Sync
 
@@ -1602,7 +1658,7 @@ Codex 主要负责：
 
 ```text
 目标：
-实现 Subscription Diff 和同步预览。
+实现 Subscription Diff 和 Subscription Sync 预览。
 
 依据：
 - docs/01-requirements.md

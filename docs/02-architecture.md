@@ -1,8 +1,10 @@
 # ProxyHub 软件架构设计
 
 > 文档版本：v1.0  
-> 文档状态：设计中  
-> 更新日期：2026-09-03  
+> 文档状态：已冻结
+
+> 更新日期：2026-09-04
+
 > 适用范围：ProxyHub 第一版  
 > 上游文档：`docs/01-requirements.md`
 
@@ -401,6 +403,7 @@ threading.Lock
 - Stop；
 - Restart；
 - 结构配置写操作；
+- priority 在线重排；
 - MANUAL Current Node 在线切换；
 - sing-box 下载；
 - sing-box 升级替换；
@@ -414,11 +417,24 @@ threading.Lock
 以下操作无需取得 Runtime Control Lock：
 
 - Settings 保存；
-- Subscription 元信息刷新；
+- Subscription Metadata Refresh；
 - 人工 Node 检测；
 - 普通只读查询。
 
 这些操作不改变 sing-box 当前结构配置或运行生命周期。
+
+结构配置写与 priority 在线重排共用同一把锁，但状态门槛不同：
+
+```text
+结构配置写
+→ Acquire runtime_control_lock
+→ 检查 management_state == stopped
+
+priority 在线重排
+→ Acquire runtime_control_lock
+→ 不检查 stopped
+→ running / stopped 均可执行
+```
 
 ---
 
@@ -683,13 +699,15 @@ services/
 - 创建 Subscription；
 - 修改 Subscription；
 - 删除 Subscription；
-- Subscription 元信息刷新；
-- Subscription Sync；
+- Subscription Metadata Refresh；
+- Subscription Sync（同步订阅节点）；
 - Filter / Exclude；
 - diff；
 - Preview；
 - Confirm；
 - 删除和同步产生的级联业务处理。
+
+两项 Subscription 操作边界固定为：Metadata Refresh 不经过 Parser，只更新流量、有效期等元信息且不修改 Node；Sync 执行 Parser、Diff、Preview、Confirm 和 Node 更新。
 
 ---
 
@@ -722,11 +740,15 @@ services/
 - MANUAL CRUD；
 - AUTO CRUD；
 - Node Pool；
-- priority；
+- priority 查询与重排；
+- priority 在线修改业务校验；
+- priority 原子更新；
 - MANUAL Current Node；
 - AUTO Fallback Node；
 - Outbound 类型转换；
 - MANUAL 在线节点切换。
+
+Outbound Service 必须保证 priority 重排提交的成员与当前 Node Pool 完全一致、提交顺序完整、最终 priority 连续且唯一，并在一个 SQLite transaction 中完成全部更新。
 
 ---
 
@@ -1045,6 +1067,10 @@ singbox.config
 
 这样 Config Builder 可以独立测试。
 
+Config Builder 不接收或解释 priority 的业务语义。priority 不生成到 sing-box 配置，也不通过 selector 成员顺序表达；它留在 ProxyHub Service 和 AUTO Control 层。Config Builder 只取得 Node、Node Pool 成员、MANUAL Current、AUTO Fallback、Routed 对象及其他实际生成配置所需数据。
+
+运行配置按以下规则裁剪：所有合法全局 Node 均生成独立 remote outbound；只有被至少一条 Route 引用的 MANUAL/AUTO 和 Inbound 才生成对应运行对象；DIRECT 仅在至少一条 Route 使用时生成。
+
 ---
 
 # 22. process.py
@@ -1269,6 +1295,8 @@ Sleep
 AUTO 不创建独立线程。
 
 所有 AUTO 都由 Runtime Controller 统一调用。
+
+AUTO 执行需要基于 priority 的 Candidate 选择时，从业务数据层取得当前最新 priority。priority 不属于 AUTO Runtime State，不在 Start 时复制为长期内存状态；不为此增加 cache、runtime mirror、DB change event、watcher 或 event bus。
 
 详细控制规则由：
 
@@ -1518,6 +1546,36 @@ Start / Restart
 ```
 
 时重新生成。
+
+---
+
+## 35.2 priority 在线写入流程
+
+priority 重排是 Outbound Service 的独立业务操作，不属于结构配置写：
+
+```text
+HTTP Request
+      ↓
+Route
+      ↓
+Outbound Service
+      ↓
+Acquire runtime_control_lock
+      ↓
+BEGIN SQLite Transaction
+      ↓
+读取并确认当前 Node Pool
+      ↓
+校验提交成员与现有成员完全一致
+      ↓
+按提交顺序重排 1...N priority
+      ↓
+COMMIT
+      ↓
+Release runtime_control_lock
+```
+
+该流程不要求 `management_state == stopped`，在 `running` 和 `stopped` 时均可执行；不生成 `config.json`，不执行 `sing-box check`，不调用 Clash API，不 Restart，也不直接修改 Runtime State。AUTO Controller 后续需要依据 Candidate priority 决策时读取数据库中的最新值。
 
 ---
 
