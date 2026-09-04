@@ -40,7 +40,7 @@
 
 Subscription 和用户自建配置用于产生 Node。
 
-Node 可以被 MANUAL 和 AUTO 使用；DIRECT 不包含 Node。一个 MANUAL/AUTO 可以包含多个 Node。
+Node 可以被 MANUAL/AUTO 使用；DIRECT 不包含 Node。一个 MANUAL/AUTO 可以包含多个 Node。
 
 Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为 DIRECT、MANUAL 和 AUTO 三种类型。
 
@@ -66,7 +66,7 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 - **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
 
-- **Node Pool**：MANUAL 或 AUTO 包含的有序 Node 集合；Node 的 `priority` 唯一且可不连续，数值越小优先级越高。
+- **Node Pool**：MANUAL/AUTO 包含的有序 Node 集合；Node 的 `priority` 唯一且可不连续，数值越小优先级越高。
 
 - **Candidate Node**：AUTO 的 Node Pool 中除 Default Node 外的 Node，直接使用其 `priority` 参与自动择优和 Priority Recovery。
 
@@ -80,9 +80,9 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 **REQ-MODEL-001** 每条 Route 必须引用一个 Inbound 和一个 Outbound。一个 Inbound 被某条 Route 引用后，不能再被其他 Route 引用；一个 Outbound 可以同时被多条 Route 引用。Outbound 的 type 可以是系统内置的 `direct`，也可以是数据库中现存的 `manual` 或 `auto`。
 
-**REQ-MODEL-002** 多条 Route 引用同一个 MANUAL 或 AUTO 时，共享该 MANUAL/AUTO 的 Node Pool、priority、Default Node、Current Node 和运行状态。DIRECT 不具有 Node Pool、Default Node、Current Node 或运行时节点健康状态。
+**REQ-MODEL-002** 多条 Route 引用同一个 MANUAL/AUTO 时，共享该 MANUAL/AUTO 的 Node Pool、priority、Default Node、Current Node 和运行状态。DIRECT 不具有 Node Pool、Default Node、Current Node 或运行时节点健康状态。
 
-**REQ-MODEL-003** Node 是全局实体。同一个 Node 可以加入多个 MANUAL 或 AUTO，但在同一个 Node Pool 中只能出现一次。每个 MANUAL 或 AUTO 正常保存时必须至少包含两个不同 Node。
+**REQ-MODEL-003** Node 是全局实体。同一个 Node 可以加入多个 MANUAL/AUTO，但在同一个 Node Pool 中只能出现一次。每个 MANUAL/AUTO 正常保存时必须至少包含两个不同 Node。
 
 **REQ-MODEL-004** 数据库只持久化 Subscription、Node、Inbound、MANUAL/AUTO 和 Route，以及 Outbound type、Node Pool priority 和 Default Node 等业务数据；数据库中的 Outbound type 只能是 `manual` 或 `auto`，DIRECT 不保存数据库记录。应用 Settings 持久化在独立的 `data/settings.json` 文件中。MANUAL/AUTO 的 Current Node，以及 Node 健康结果、TCP/URL delay、失败计数等运行时状态只保存在内存中。
 
@@ -429,7 +429,7 @@ Subscription 新增、修改、删除和 Subscription Sync 的运行状态限制
 
 **REQ-OUTBOUND-001** 每个 MANUAL/AUTO 独立定义名称，由用户创建并保存于数据库，其 Node Pool 由全局 Node 组成。
 
-**REQ-OUTBOUND-002** 每个 MANUAL 和 AUTO 必须始终至少包含两个不同 Node。Node 是全局对象，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。用户正常创建或编辑 Node Pool 时，少于两个 Node 不允许保存；全局 Node 删除、Subscription 删除或 Subscription Sync 造成不足两个 Node 时，按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览及级联删除。
+**REQ-OUTBOUND-002** 每个 MANUAL/AUTO 必须始终至少包含两个不同 Node。Node 是全局对象，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。用户正常创建或编辑 Node Pool 时，少于两个 Node 不允许保存；全局 Node 删除、Subscription 删除或 Subscription Sync 造成不足两个 Node 时，按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览及级联删除。
 
 **REQ-OUTBOUND-003** MANUAL/AUTO 的 Node Pool 是有序 Node 集合；同一 Node Pool 中每个 Node 的 priority 必须唯一，可以不连续，数值越小、优先级越高。页面按 priority 升序显示；priority 保存于数据库，用于稳定表达 Node Pool 顺序和 AUTO Candidate 择优，不属于 sing-box 配置数据。新增、插入或删除 Node 时只需保持 priority 唯一并正确表达顺序，不要求整体连续重编号。
 
