@@ -2,7 +2,7 @@
 
 > 文档版本：v1.0
 
-> 文档状态：已冻结
+> 文档状态：未冻结
 
 > 更新日期：2026-09-04
 
@@ -60,7 +60,7 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 - **MANUAL/AUTO**：保存在数据库中的用户 Outbound，包含一个 Node Pool，以及 Pool 中的一个 Default Node。
 
-- **MANUAL**：`type = manual`，Default Node 用于初始化 Current Node，运行时由用户手动切换，不执行自动故障切换。
+- **MANUAL**：`type = manual`，Default Node 用于初始化 Current Node；运行时 Current Node 由用户手动切换，不执行自动故障切换。
 
 - **AUTO**：`type = auto`，Default Node 作为 Fallback Node，运行时 Current Node 由后台控制循环管理。
 
@@ -78,13 +78,13 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 ### 2.3 全局不变量
 
-**REQ-MODEL-001** 每条 Route 必须引用一个 Inbound 和一个 Outbound。一个 Inbound 被某条 Route 引用后，不能再被其他 Route 引用；一个 Outbound 可以同时被多条 Route 引用。Outbound 的 type 可以是系统内置的 `direct`，也可以是数据库中现存的 `manual` 或 `auto`。
+**REQ-MODEL-001** 每条 Route 必须引用一个 Inbound 和一个 Outbound。一个 Inbound 最多被一条 Route 引用；一个 Outbound 可以被多条 Route 引用。Outbound 可以是 DIRECT、MANUAL 或 AUTO。
 
-**REQ-MODEL-002** 多条 Route 引用同一个 MANUAL/AUTO 时，共享该 MANUAL/AUTO 的 Node Pool、priority、Default Node、Current Node 和运行状态。DIRECT 不具有 Node Pool、Default Node、Current Node 或运行时节点健康状态。
+**REQ-MODEL-002** 多条 Route 引用同一个 MANUAL/AUTO 时，共享其 Node Pool、priority、Default Node 以及运行时 Current Node 和状态。DIRECT 不具有 Node Pool、Default Node 或 Current Node。
 
-**REQ-MODEL-003** Node 是全局实体。同一个 Node 可以加入多个 MANUAL/AUTO，但在同一个 Node Pool 中只能出现一次。每个 MANUAL/AUTO 正常保存时必须至少包含两个不同 Node。
+**REQ-MODEL-003** Node 是全局实体，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。每个 MANUAL/AUTO 必须至少包含两个不同 Node。
 
-**REQ-MODEL-004** 数据库只持久化 Subscription、Node、Inbound、MANUAL/AUTO 和 Route，以及 Outbound type、Node Pool priority 和 Default Node 等业务数据；数据库中的 Outbound type 只能是 `manual` 或 `auto`，DIRECT 不保存数据库记录。应用 Settings 持久化在独立的 `data/settings.json` 文件中。MANUAL/AUTO 的 Current Node，以及 Node 健康结果、TCP/URL delay、失败计数等运行时状态只保存在内存中。
+**REQ-MODEL-004** Subscription、Node、Inbound、MANUAL/AUTO、Route、Node Pool priority 和 Default Node 持久化在数据库中；Settings 通过独立配置文件持久化。DIRECT 不保存数据库记录；Current Node、Node 健康状态、delay 和失败计数等运行时状态只保存在内存中。
 
 ---
 
@@ -96,15 +96,15 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 启动 ProxyHub Web
 
-→ sing-box 未安装或没有任何有效 Route，管理状态保持 stopped
+→ sing-box 应用不存在或没有有效 Route，管理状态保持 stopped
 
 → 用户下载 sing-box
 
-→ 添加订阅或自建节点
+→ 添加 Subscription 或自建 Node
 
-→ 创建 MANUAL/AUTO、Inbound 和 Route；Route 可明确选择 DIRECT、MANUAL 或 AUTO
+→ 创建 MANUAL/AUTO、Inbound 和 Route
 
-→ 用户点击 Start
+→ 用户执行 Start
 
 → 生成并检查配置
 
@@ -112,65 +112,65 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 ```
 
-只包含目标为 DIRECT 的 Route 的配置同样属于有效配置；没有 Route 的 Inbound 不写入 sing-box 配置，也不对外监听。
+Route 可以选择 DIRECT、MANUAL 或 AUTO。只有 DIRECT Route 时同样可以正常启动；未被 Route 引用的 Inbound 不对外监听。
 
-### 3.2 正常运行
-
-```text
-
-sing-box 实际启动或重启成功
-
-→ 已生效的 MANUAL 从 Default Node 初始化 Current Node
-
-→ 已生效的 AUTO 从 Fallback Node（Default Node）初始化 Current Node
-
-→ 清空 AUTO 的临时运行状态并开始记录 Fallback 持续时间
-
-→ 下一控制周期扫描全部 Candidate Node
-
-→ 选择可用 Candidate 中优先级最高的 Node
-
-→ 后续每个控制周期检测 Current Candidate
-
-→ Current Candidate 不是优先级最高的 Node 时，按独立间隔扫描优先级更高的 Candidate
-
-```
-
-### 3.3 当前节点故障恢复
+### 3.2 正常启动与运行
 
 ```text
 
-当前 Candidate 连续检测失败达到阈值
+sing-box 启动或重启成功
 
-→ 本周期立即切换 Fallback Node
+→ MANUAL 从 Default Node 初始化 Current Node
 
-→ 本 AUTO 本周期处理结束
+→ AUTO 从 Fallback Node（Default Node）初始化 Current Node
 
-→ 下一个控制周期扫描全部 Candidate Node
+→ 清空运行时检测和切换状态
 
-→ 有可用 Candidate：切换到优先级最高的可用 Node
-
-→ 没有可用 Candidate：保持 Fallback Node
+→ 后台控制循环开始管理 Routed AUTO
 
 ```
 
-### 3.4 Fallback 持续超时恢复
+MANUAL 的 Current Node 由用户管理；AUTO 的 Current Node 由后台控制循环管理。
+
+### 3.3 MANUAL 在线切换
 
 ```text
 
-AUTO 的 Current Node 为 Fallback Node
+MANUAL 正在运行
 
-→ 每个控制周期先扫描全部 Candidate Node
+→ 用户选择新的 Node
 
-→ 有可用 Candidate：切换到优先级最高的可用 Node 并结束 Fallback 状态
+→ 实际切换成功
 
-→ 没有可用 Candidate：保持 Fallback Node
+→ Current Node 更新为新 Node
 
-→ 持续处于 Fallback 达到配置超时时间：重启整个 sing-box
-
-→ 清空运行时状态并重新执行初始选择
+→ Default Node 同步更新为新 Node
 
 ```
+
+切换失败时 Current Node 和 Default Node 均不改变。下一次 sing-box 启动时仍从最新 Default Node 初始化 Current Node。
+
+### 3.4 AUTO 故障恢复
+
+```text
+
+AUTO Current Node 为 Candidate
+
+→ Current Candidate 连续检测失败达到阈值
+
+→ 切换到 Fallback Node
+
+→ 后续控制周期继续检测 Candidate
+
+→ 存在可用 Candidate：切换到其中优先级最高的 Node
+
+→ 长时间无法恢复且持续处于 Fallback：重启 sing-box
+
+→ 清空运行时状态并重新开始
+
+```
+
+AUTO 正常运行期间按 Candidate priority 自动选择和恢复，具体规则见第 10 章。
 
 ### 3.5 Subscription Sync
 
@@ -178,19 +178,15 @@ AUTO 的 Current Node 为 Fallback Node
 
 管理状态 stopped
 
-→ 用户请求 Subscription Sync
+→ 用户执行 Subscription Sync
 
 → 请求、解析、过滤和校验
 
-→ 跳过无效或不支持的节点
+→ 生成 Node 变化及级联影响预览
 
-→ 至少存在一个有效节点时生成差异预览
+→ 用户确认：一次性更新相关数据
 
-→ 同时展示节点变化、Default Node 自动替换和级联删除影响
-
-→ 用户确认：原子更新数据
-
-→ 用户取消：不修改任何数据
+→ 用户取消：不修改数据
 
 ```
 
@@ -202,19 +198,19 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Refresh 在 `r
 
 用户停止 sing-box
 
-→ 新增、修改、删除 Subscription 或执行 Subscription Sync
+→ 修改 Subscription、Node、Inbound、MANUAL/AUTO 或 Route
 
-→ 或修改 Node、Inbound、MANUAL/AUTO 的结构、type、Node Pool、Default Node 或 Route
+→ 用户执行 Start
 
-→ 用户再次点击 Start
+→ 从最新配置生成并检查完整配置
 
-→ 重新生成并检查完整配置
-
-→ 成功后启动
+→ 检查成功后启动
 
 ```
 
-单独重排现有 Node Pool 的 priority 不属于结构修改，按 REQ-OUTBOUND-004 执行。
+结构配置只允许在 `stopped` 时修改。
+
+Node Pool 成员不变时，可以在 `running` 或 `stopped` 状态调整 priority。priority 调整只改变后续 AUTO 择优顺序，不立即切换 Current Node。
 
 ### 3.7 sing-box 意外退出
 
@@ -222,23 +218,17 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Refresh 在 `r
 
 管理状态为 running
 
-→ 控制循环发现 sing-box 已退出
+→ 检测到 sing-box 意外退出
 
-→ 从最新数据库重新生成完整配置并执行 sing-box check
+→ 重新生成并检查配置
 
-→ 检查失败：保持管理状态 running，记录错误并在后续控制周期继续恢复
+→ 检查并启动成功：重新初始化运行时状态
 
-→ 检查成功：原子替换正式配置并启动
-
-→ 启动失败：保持管理状态 running，记录错误并在后续控制周期继续恢复
-
-→ 启动成功：清空运行时健康及切换状态
-
-→ 已生效的 MANUAL 从 Default Node 初始化 Current Node，AUTO 从 Fallback Node（Default Node）初始化 Current Node
-
-→ 本控制周期结束，下一周期恢复检测和切换
+→ 恢复失败：保持 running，并在后续控制周期继续尝试恢复
 
 ```
+
+恢复成功后，MANUAL 从 Default Node、AUTO 从 Fallback Node（Default Node）重新初始化 Current Node。
 
 ---
 
@@ -258,23 +248,21 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Refresh 在 `r
 
 - Hysteria2。
 
-协议字段范围以上述五种协议为准，既有实现不得隐式扩大支持范围。
+不支持上述范围之外的远程节点协议。
 
-**REQ-NODE-002** Shadowsocks 节点需要支持 sing-box 自身可用的 obfs 能力，不安装或管理额外 obfs 二进制。
-
-**REQ-NODE-003** Reality、uTLS fingerprint、WebSocket、gRPC 和 HTTP/2 等字段组合的准确范围，在 sing-box 集成设计中形成字段矩阵和验证样例，但不得超出上述五种协议。
+**REQ-NODE-002** Shadowsocks 节点支持 sing-box 原生提供的插件。
 
 ### 4.2 自建节点
 
-**REQ-NODE-004** 用户可以逐项填写协议参数创建自建节点，也可以粘贴一条受支持的分享 URI，由页面解析并回填表单。第一版不提供多条 URI 或文件批量导入。
+**REQ-NODE-003** 用户可以逐项填写协议参数创建自建 Node，也可以粘贴一条受支持的分享 URI，由页面解析并回填表单。
 
-**REQ-NODE-005** 自建节点允许查看、修改和删除，并可以纳入 REQ-HEALTH-006 规定的人工检测。
+**REQ-NODE-004** 自建 Node 可以查看、修改和删除。
 
-### 4.3 保存校验
+### 4.3 保存与安全
 
-**REQ-NODE-006** Node 只有在必填字段、端口范围和协议字段组合通过校验后才能保存或导入。对象间引用、Route、监听冲突和当前 sing-box 版本兼容性统一在生成完整配置并启动时校验。
+**REQ-NODE-005** Node 必须通过必要字段和协议参数校验后才能保存或导入；无法形成有效代理节点的配置不得保存。
 
-**REQ-NODE-007** 凭据、UUID、密码、密钥、分享 URI、完整 Subscription URL 和包含上述内容的原始 parser 输入不得写入日志，也不得在 Subscription Sync 或删除 Subscription 的差异预览中显示原文。差异预览只展示确认业务变化所需的 Node name、来源、协议类型、变化类型、脱敏后的字段类别和失败原因；底层 HTTP、parser 或 sing-box 错误在记录和展示前必须移除上述敏感内容。
+**REQ-NODE-006** Node 凭据、密码、密钥、分享 URI、完整 Subscription URL 等敏感信息不得以明文出现在日志或差异预览中。
 
 ---
 
@@ -985,6 +973,10 @@ Fallback 持续时间 >= Fallback Restart Timeout
 - 多台 ProxyHub 主机集中管理；
 
 - 多 sing-box 实例或多代理引擎；
+
+- 不提供多条 URI 批量导入；
+
+- 不提供节点文件批量导入；
 
 - Xray、sslocal 和 TUIC；
 
