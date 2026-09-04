@@ -28,7 +28,7 @@
 
 **REQ-GEN-005** 第一版优先保证主要行为简单、确定、可排错，不为低概率异常建立复杂恢复状态、分布式任务、历史任务或企业级高可靠机制。
 
-**REQ-GEN-006** 第一版面向单一可信用户和正常操作路径，只实现保护核心数据与运行流程所需的基本防护，包括必要的输入校验、业务不变量校验、关键文件原子替换、生命周期串行化和错误日志。除非具体需求另有明确规定，不为恶意调用、绕过正常页面或内部 API 的异常请求、人工直接修改数据库或正式配置、不支持环境、低概率边缘情况或“以后可能需要”的能力增加复杂兼容、恢复、重试、回滚、冗余备份、抽象层或高可靠机制；设计和实现应选择满足当前明确需求的最简单方案。具体需求已经规定的事务、失败保护、一致性或恢复规则不受本条削弱。
+**REQ-GEN-006** 第一版面向单一可信用户，仅实现当前需求必需的基本防护，不为异常场景和未来需求增加额外复杂设计。
 
 **REQ-GEN-007** 系统只支持单 ProxyHub 实例、单 Web 进程、单 sing-box 进程和单后台控制循环。同一数据目录不得同时运行多个 ProxyHub 实例。
 
@@ -48,11 +48,7 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 ### 2.2 名词
 
-- **Subscription**：用户保存的机场订阅及其 Filter/Exclude 设置。
-
-- **Subscription Sync（同步订阅节点）**：用于新增、修改或删除 Subscription Node。
-
-- **Subscription Metadata Refresh（刷新 Subscription 元信息）**：只更新流量、到期时间等 Subscription 展示元信息，不修改 Node。
+- **Subscription**：用户保存的机场订阅及其 Filter/Exclude 设置。支持 **Sync** 和 **Refresh** 两个动作：Sync 用于新增、修改或删除 Subscription Node；Refresh 仅更新流量、到期时间等展示元信息，不修改 Node。
 
 - **Node**：一个可生成 sing-box 远程出站的代理节点，来源为订阅或自建。
 
@@ -62,15 +58,15 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 - **DIRECT**：`type = direct` 的系统内置 Outbound，全局唯一、只读、不包含 Node 且不保存数据库记录，可被 Route 显式选择。
 
-- **MANUAL**：`type = manual` 的用户 Outbound，保存于数据库并包含 Node Pool，由用户人工选择并持久化 Current Node，不执行自动故障切换。
+- **MANUAL/AUTO**：保存在数据库中的用户 Outbound，包含 Node Pool 和 Current Node，不包括 DIRECT。
 
-- **AUTO**：`type = auto` 的用户 Outbound，保存于数据库并包含 Node Pool，由后台控制循环管理运行时 Current Node，并在节点故障时自动恢复代理能力。
+- **MANUAL**：`type = manual`，Current Node 由用户手动选择并持久化，不执行自动故障切换。
 
-- **MANUAL/AUTO**：同时指 MANUAL 和 AUTO，不包括 DIRECT。
+- **AUTO**：`type = auto`，Current Node 由后台控制循环管理，并在节点故障时自动切换以恢复代理能力。
 
 - **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
 
-- **Node Pool**：一个 MANUAL 或 AUTO 包含的有序 Node 集合；每个 Node 在该 Pool 中具有连续、唯一的 `1...N` priority。
+* **Node Pool**：MANUAL 或 AUTO 包含的有序 Node 集合；Node 的 `priority` 唯一且可不连续，按其从小到大排序。
 
 - **Candidate Node**：AUTO 的 Node Pool 中除 Fallback Node 外的 Node。Candidate 直接使用其在完整 Node Pool 中的 priority 参与自动择优和 Priority Recovery，不单独重新编号。
 
@@ -174,13 +170,13 @@ AUTO 的 Current Node 为 Fallback Node
 
 ```
 
-### 3.5 同步订阅节点
+### 3.5 Subscription Sync
 
 ```text
 
 管理状态 stopped
 
-→ 用户请求同步订阅节点
+→ 用户请求 Subscription Sync
 
 → 请求、解析、过滤和校验
 
@@ -196,7 +192,7 @@ AUTO 的 Current Node 为 Fallback Node
 
 ```
 
-Subscription Sync 仅允许在 `stopped` 时执行；Subscription Metadata Refresh 在 `running` 和 `stopped` 时均允许。
+Subscription Sync 仅允许在 `stopped` 时执行；Subscription Refresh 在 `running` 和 `stopped` 时均允许。
 
 ### 3.6 人工修改配置
 
@@ -204,7 +200,7 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Metadata Refre
 
 用户停止 sing-box
 
-→ 新增、修改、删除 Subscription 或同步订阅节点
+→ 新增、修改、删除 Subscription 或执行 Subscription Sync
 
 → 或修改 Node、Inbound、MANUAL/AUTO 的结构、type、Node Pool、Fallback/Current 角色或 Route
 
@@ -276,7 +272,7 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Metadata Refre
 
 **REQ-NODE-006** Node 只有在必填字段、端口范围、协议字段组合和 sing-box 配置映射通过校验后才能保存或导入。所有已保存的全局 Node 都必须能够由应用映射器生成字段结构完整的 sing-box Remote Outbound 配置片段。Node 保存阶段不组装完整配置，也不单独调用 `sing-box check`；对象间引用、tag、Route、监听冲突和当前 sing-box 版本兼容性统一在生成完整配置并启动时校验。
 
-**REQ-NODE-007** 凭据、UUID、密码、密钥、分享 URI、完整 Subscription URL 和包含上述内容的原始 parser 输入不得写入日志，也不得在同步订阅节点或删除 Subscription 的差异预览中显示原文。差异预览只展示确认业务变化所需的 Node name、来源、协议类型、变化类型、脱敏后的字段类别和失败原因；底层 HTTP、parser 或 sing-box 错误在记录和展示前必须移除上述敏感内容。
+**REQ-NODE-007** 凭据、UUID、密码、密钥、分享 URI、完整 Subscription URL 和包含上述内容的原始 parser 输入不得写入日志，也不得在 Subscription Sync 或删除 Subscription 的差异预览中显示原文。差异预览只展示确认业务变化所需的 Node name、来源、协议类型、变化类型、脱敏后的字段类别和失败原因；底层 HTTP、parser 或 sing-box 错误在记录和展示前必须移除上述敏感内容。
 
 ---
 
@@ -286,7 +282,7 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Metadata Refre
 
 **REQ-CONFIG-001** 系统将以下操作统一定义为结构配置写操作；除本文明确规定的在线操作外，结构配置写操作只允许在管理状态为 `stopped` 时执行：
 
-- Subscription 新增、修改、删除和同步订阅节点；
+- Subscription 新增、修改、删除和 Subscription Sync；
 - Node、Inbound 和 Route 的新增、修改和删除；
 - MANUAL/AUTO 的新增和删除，以及名称、type、Node Pool、AUTO Fallback Node 和通过结构编辑修改 MANUAL Current Node；
 - 其他会改变下一次生成的 sing-box 完整配置结构、对象定义或初始选择的业务数据修改。
@@ -298,7 +294,7 @@ Node Pool 成员的增加、删除仍属于结构配置写操作；只有在 Nod
 **REQ-CONFIG-002** 管理状态为 `running` 时允许执行以下非结构配置操作：
 
 - 查看状态和日志；
-- 刷新 Subscription 元信息（Subscription Metadata Refresh）；
+- Subscription Refresh；
 - 按 REQ-HEALTH-006 人工检测 Node；
 - 按 REQ-OUTBOUND-007 在线切换 MANUAL Current Node；
 - 调整 MANUAL/AUTO 现有 Node Pool 成员的 priority；
@@ -306,7 +302,7 @@ Node Pool 成员的增加、删除仍属于结构配置写操作；只有在 Nod
 - Stop；
 - Restart。
 
-上述“允许”表示操作不受结构配置冻结规则禁止；人工检测仍要求 sing-box 实际进程正在运行，MANUAL Current Node 在线切换仍要求目标 MANUAL 已写入当前配置、sing-box 实际进程正在运行且 Clash API 可用。Subscription Metadata Refresh 只更新展示所需的 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node，因此不属于结构配置写操作。
+上述“允许”表示操作不受结构配置冻结规则禁止；人工检测仍要求 sing-box 实际进程正在运行，MANUAL Current Node 在线切换仍要求目标 MANUAL 已写入当前配置、sing-box 实际进程正在运行且 Clash API 可用。Subscription Refresh 只更新展示所需的 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node，因此不属于结构配置写操作。
 
 priority reorder 只更新 SQLite，不属于结构配置写，也不生成或修改 sing-box 配置；具体规则见 REQ-OUTBOUND-004。
 
@@ -316,7 +312,7 @@ priority reorder 只更新 SQLite，不属于结构配置写，也不生成或�
 
 MANUAL Current Node 在线切换是结构配置冻结规则的明确例外。MANUAL Current Node 同时具有数据库中的持久化选择和 sing-box selector 的运行时实际选择，具体修改、在线切换、持久化和页面展示规则由 REQ-OUTBOUND-007 规定；priority reorder 的生效规则见 REQ-OUTBOUND-004。
 
-Settings、Subscription Metadata Refresh 和 Node 检测分别按各自章节规定写入 Settings 文件、Subscription 元信息或运行时展示状态，不适用“结构配置只写数据库”的规则。
+Settings、Subscription Refresh 和 Node 检测分别按各自章节规定写入 Settings 文件、Subscription 元信息或运行时展示状态，不适用“结构配置只写数据库”的规则。
 
 系统不提供独立 Apply 按钮，不建立 Pending Config、待生效状态或配置版本状态机。
 
@@ -366,17 +362,17 @@ MANUAL/AUTO、DIRECT、Node 和 Route 到 sing-box 配置对象、tag 及字段�
 
 ### 6.1 添加、修改与请求
 
-**REQ-SUB-001** 系统允许维护多个 Subscription。同步订阅节点只在用户从页面明确发起时执行，不执行后台定时同步。新建 Subscription 后允许暂时不包含任何 Node，直到用户首次明确执行同步订阅节点。
+**REQ-SUB-001** 系统允许维护多个 Subscription。Subscription Sync 只在用户从页面明确发起时执行，不执行后台定时同步。新建 Subscription 后允许暂时不包含任何 Node，直到用户首次明确执行 Subscription Sync。
 
-修改 Subscription URL、Filter 或 Exclude 只更新 Subscription 自身配置，不请求或解析订阅，也不增加、修改或删除已有 Node。新的 URL、Filter 和 Exclude 只在下一次用户明确执行同步订阅节点时用于 Node 同步；修改 Subscription 不等于自动同步 Node。
+修改 Subscription URL、Filter 或 Exclude 只更新 Subscription 自身配置，不请求或解析订阅，也不增加、修改或删除已有 Node。新的 URL、Filter 和 Exclude 只在下一次用户明确执行 Subscription Sync 时用于更新 Node；修改 Subscription 不等于自动执行 Subscription Sync。
 
 **REQ-SUB-002** 第一版 Subscription URL 只接受具有正常有效证书的 HTTPS 地址，不支持 HTTP、局域网订阅地址、自签名证书或忽略证书校验。
 
 **REQ-SUB-003** Subscription 请求使用程序内置、固定的 Clash 兼容 User-Agent 和请求头，不允许为单个 Subscription 配置自定义请求头。
 
-**REQ-SUB-004** 系统可以读取并显示 Subscription 提供的已使用流量、总流量、到期时间等元信息。用户可以在管理状态为 `running` 或 `stopped` 时执行 Subscription Metadata Refresh（刷新 Subscription 元信息）；该操作使用当时保存的 Subscription URL，只更新 Subscription 元信息，不执行 Node parser，也不同步、增加、修改或删除任何 Node。
+**REQ-SUB-004** 系统可以读取并显示 Subscription 提供的已使用流量、总流量、到期时间等元信息。用户可以在管理状态为 `running` 或 `stopped` 时执行 Subscription Refresh；该操作使用当时保存的 Subscription URL，只更新 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node。
 
-Subscription 新增、修改、删除和同步订阅节点的运行状态限制统一由 REQ-CONFIG-001 规定，本章不重复定义。
+Subscription 新增、修改、删除和 Subscription Sync 的运行状态限制统一由 REQ-CONFIG-001 规定，本章不重复定义。
 
 ### 6.2 Filter 与 Exclude
 
@@ -391,29 +387,29 @@ Subscription 新增、修改、删除和同步订阅节点的运行状态限制�
 
 ### 6.3 解析、匹配与跳过
 
-**REQ-SUB-006** 同步订阅节点时依次执行 Subscription 请求、parser、Filter/Exclude、Node 校验和差异计算。无效节点和不支持协议节点全部跳过；预览需要显示跳过数量、可安全显示的节点标识和脱敏原因。只要过滤后至少剩一个合法节点，就允许进入差异确认。
+**REQ-SUB-006** Subscription Sync 依次执行 Subscription 请求、parser、Filter/Exclude、Node 校验和差异计算。无效节点和不支持协议节点全部跳过；预览需要显示跳过数量、可安全显示的节点标识和脱敏原因。只要过滤后至少剩一个合法节点，就允许进入差异确认。
 
-**REQ-SUB-007** 如果请求失败、订阅整体格式无法识别、没有任何合法节点，或经过 Filter/Exclude 后结果为空，本次同步失败，不产生可确认结果，原数据不变。
+**REQ-SUB-007** 如果请求失败、订阅整体格式无法识别、没有任何合法节点，或经过 Filter/Exclude 后结果为空，本次 Subscription Sync 失败，不产生可确认结果，原数据不变。
 
-**REQ-SUB-008** 同步同一 Subscription 的 Node 时，以“Subscription + parser 产出的 `name` 完整内容”作为 Node 身份判断基础。`name` 匹配区分大小写，不自动修剪、改写或进行 Unicode 归一化：
+**REQ-SUB-008** 对同一 Subscription 执行 Sync 时，以“Subscription + parser 产出的 `name` 完整内容”作为 Node 身份判断基础。`name` 匹配区分大小写，不自动修剪、改写或进行 Unicode 归一化：
 
 - name 完全相同视为同一 Node；
 - name 相同而其他字段变化视为修改；
 - name 变化视为删除旧 Node 并新增新 Node；
 - 不同 Subscription 允许存在相同 name；
-- 同一 Subscription 出现完全相同的重复 name 时，由于身份不明确，本次同步整体失败。
+- 同一 Subscription 出现完全相同的重复 name 时，由于身份不明确，本次 Subscription Sync 整体失败。
 
 系统不根据地址、端口、UUID 或其他协议字段猜测两个不同 name 的 Node 是否只是被重命名。
 
 ### 6.4 差异确认与事务
 
-**REQ-SUB-009** 同步请求成功解析后，页面显示新增、修改、删除和跳过 Node 的数量及脱敏明细；用户确认前不得修改数据库。用户只能确认或取消整个差异结果，不提供逐条选择导入或删除的能力。
+**REQ-SUB-009** Subscription Sync 请求成功解析后，页面显示新增、修改、删除和跳过 Node 的数量及脱敏明细；用户确认前不得修改数据库。用户只能确认或取消整个差异结果，不提供逐条选择导入或删除的能力。
 
 **REQ-SUB-010** 差异预览必须同时显示 Node 删除引起的 MANUAL Current Node 或 AUTO Fallback Node 自动替换、被删除的 MANUAL/AUTO 和被删除的 Route。用户确认提交时，后端必须取得运行控制锁，再次确认管理状态为 `stopped`，并确认预览所依据的相关数据没有变化；状态或数据已经变化时拒绝提交并要求重新生成预览。校验通过后，在一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部相关变更；用户取消时任何数据都不改变。
 
-**REQ-SUB-011** 被跳过的 Node 不进入新订阅结果。因此它可能使原有同名 Node 出现在删除预览中；最终是否导入及执行自动替换、级联删除由用户查看完整预览后确认。
+**REQ-SUB-011** 被跳过的 Node 不进入本次 Subscription Sync 结果。因此它可能使原有同名 Node 出现在删除预览中；最终是否导入及执行自动替换、级联删除由用户查看完整预览后确认。
 
-**REQ-SUB-012** Subscription Node 为只读，不能人工修改协议参数；其内容只能通过同步订阅节点更新。自建 Node 与 Subscription Node 在页面中必须显示不同来源。
+**REQ-SUB-012** Subscription Node 为只读，不能人工修改协议参数；其内容只能通过 Subscription Sync 更新。自建 Node 与 Subscription Node 在页面中必须显示不同来源。
 
 **REQ-SUB-013** 明确删除 Subscription 时，先展示其全部 Node 及 Current/Fallback 自动替换、MANUAL/AUTO 删除和 Route 删除等完整级联影响，用户确认时执行与 REQ-SUB-010 相同的状态复核、数据变化校验和事务处理。
 
@@ -431,7 +427,7 @@ Subscription 新增、修改、删除和同步订阅节点的运行状态限制�
 
 **REQ-OUTBOUND-001** 每个 MANUAL/AUTO 独立定义名称，由用户创建并保存于数据库，其 Node Pool 由全局 Node 组成。
 
-**REQ-OUTBOUND-002** 每个 MANUAL 和 AUTO 必须始终至少包含两个不同 Node。Node 是全局对象，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。用户正常创建或编辑 Node Pool 时，少于两个 Node 不允许保存；全局 Node 删除、Subscription 删除或同步订阅节点造成不足两个 Node 时，按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览及级联删除。
+**REQ-OUTBOUND-002** 每个 MANUAL 和 AUTO 必须始终至少包含两个不同 Node。Node 是全局对象，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。用户正常创建或编辑 Node Pool 时，少于两个 Node 不允许保存；全局 Node 删除、Subscription 删除或 Subscription Sync 造成不足两个 Node 时，按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览及级联删除。
 
 **REQ-OUTBOUND-003** MANUAL/AUTO 的 Node Pool 是有序 Node 集合；每个 Node 都必须具有连续、唯一的 `1...N` priority，数值越小、优先级越高。页面按 priority 数值升序显示，`priority = 1` 的 Node 显示在最前；priority 的运行用途由 Outbound type 决定。priority 保存于 SQLite，是 ProxyHub 对 Node Pool 的排序和 AUTO Candidate 择优数据，不属于 sing-box 配置数据。
 
@@ -478,9 +474,9 @@ MANUAL 被 Route 引用并已写入当前 sing-box 配置时，用户可以在�
 - AUTO 的 Fallback Node 被删除时，以剩余 Node 中 priority 最高者作为新的 Fallback Node；
 - MANUAL/AUTO 剩余不足两个 Node：删除该 MANUAL/AUTO，并继续删除引用它的全部 Route。
 
-**REQ-ROUTE-007** 人工删除一个或多个 Node、删除 Subscription，以及同步订阅节点删除 Node，都使用相同的级联规则。执行前必须向用户展示完整影响，包括 Current/Fallback Node 的自动替换、MANUAL/AUTO 删除和 Route 删除；用户确认后，在同一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部变更。
+**REQ-ROUTE-007** 人工删除一个或多个 Node、删除 Subscription，以及 Subscription Sync 删除 Node，都使用相同的级联规则。执行前必须向用户展示完整影响，包括 Current/Fallback Node 的自动替换、MANUAL/AUTO 删除和 Route 删除；用户确认后，在同一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部变更。
 
-**REQ-ROUTE-008** 正常编辑 MANUAL/AUTO 的 Node Pool 时，用户必须保持至少两个 Node；如果移除 Current/Fallback Node 但仍满足最少节点数，则按 REQ-OUTBOUND-005 自动替换。由全局 Node 删除、Subscription 删除或同步订阅节点造成的 Node Pool 缩减不按普通编辑拒绝保存，而按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览、替换和级联删除。
+**REQ-ROUTE-008** 正常编辑 MANUAL/AUTO 的 Node Pool 时，用户必须保持至少两个 Node；如果移除 Current/Fallback Node 但仍满足最少节点数，则按 REQ-OUTBOUND-005 自动替换。由全局 Node 删除、Subscription 删除或 Subscription Sync 造成的 Node Pool 缩减不按普通编辑拒绝保存，而按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览、替换和级联删除。
 
 ---
 
@@ -617,7 +613,7 @@ AUTO 触发 sing-box 重启时，本控制周期立即结束。Fallback 持续�
 - priority 在线重排取得锁后不检查 `management_state == stopped`，在 `running` 和 `stopped` 时均可执行；
 - Restart 在一次持锁期间依次完成 Stop 和 Start，中间不释放锁，也不允许插入结构配置修改；
 - Stop 或 Restart 到来时，如果后台控制周期正在执行，则等待该周期完整结束，不取消正在执行的 AUTO 检测；
-- Subscription Metadata Refresh、Settings 保存和人工检测不持有运行控制锁；
+- Subscription Refresh、Settings 保存和人工检测不持有运行控制锁；
 - 多个生命周期请求同时发生时，按取得锁的顺序执行，不实现任务取消、请求合并或任务队列。
 
 ### 8.9 检测并发
@@ -871,7 +867,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 **REQ-UI-001** 桌面页面提供 Subscription、Node、Inbound、Outbound、Route、Settings、状态、关键日志和 sing-box 管理功能。Outbound 页面和 Route 目标选择中统一展示 DIRECT、MANUAL 和 AUTO：DIRECT 为只读系统项；用户创建的 Outbound type 只能是 `manual` 或 `auto`，仅允许按 REQ-OUTBOUND-006 在二者之间修改 type。DIRECT 不显示 Node、Current Node 或健康状态。
 
-**REQ-UI-002** 桌面页面支持新增、修改、删除 Subscription、同步订阅节点、刷新 Subscription 元信息、对单个 Node 发起人工检测、按全部自建 Node、指定 Subscription 或全部全局 Node 发起人工批量检测、切换 MANUAL 的 Current Node、调整 MANUAL/AUTO 的 Node priority、Start、Stop、Restart、下载日志以及人工检查和升级 sing-box。Subscription 相关操作的运行状态限制遵循 REQ-CONFIG-001，删除和同步订阅节点产生的差异预览、级联影响与事务规则遵循第 6 章。
+**REQ-UI-002** 桌面页面支持新增、修改、删除 Subscription、Subscription Sync、Subscription Refresh、对单个 Node 发起人工检测、按全部自建 Node、指定 Subscription 或全部全局 Node 发起人工批量检测、切换 MANUAL 的 Current Node、调整 MANUAL/AUTO 的 Node priority、Start、Stop、Restart、下载日志以及人工检查和升级 sing-box。Subscription 相关操作的运行状态限制遵循 REQ-CONFIG-001，删除和 Subscription Sync 产生的差异预览、级联影响与事务规则遵循第 6 章。
 
 **REQ-UI-003** 移动页面只提供整体管理状态和实际进程状态、MANUAL/AUTO 状态、Node 健康状态、只读 DIRECT 状态项和 MANUAL 的 Current Node 切换，不提供结构配置、priority 编辑、Settings、升级或完整日志管理。
 
@@ -968,7 +964,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 **REQ-REL-001** 所有运行控制锁的使用与串行化规则统一遵循 REQ-RUNTIME-007。第一版不建立跨进程锁或分布式事务。
 
-**REQ-REL-002** 同步订阅节点的请求、解析或预览失败时原数据不变；用户确认后，Subscription（适用时）、Node、Current/Fallback 自动替换、MANUAL/AUTO 更新或删除和 Route 删除作为一个业务事务完成。
+**REQ-REL-002** Subscription Sync 的请求、解析或预览失败时原数据不变；用户确认后，Subscription（适用时）、Node、Current/Fallback 自动替换、MANUAL/AUTO 更新或删除和 Route 删除作为一个业务事务完成。
 
 **REQ-REL-003** 删除 Subscription、Node、Inbound、MANUAL、AUTO 或 Route 前显示简单确认；涉及级联时显示受影响对象和 Current/Fallback 自动替换。删除 MANUAL/AUTO 时必须删除引用它的 Route，不得把 Route 自动或静默改为系统内置 DIRECT。
 
@@ -996,7 +992,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 - 分布式任务队列、任务历史和任务恢复；
 
-- 自动同步订阅节点；
+- 自动执行 Subscription Sync；
 
 - 配置热重载或独立“应用配置”；
 
