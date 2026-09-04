@@ -306,7 +306,7 @@ Node Pool 成员的增加、删除仍属于结构配置写操作；只有在 Nod
 
 上述“允许”表示操作不受结构配置冻结规则禁止；人工检测仍要求 sing-box 实际进程正在运行，MANUAL Current Node 在线切换仍要求目标 MANUAL 已在运行且运行时切换能力可用。Subscription Refresh 只更新展示所需的 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node，因此不属于结构配置写操作。
 
-priority reorder 只更新 SQLite，不属于结构配置写，也不生成或修改 sing-box 配置；具体规则见 REQ-OUTBOUND-004。
+priority reorder 只更新数据库，不属于结构配置写，也不生成或修改 sing-box 配置；具体规则见 REQ-OUTBOUND-004。
 
 ### 5.2 修改与生效
 
@@ -431,7 +431,7 @@ Subscription 新增、修改、删除和 Subscription Sync 的运行状态限制
 
 **REQ-OUTBOUND-002** 每个 MANUAL 和 AUTO 必须始终至少包含两个不同 Node。Node 是全局对象，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。用户正常创建或编辑 Node Pool 时，少于两个 Node 不允许保存；全局 Node 删除、Subscription 删除或 Subscription Sync 造成不足两个 Node 时，按 REQ-ROUTE-006 和 REQ-ROUTE-007 执行预览及级联删除。
 
-**REQ-OUTBOUND-003** MANUAL/AUTO 的 Node Pool 是有序 Node 集合；同一 Node Pool 中每个 Node 的 priority 必须唯一，可以不连续，数值越小、优先级越高。页面按 priority 升序显示；priority 保存于 SQLite，用于稳定表达 Node Pool 顺序和 AUTO Candidate 择优，不属于 sing-box 配置数据。新增、插入或删除 Node 时只需保持 priority 唯一并正确表达顺序，不要求整体连续重编号。
+**REQ-OUTBOUND-003** MANUAL/AUTO 的 Node Pool 是有序 Node 集合；同一 Node Pool 中每个 Node 的 priority 必须唯一，可以不连续，数值越小、优先级越高。页面按 priority 升序显示；priority 保存于数据库，用于稳定表达 Node Pool 顺序和 AUTO Candidate 择优，不属于 sing-box 配置数据。新增、插入或删除 Node 时只需保持 priority 唯一并正确表达顺序，不要求整体连续重编号。
 
 **REQ-OUTBOUND-004** 新建 MANUAL/AUTO 时，后端按前端提交的确定顺序生成 priority；逐个选择时按选择顺序，一次选择多个 Node 时按 Node name 排序，同名时按稳定标识排序。
 
