@@ -54,25 +54,27 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 - **Inbound**：向本机或其他设备提供服务的本地监听入口。
 
-- **Outbound**：所有流量出口的统称，type 只有 `direct`、`manual` 和 `auto` 三种。
+- **Outbound**：所有流量出口的统称，`type` 只有 `direct`、`manual` 和 `auto` 三种。
 
-- **DIRECT**：`type = direct` 的系统内置 Outbound，全局唯一、只读、不包含 Node 且不保存数据库记录，可被 Route 显式选择。
+- **DIRECT**：`type = direct` 的系统内置 Outbound，全局唯一、只读，不包含 Node 且不保存数据库记录，可被 Route 显式选择。
 
-- **MANUAL/AUTO**：保存在数据库中的用户 Outbound，包含一个 Node Pool，以及 Pool 中的一个 Default Node。
+- **MANUAL/AUTO**：保存在数据库中的用户 Outbound，包含一个 Node Pool，并在 Pool 中指定一个 Default Node。
 
-- **MANUAL**：`type = manual`，Default Node 用于初始化 Current Node；运行时 Current Node 由用户手动切换，不执行自动故障切换。
+- **Node Pool**：MANUAL/AUTO 包含的有序 Node 集合。Pool 中 Node 的 `priority` 唯一且允许不连续，数值越小优先级越高。
 
-- **AUTO**：`type = auto`，Default Node 作为 Fallback Node，运行时 Current Node 由后台控制循环管理。
+- **Default Node**：MANUAL/AUTO 在 Node Pool 中持久化指定的默认 Node。MANUAL 使用 Default Node 初始化 Current Node；AUTO 的 Default Node 同时作为 Fallback Node。
+
+- **MANUAL**：`type = manual` 的 Outbound。运行时 Current Node 由 Default Node 初始化，之后由用户手动切换，不执行自动故障切换。
+
+- **AUTO**：`type = auto` 的 Outbound。Default Node 作为 Fallback Node，运行时 Current Node 由后台控制循环管理。
+
+- **Candidate Node**：AUTO 的 Node Pool 中除 Default Node 外的 Node。Candidate Node 直接使用其在 Node Pool 中的 `priority` 参与自动择优和 Priority Recovery，不单独重新编号。
+
+- **Fallback Node**：AUTO 的 Default Node。当自动切换无法选出可用 Candidate Node 时作为备用节点，不参与 Candidate 自动择优和 Priority Recovery。
+
+- **Current Node**：MANUAL/AUTO 在当前 sing-box 运行周期中实际生效的 Node，仅保存在运行时内存中。MANUAL 由 Default Node 初始化并由用户管理；AUTO 由后台控制循环管理。
 
 - **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
-
-- **Node Pool**：MANUAL/AUTO 包含的有序 Node 集合；Node 的 `priority` 唯一且可不连续，数值越小优先级越高。
-
-- **Candidate Node**：AUTO 的 Node Pool 中除 Default Node 外的 Node，直接使用其 `priority` 参与自动择优和 Priority Recovery。
-
-- **Fallback Node**：AUTO 的 Default Node，作为自动切换无法选出 Candidate Node 时的备用节点，不参与自动择优和 Priority Recovery。
-
-- **Current Node**：MANUAL/AUTO 当前实际生效的 Node，仅保存在运行时内存中；MANUAL 由 Default Node 初始化并由用户管理，AUTO 由后台控制循环管理。
 
 - **Routed AUTO**：至少被一条 Route 引用的 AUTO。该名称只表示 Route 引用关系，不表示 sing-box 当前一定处于 running 状态。
 
