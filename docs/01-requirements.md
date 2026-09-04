@@ -128,11 +128,11 @@ sing-box 实际启动或重启成功
 
 → 下一控制周期扫描全部 Candidate Node
 
-→ 选择可用 Candidate 中 priority 最高者
+→ 选择可用 Candidate 中优先级最高的 Node
 
 → 后续每个控制周期检测 Current Candidate
 
-→ Current Candidate 不是最高 priority Candidate 时，按独立间隔扫描更高 priority Candidate
+→ Current Candidate 不是优先级最高的 Node 时，按独立间隔扫描优先级更高的 Candidate
 
 ```
 
@@ -148,7 +148,7 @@ sing-box 实际启动或重启成功
 
 → 下一个控制周期扫描全部 Candidate Node
 
-→ 有可用 Candidate：切换到 priority 最高的可用节点
+→ 有可用 Candidate：切换到优先级最高的可用 Node
 
 → 没有可用 Candidate：保持 Fallback Node
 
@@ -162,7 +162,7 @@ AUTO 的 Current Node 为 Fallback Node
 
 → 每个控制周期先扫描全部 Candidate Node
 
-→ 有可用 Candidate：切换到 priority 最高的可用节点并结束 Fallback 状态
+→ 有可用 Candidate：切换到优先级最高的可用 Node 并结束 Fallback 状态
 
 → 没有可用 Candidate：保持 Fallback Node
 
@@ -258,7 +258,7 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Refresh 在 `r
 
 - Hysteria2。
 
-既有 parser 和 sing-box 映射只能作为上述五种协议字段的参考，不能隐式扩大协议范围。
+协议字段范围以上述五种协议为准，既有实现不得隐式扩大支持范围。
 
 **REQ-NODE-002** Shadowsocks 节点需要支持 sing-box 自身可用的 obfs 能力，不安装或管理额外 obfs 二进制。
 
@@ -272,7 +272,7 @@ Subscription Sync 仅允许在 `stopped` 时执行；Subscription Refresh 在 `r
 
 ### 4.3 保存校验
 
-**REQ-NODE-006** Node 只有在必填字段、端口范围、协议字段组合和 sing-box 配置映射通过校验后才能保存或导入。所有已保存的全局 Node 都必须能够由应用映射器生成字段结构完整的 sing-box Remote Outbound 配置片段。Node 保存阶段不组装完整配置，也不单独调用 `sing-box check`；对象间引用、tag、Route、监听冲突和当前 sing-box 版本兼容性统一在生成完整配置并启动时校验。
+**REQ-NODE-006** Node 只有在必填字段、端口范围和协议字段组合通过校验后才能保存或导入。对象间引用、Route、监听冲突和当前 sing-box 版本兼容性统一在生成完整配置并启动时校验。
 
 **REQ-NODE-007** 凭据、UUID、密码、密钥、分享 URI、完整 Subscription URL 和包含上述内容的原始 parser 输入不得写入日志，也不得在 Subscription Sync 或删除 Subscription 的差异预览中显示原文。差异预览只展示确认业务变化所需的 Node name、来源、协议类型、变化类型、脱敏后的字段类别和失败原因；底层 HTTP、parser 或 sing-box 错误在记录和展示前必须移除上述敏感内容。
 
@@ -304,7 +304,7 @@ Node Pool 成员的增加、删除仍属于结构配置写操作；只有在 Nod
 - Stop；
 - Restart。
 
-上述“允许”表示操作不受结构配置冻结规则禁止；人工检测仍要求 sing-box 实际进程正在运行，MANUAL Current Node 在线切换仍要求目标 MANUAL 已写入当前配置、sing-box 实际进程正在运行且 Clash API 可用。Subscription Refresh 只更新展示所需的 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node，因此不属于结构配置写操作。
+上述“允许”表示操作不受结构配置冻结规则禁止；人工检测仍要求 sing-box 实际进程正在运行，MANUAL Current Node 在线切换仍要求目标 MANUAL 已在运行且运行时切换能力可用。Subscription Refresh 只更新展示所需的 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node，因此不属于结构配置写操作。
 
 priority reorder 只更新 SQLite，不属于结构配置写，也不生成或修改 sing-box 配置；具体规则见 REQ-OUTBOUND-004。
 
@@ -348,15 +348,15 @@ Settings、Subscription Refresh 和 Node 检测分别按各自章节规定写入
 
 - 现存 Route 映射；
 
-- 固定监听 `127.0.0.1:9090` 的 Clash API。
+- 支持运行时状态查询、节点检测和切换所需的控制能力。
 
-MANUAL/AUTO、DIRECT、Node 和 Route 到 sing-box 配置对象、tag 及字段的具体映射由 sing-box 模块设计规定。实现必须满足本文关于 Node Pool priority、Default Node、启动初始化、连接中断和 DIRECT Route 的业务要求，不得由历史 Current Node 覆盖 MANUAL/AUTO 的初始化选择。
+完整配置必须满足本文关于 Node Pool、Default Node、启动初始化、连接中断和 DIRECT Route 的业务要求，不得由历史 Current Node 覆盖 MANUAL/AUTO 的初始化选择。
 
-`priority` 不属于 sing-box 配置；Config Builder 不生成 priority 字段，也不通过 selector 成员顺序表达其语义。
+`priority` 不属于 sing-box 配置，也不影响生成配置中的 Node 顺序。
 
 **REQ-CONFIG-006** 系统保留上一份可用正式配置供人工排错，但新配置检查失败后不自动恢复或启动旧配置。
 
-**REQ-CONFIG-007** 对会写入配置的 Inbound 执行基本监听地址和端口冲突校验，包括 Inbound 之间以及与 ProxyHub Web、Clash API 的明显冲突。不执行通用操作系统端口扫描。
+**REQ-CONFIG-007** 对会写入配置的 Inbound 执行基本监听地址和端口冲突校验，包括 Inbound 之间以及与 ProxyHub 自身监听端口的明显冲突。不执行通用操作系统端口扫描。
 
 ---
 
@@ -439,7 +439,7 @@ Subscription 新增、修改、删除和 Subscription Sync 的运行状态限制
 
 重排只改变 priority，不改变 Default Node 或 Current Node，也不立即切换或重置 AUTO 运行状态。AUTO 后续择优使用最新 priority。
 
-**REQ-OUTBOUND-005** MANUAL/AUTO 的 Default Node 必须属于各自 Node Pool。新建时不要求用户指定 Default Node，未指定时以 priority 最高的 Node 作为 Default Node。正常编辑 Node Pool 时，如果移除 Default Node 但仍保留至少两个 Node，则以保存后 priority 最高的 Node 自动替代。管理状态为 `stopped` 时修改 Default Node 只更新数据库；sing-box 每次启动或重启成功后，从 Default Node 初始化 Current Node，不恢复上一运行周期的 Current Node。Current Node 发生运行时切换时，必须中断仍绑定旧节点的已有入站连接，使后续重连使用新的 Current Node；具体 sing-box 配置映射由模块设计规定。
+**REQ-OUTBOUND-005** MANUAL/AUTO 的 Default Node 必须属于各自 Node Pool。新建时不要求用户指定 Default Node，未指定时以优先级最高的 Node 作为 Default Node。正常编辑 Node Pool 时，如果移除 Default Node 但仍保留至少两个 Node，则以保存后优先级最高的 Node 自动替代。管理状态为 `stopped` 时修改 Default Node 只更新数据库；sing-box 每次启动或重启成功后，从 Default Node 初始化 Current Node，不恢复上一运行周期的 Current Node。Current Node 切换后必须中断仍绑定旧节点的已有入站连接，使后续重连使用新的 Current Node。
 
 ### 7.3 MANUAL/AUTO
 
@@ -447,9 +447,9 @@ Subscription 新增、修改、删除和 Subscription Sync 的运行状态限制
 
 **REQ-OUTBOUND-007** MANUAL 不执行自动故障切换，运行期间 Current Node 只由用户人工切换。
 
-MANUAL 被 Route 引用并已写入当前 sing-box 配置时，用户可以在管理状态为 `running`、sing-box 实际进程正在运行且 Clash API 可用时人工在线切换 Node。系统先通过 Clash API 修改 selector；只有 Clash API 明确确认成功后，才更新内存 Current Node 并同步更新数据库 Default Node。切换失败时 Current Node 和 Default Node 均保持不变，并在页面提示失败。人工在线切换不改变 priority。
+MANUAL 被 Route 引用并正在运行时，用户可以人工切换运行时 Current Node。实际切换成功后，系统更新内存 Current Node 并同步更新数据库 Default Node；实际切换失败时二者均保持不变，并在页面提示失败。运行时切换能力不可用时不能执行切换。人工在线切换不改变 priority。
 
-sing-box 正常运行时，页面显示实际 Current Node；系统通过 Clash API 查询 selector 的实际选择，不使用 Default Node 推断。Clash API 不可用时，页面将 Current Node 显示为不可用。管理状态为 `stopped` 时，页面显示数据库中的 Default Node，表示下一次启动的初始选择。
+sing-box 正常运行时，页面显示实际 Current Node，不使用 Default Node 推断；运行时状态不可用时显示 Current Node 不可用。管理状态为 `stopped` 时，页面显示数据库中的 Default Node，表示下一次启动的初始选择。
 
 **REQ-OUTBOUND-008** AUTO 的 Default Node 即 Fallback Node，用户可以修改 Default Node，运行状态限制统一遵循 REQ-CONFIG-001。除 Fallback Node 外的其他 Node 全部是 Candidate Node。Fallback 身份优先于其 priority，Fallback Node 不参与 Candidate priority 择优；Candidate priority 用于 AUTO Candidate 选择、Fallback Recovery 和 Candidate Priority Recovery。
 
@@ -465,14 +465,14 @@ sing-box 正常运行时，页面显示实际 Current Node；系统通过 Clash 
 
 **REQ-ROUTE-003** 前端和内部 API 使用稳定的系统标识表示 DIRECT；创建或修改 Route 时，该标识可以作为合法的 Outbound 引用。
 
-**REQ-ROUTE-004** 未被 Route 引用的 Inbound 和 MANUAL/AUTO 只保存于数据库，不生成其对应的 Inbound 或 MANUAL/AUTO 运行时配置；被 Route 引用的对象才生成对应配置。Route 选择 DIRECT 时，相关 Inbound 和系统内置 DIRECT 正常写入配置并对外监听，流量直接访问目标地址。DIRECT 的具体 sing-box 配置映射由模块设计规定。
+**REQ-ROUTE-004** 未被 Route 引用的 Inbound 和 MANUAL/AUTO 只保存于数据库，不生成对应的运行对象；被 Route 引用的对象才进入运行配置。Route 选择 DIRECT 时，相关 Inbound 正常对外监听，流量直接访问目标地址。
 
 **REQ-ROUTE-005** 删除 Inbound、MANUAL 或 AUTO 时，一并删除引用它的 Route。删除 MANUAL/AUTO 不得把原 Route 自动或静默改为 DIRECT；DIRECT 不可删除。
 
 **REQ-ROUTE-006** 删除一个或多个 Node 时，以本次操作全部 Node 删除完成后的剩余 Node Pool 为准，对所有受影响的 MANUAL/AUTO 按以下规则处理：
 
 - MANUAL/AUTO 剩余至少两个 Node：保留其余 Node 的 priority 和相对顺序；
-- Default Node 被删除时，以剩余 Node 中 priority 最高者作为新的 Default Node；AUTO 的新 Default Node 同时是新的 Fallback Node；
+- Default Node 被删除时，以剩余 Node 中优先级最高的 Node 作为新的 Default Node；AUTO 的新 Default Node 同时是新的 Fallback Node；
 - MANUAL/AUTO 剩余不足两个 Node：删除该 MANUAL/AUTO，并继续删除引用它的全部 Route。
 
 **REQ-ROUTE-007** 人工删除一个或多个 Node、删除 Subscription，以及 Subscription Sync 删除 Node，都使用相同的级联规则。执行前必须向用户展示完整影响，包括 Default Node 自动替换、MANUAL/AUTO 删除和 Route 删除；用户确认后，在同一个业务事务中完成 Subscription（适用时）、Node、Outbound 和 Route 的全部变更。
@@ -601,7 +601,7 @@ sing-box 正常运行时，继续执行本周期后续任务。发现 sing-box �
 
 ### 8.7 AUTO 故障切换任务
 
-**REQ-RUNTIME-006** 进程守护确认管理状态为 `running`、sing-box 实际进程正在运行且 Clash API 可用后，逐个处理所有 Routed AUTO，具体检测、切换和恢复规则遵循第 10 章。进程守护未恢复成功时，本周期不执行 AUTO 检测。
+**REQ-RUNTIME-006** 进程守护确认管理状态为 `running`、sing-box 实际进程正在运行且运行时节点切换能力可用后，逐个处理所有 Routed AUTO，具体检测、切换和恢复规则遵循第 10 章。进程守护未恢复成功时，本周期不执行 AUTO 检测。
 
 AUTO 触发 sing-box 重启时，本控制周期立即结束。Fallback 持续超时按 REQ-FAILOVER-010 处理；切换失败需要重启时按 REQ-FAILOVER-011 处理。
 
@@ -652,13 +652,13 @@ URL 检测
 
 ### 9.3 URL 检测
 
-**REQ-HEALTH-003** URL 检测必须通过被检测 Node 的真实代理流量完成。系统使用 sing-box Clash API delay 接口访问 Settings 中统一配置的 HTTPS 测试 URL。
+**REQ-HEALTH-003** URL 检测必须通过被检测 Node 的真实代理流量访问 Settings 中统一配置的 HTTPS 测试 URL。
 
-Clash API 返回 HTTP 2xx 且 `delay > 0` 时检测成功：
+测试请求返回 HTTP 2xx 且取得 `delay > 0` 时检测成功：
 
 ```text
 result = available
-url delay = API 返回的 delay
+url delay = 实际取得的 delay
 ```
 
 其他情况均为检测失败：
@@ -733,7 +733,7 @@ Current = Fallback，持续时间从零开始累计
         ↓
 Current == Fallback？
         ├── 是 → 扫描全部 Candidate
-        │          ├── 成功切换 → Current = 最高 priority 的可用 Candidate
+        │          ├── 成功切换 → Current = 优先级最高的可用 Node
         │          └── 仍在 Fallback → 持续时间超时？
         │                                  ├── 否 → 处理下一个 AUTO
         │                                  └── 是 → 重启 sing-box，本周期结束
@@ -742,7 +742,7 @@ Current == Fallback？
                    ├── 连续失败达到阈值 → 成功切换 Fallback，本 AUTO 处理结束
                    └── 未达到阈值 → Priority Recovery 到期？
                                           ├── 否 → 处理下一个 AUTO
-                                          └── 是 → 扫描更高 priority Candidate
+                                          └── 是 → 扫描优先级更高的 Candidate
                                                        ├── 有可用 → 切换
                                                        └── 无可用 → 保持 Current
 ```
@@ -780,7 +780,7 @@ Current Node 为 Fallback 时累计实际经过的 Fallback 持续时间；不�
 
 TCP 检测、人工检测、Fallback Recovery 和 Priority Recovery 的检测结果本身均不影响该计数。
 
-**REQ-FAILOVER-004** 连续失败达到配置阈值时，立即通过 Clash API 切换到 Fallback。切换成功后：
+**REQ-FAILOVER-004** 连续失败达到配置阈值时，立即切换到 Fallback。切换成功后：
 
 ```text
 Current Node = Fallback Node
@@ -796,7 +796,7 @@ Fallback 持续时间 = 0，并开始累计
 
 扫描完成后，只按 available 和 priority 选择：
 
-- 存在 available Candidate：选择 priority 最高者并通过 Clash API 切换；
+- 存在 available Candidate：选择优先级最高的 Node 并切换；
 - 不存在 available Candidate：保持 Fallback。
 
 不按 delay 排序，不要求连续成功，也不设置最短节点保持时间。
@@ -814,13 +814,13 @@ Priority Recovery Interval 从切换成功时间重新计算
 
 ### 10.6 Candidate Priority Recovery
 
-**REQ-FAILOVER-007** Current Node 为 Candidate、当前 Candidate 不是全部 Candidate 中 priority 最高者，并且达到 Priority Recovery Interval 时，执行 Priority Recovery。
+**REQ-FAILOVER-007** Current Node 为 Candidate、当前 Candidate 不是全部 Candidate 中优先级最高的 Node，并且达到 Priority Recovery Interval 时，执行 Priority Recovery。
 
-只检测 priority 高于 Current Candidate 的 Candidate，不检测当前 Candidate、priority 更低的 Candidate 或 Fallback Node。当前 Candidate 已经是最高 priority Candidate 时不执行。
+只检测优先级高于 Current Candidate 的 Candidate，不检测当前 Candidate、优先级更低的 Candidate 或 Fallback Node。当前 Candidate 已经是优先级最高的 Node 时不执行。
 
 **REQ-FAILOVER-008** Priority Recovery 完成后：
 
-- 存在 available 的更高 priority Candidate：选择 priority 最高者并切换；
+- 存在 available 的更高优先级 Candidate：选择其中优先级最高的 Node 并切换；
 - 不存在：保持 Current Candidate。
 
 检测本身不影响连续失败次数。成功切换后将连续失败次数清零，并从切换成功时间重新计算 Priority Recovery Interval；没有成功切换时，从本次扫描完成时间重新计算该 Interval。
@@ -855,7 +855,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 
 ### 10.8 切换失败
 
-**REQ-FAILOVER-011** 只有 Clash API 明确返回成功后，才修改 Current Node 和相关状态。切换失败时：
+**REQ-FAILOVER-011** 只有实际切换成功后，才修改 Current Node 和相关状态。切换失败时：
 
 - Current Candidate → Fallback：记录错误并按 Restart 的 Stop + Start 流程从最新数据库重新生成、检查并启动 sing-box；成功后重置全部状态，失败后保持管理状态 `running` 并由下一周期的进程守护再次尝试；
 - Fallback → Candidate：保持 Fallback 并继续累计持续时间，然后执行本周期的超时判断；
