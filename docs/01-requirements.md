@@ -268,85 +268,82 @@ Node Pool 成员不变时，可以在 `running` 或 `stopped` 状态调整 prior
 
 ---
 
-## 5. 配置修改与生效
+## 5. sing-box 配置管理
 
-### 5.1 结构配置修改限制
+本章定义 sing-box 运行配置相关的数据生成、修改和生效规则。
 
-**REQ-CONFIG-001** 系统将以下操作统一定义为结构配置写操作；除本文明确规定的在线操作外，结构配置写操作只允许在管理状态为 `stopped` 时执行：
+### 5.1 配置生成与生效
 
-- Subscription 新增、修改、删除和 Subscription Sync；
-- Node、Inbound 和 Route 的新增、修改和删除；
-- MANUAL/AUTO 的新增和删除，以及名称、type、Node Pool 和 Default Node；
-- 其他会改变下一次生成的 sing-box 完整配置结构、对象定义或初始选择的业务数据修改。
+REQ-CONFIG-001 数据库保存用于生成 sing-box 配置的业务数据，配置生成时以数据库中的最新业务数据为准。
 
-管理状态为 `running` 时统一禁止上述操作。即使 sing-box 实际进程已经退出或恢复失败，只要管理状态仍为 `running`，限制继续有效，用户必须先执行 Stop。DIRECT 始终为只读系统对象，不允许修改。
+REQ-CONFIG-002 运行中的 sing-box 配置不会因业务数据修改而动态更新；每次启动 sing-box 前，系统必须根据最新数据库重新生成完整配置。
 
-Node Pool 成员的增加、删除仍属于结构配置写操作；只有在 Node Pool 成员集合不变时重新排列全部成员的 priority，才属于允许在线执行的 priority 修改。
+REQ-CONFIG-003 sing-box 启动前必须完成配置生成和有效性检测，检测通过后才允许替换正式配置并启动 sing-box。
 
-**REQ-CONFIG-002** 管理状态为 `running` 时允许执行以下非结构配置操作：
+REQ-CONFIG-004 sing-box 启动时，Current Node 必须根据数据库 Default Node 初始化，不使用上一运行周期的 Current Node：
 
-- 查看状态和日志；
-- Subscription Refresh；
-- 按 REQ-HEALTH-006 人工检测 Node；
-- 按 REQ-OUTBOUND-007 在线切换 MANUAL Current Node；
-- 调整 MANUAL/AUTO 现有 Node Pool 成员的 priority；
-- 修改 12.2 明确支持在线生效的 Settings；
-- Stop；
-- Restart。
+* MANUAL：Default Node 为启动 Current Node；
+* AUTO：Default Node 为 Fallback Node，并作为启动初始节点。
 
-上述“允许”表示操作不受结构配置冻结规则禁止；人工检测仍要求 sing-box 实际进程正在运行，MANUAL Current Node 在线切换仍要求目标 MANUAL 已在运行且运行时切换能力可用。Subscription Refresh 只更新展示所需的 Subscription 元信息，不执行 Node parser，也不增加、修改或删除任何 Node，因此不属于结构配置写操作。
+REQ-CONFIG-005 Node Pool priority 属于业务数据，仅保存在数据库中，不参与 sing-box 配置生成，用于 AUTO 模式下 Candidate Node 的自动选择。
 
-priority reorder 只更新数据库，不属于结构配置写，也不生成或修改 sing-box 配置；具体规则见 REQ-OUTBOUND-004。
+### 5.2 Running 状态允许的修改
 
-### 5.2 修改与生效
+REQ-CONFIG-006 管理状态为 `running` 时，本章所述业务数据仅允许执行本节明确规定的在线修改。
 
-**REQ-CONFIG-003** 在 `stopped` 状态进行结构配置写操作时，只更新数据库，不生成、检查或替换 sing-box 配置，也不自动启动 sing-box。结构配置在下一次从最新数据库成功生成完整配置并实际启动 sing-box 时生效；该生成可能由人工 Start、Restart、ProxyHub 自身启动时的自动启动或运行期间的进程守护恢复触发。
+#### 5.2.1 Subscription Refresh
 
-MANUAL Current Node 在线切换是结构配置冻结规则的明确例外。切换成功后更新内存 Current Node，并同步更新数据库 Default Node；切换失败时二者均不改变。具体切换和页面展示规则由 REQ-OUTBOUND-007 规定，priority reorder 的生效规则见 REQ-OUTBOUND-004。
+REQ-CONFIG-007 Subscription Refresh 可以在 `running` 或 `stopped` 状态执行。Refresh 仅更新流量使用情况、到期时间等非 Node 元信息，不新增、删除或修改 Node，也不修改 sing-box 配置。
 
-Settings、Subscription Refresh 和 Node 检测分别按各自章节规定写入 Settings 文件、Subscription 元信息或运行时展示状态，不适用“结构配置只写数据库”的规则。
+#### 5.2.2 MANUAL 节点切换
 
-系统不提供独立 Apply 按钮，不建立 Pending Config、待生效状态或配置版本状态机。
+REQ-CONFIG-008 MANUAL 支持在 `running` 状态切换 Current Node。切换成功时，更新 sing-box 当前选择、运行时 Current Node 和数据库 Default Node，不重新生成 sing-box 配置；切换失败时 Current Node 和 Default Node 均保持不变。
 
-### 5.3 配置生成
+#### 5.2.3 Priority 修改
 
-**REQ-CONFIG-004** 每次需要实际启动 sing-box 时，统一执行以下完整配置生成流程：
+REQ-CONFIG-009 MANUAL/AUTO 的 Node Pool priority 支持在线修改。priority 修改后保存数据库，不重新生成 sing-box 配置，不改变 Current Node 或 Default Node，也不立即触发 AUTO 节点切换；后续 AUTO 节点选择使用最新 priority。
 
-```text
+### 5.3 Stopped 状态下的配置修改
 
-读取数据库
+REQ-CONFIG-010 除 5.2 明确允许的在线修改外，Subscription、Node、Inbound、Outbound 和 Route 的业务数据修改均必须在 `stopped` 状态执行。
 
-→ 生成临时完整配置
+REQ-CONFIG-011 在 `stopped` 状态修改业务数据时，只更新数据库，不生成或检测 sing-box 配置，也不自动启动 sing-box。
 
-→ 执行 sing-box check
+REQ-CONFIG-012 即使 sing-box 实际进程已经停止，只要管理状态仍为 `running`，REQ-CONFIG-010 规定的业务数据修改仍禁止执行。
 
-→ 成功：替换正式配置，启动 sing-box 并确认进程正在运行，再按本次启动来源更新管理状态
+REQ-CONFIG-013 DIRECT 为系统内置、全局唯一的只读 Outbound，不支持新增、修改和删除。
 
-→ 失败：数据库不回滚；管理状态按本次启动来源的运行状态规则处理
+### 5.4 sing-box 配置生成范围与失败处理
 
-```
+#### 5.4.1 Node
 
-**REQ-CONFIG-005** 完整配置包含：
+REQ-CONFIG-014 所有合法 Node 均生成独立 sing-box Outbound；Node 是否被 MANUAL/AUTO 引用，不影响 Node Outbound 的生成。
 
-- 所有合法的全局 Node 独立出站，包括未被任何 MANUAL/AUTO 引用的 Node；
+#### 5.4.2 MANUAL/AUTO
 
-- 被至少一条 Route 引用的 MANUAL/AUTO；
+REQ-CONFIG-015 仅被 Route 引用的 MANUAL/AUTO 才生成 sing-box Outbound，未被 Route 引用的 MANUAL/AUTO 仅保留业务数据，不生成 sing-box 配置。
 
-- Route 使用的系统内置 DIRECT；
+#### 5.4.3 DIRECT
 
-- 仅被 Route 引用的 Inbound；
+REQ-CONFIG-016 Route 引用 DIRECT 时，必须生成对应的 direct Outbound。
 
-- 现存 Route 映射；
+#### 5.4.4 Inbound
 
-- 支持运行时状态查询、节点检测和切换所需的控制能力。
+REQ-CONFIG-017 仅被 Route 引用的 Inbound 才生成 sing-box Inbound，未被引用的 Inbound 仅保留业务数据，不生成 sing-box 配置。
 
-完整配置必须满足本文关于 Node Pool、Default Node、启动初始化、连接中断和 DIRECT Route 的业务要求，不得由历史 Current Node 覆盖 MANUAL/AUTO 的初始化选择。
+#### 5.4.5 Route
 
-`priority` 不属于 sing-box 配置，也不影响生成配置中的 Node 顺序。
+REQ-CONFIG-018 所有有效 Route 均生成到 sing-box 配置。
 
-**REQ-CONFIG-006** 系统保留上一份可用正式配置供人工排错，但新配置检查失败后不自动恢复或启动旧配置。
+#### 5.4.6 控制配置
 
-**REQ-CONFIG-007** 对会写入配置的 Inbound 执行基本监听地址和端口冲突校验，包括 Inbound 之间以及与 ProxyHub 自身监听端口的明显冲突。不执行通用操作系统端口扫描。
+REQ-CONFIG-019 sing-box 配置必须包含 ProxyHub 运行管理所需的控制能力，包括 Node 检测、状态查询以及运行时节点查询和切换。
+
+#### 5.4.7 配置失败处理
+
+REQ-CONFIG-020 配置生成或有效性检测失败时，不替换正式配置、不启动 sing-box、不回滚数据库，也不使用旧配置启动。
+
+REQ-CONFIG-021 系统保留最近一次成功运行的 sing-box 配置用于排错，不用于自动恢复。
 
 ---
 
