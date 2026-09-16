@@ -33,11 +33,12 @@
 
 设计时需要明确：
 
-- MANUAL 在线切换时对目标 Node 属于对应 Node Pool 的校验位置；
+- MANUAL 在线切换的前提检查及校验位置：管理状态为 `running`、MANUAL 被 Route 引用且已生成运行对象、sing-box 实际进程及切换能力可用、目标 Node 属于对应 Node Pool；
+- 上述前提不满足时拒绝切换、保持 Current Node 和 Default Node 不变的处理，以及页面操作可用性和 API 失败返回；
 - sing-box Current Node 查询、切换及切换成功确认的调用方式；
 - sing-box 控制能力不可用或切换失败时的错误处理；
-- 切换成功后 Runtime Current Node 与数据库 Default Node 的一致性处理；
-- Current Node 切换后已有连接是否以及如何中断，使后续连接使用新的 Current Node；
+- MANUAL 切换成功后 Runtime Current Node 与数据库 Default Node 的一致性处理；
+- 按 REQ-OUTBOUND-007 实现 MANUAL/AUTO 切换成功后中断该 Outbound 上使用旧 Node 的已有连接，使后续新建或重连的连接使用新的 Current Node，并覆盖多条 Route 共享同一个 Outbound 的场景；
 - Current Node 查询结果与本地 Runtime State 不一致时的处理方式。
 
 ### 1.3 priority 在线修改
@@ -59,6 +60,7 @@
 
 设计时需要明确：
 
+- 第一版支持的订阅内容格式清单、格式识别方式和解析流程，并提供各支持格式的可验证样例及不支持格式的失败样例，作为开发和验收依据；具体格式范围在 Parser 设计中确定，不在需求中展开；
 - Clash 兼容 User-Agent 的具体值及请求头组织方式；
 - Subscription Refresh 所需流量、总流量、到期时间等元信息的获取和解析方式；
 - Subscription Sync 与 Refresh 共用和独立的请求处理逻辑；
@@ -85,8 +87,11 @@
 - Default Node 被删除后选择最小 priority Node 的实现方式；
 - MANUAL/AUTO 删除后级联删除全部引用 Route 的处理方式；
 - Node、Inbound、MANUAL/AUTO 删除产生级联影响时的预览和确认数据结构；
-- 多对象级联修改整体成功或整体不生效的事务实现；
+- 普通 Node、Inbound、MANUAL/AUTO 删除及 Subscription Sync、Subscription 删除的事务边界：一次操作涉及的删除、Default Node 替换、Node Pool 更新及 Route 级联删除使用一个数据库事务完成，失败时整体回滚；
+- 按 REQ-SUB-012 在业务入口禁止直接新增、修改或删除 Subscription Node；允许 Sync 更新及删除所属 Subscription 时的级联删除，并区分从 Node Pool 移除成员与删除全局 Node；
 - Node Pool 正常编辑与全局 Node 删除导致 Node Pool 缩减两种场景的处理边界。
+
+级联处理采用普通数据库事务，不增加额外状态机、任务恢复或复杂补偿机制。
 
 ### 3.1 Inbound 监听冲突
 

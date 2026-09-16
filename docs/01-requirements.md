@@ -4,7 +4,7 @@
 
 > 文档状态：前 7 章冻结
 
-> 更新日期：2026-09-15
+> 更新日期：2026-09-16
 
 > 适用范围：ProxyHub 新版本第一版
 
@@ -331,7 +331,7 @@ Node Pool 成员不变时，可以在 `running` 或 `stopped` 状态调整 prior
 
 **REQ-SUB-011** 被跳过的 Node 不进入本次 Sync 结果，因此原有对应 Node 可以进入删除预览，并按正常删除规则处理。
 
-**REQ-SUB-012** Subscription Node 为只读，其协议和连接参数只能通过 Subscription Sync 更新。
+**REQ-SUB-012** Subscription Node 仅通过 Subscription Sync 新增、修改或删除，删除所属 Subscription 时一并删除。
 
 **REQ-SUB-013** 删除 Subscription 前必须展示其 Node 及全部级联影响；用户确认后按照与 Node 删除相同的级联规则整体执行。
 
@@ -364,6 +364,8 @@ Node Pool 成员不变时，可以在 `running` 或 `stopped` 状态调整 prior
 **REQ-OUTBOUND-005** 用户新建 Outbound 时默认为 MANUAL；MANUAL 与 AUTO 可以相互转换，转换时仅修改 `type`；DIRECT 不参与类型转换。
 
 **REQ-OUTBOUND-006** AUTO 不支持人工切换或锁定 Current Node。
+
+**REQ-OUTBOUND-007** MANUAL/AUTO 的 Current Node 切换成功后，中断该 Outbound 上使用旧 Node 的全部已有连接；后续新建或重连的连接使用新的 Current Node。
 
 ### 7.4 Route 与级联
 
