@@ -2,7 +2,7 @@
 
 > 文档版本：v1.0
 
-> 文档状态：前 7 章冻结
+> 文档状态：前 8 章冻结
 
 > 更新日期：2026-09-16
 
@@ -379,148 +379,82 @@ Node Pool 成员不变时，可以在 `running` 或 `stopped` 状态调整 prior
 
 ---
 
-## 8. ProxyHub 运行任务
+## 8. ProxyHub 运行控制与调度
 
-### 8.1 sing-box 运行状态
+### 8.1 管理状态
 
-**REQ-RUNTIME-001** ProxyHub 分别维护 sing-box 的管理状态和实际进程状态。管理状态只有 `running` 和 `stopped` 两种，配置修改限制按管理状态判断；页面同时展示实际运行、已退出或启动失败等进程状态。
+**REQ-RUNTIME-001** 管理状态表示 ProxyHub 对 sing-box 的运行管理意图：
 
-- Start 开始后管理状态仍为 `stopped`；数据库中没有 Route 时 Start 失败，提示用户至少创建一条 Route，只有 DIRECT Route 时允许启动；存在 Route 时从最新数据库生成完整配置并执行 `sing-box check`，只有检查通过、sing-box 启动成功并确认进程正在运行后才进入 `running`，任一步失败都保持 `stopped`；
-- Stop 停止 sing-box，并停止进程守护和 AUTO 控制，进入 `stopped`；
-- 用户发起的 Restart 严格等于在同一次运行控制加锁操作中依次执行 Stop 和 Start；检查或启动失败时保持 `stopped`，不恢复或自动启动旧进程；
-- 管理状态为 `running` 但实际进程已退出或恢复失败时，仍禁止结构修改；
-- `stopped` 状态不执行进程守护或 AUTO 控制；
-- 手动 Stop 状态不跨 ProxyHub 自身重启持久化；
-- 不增加“待应用配置”或其他管理状态。
+- `running`：保持 sing-box 运行，并执行进程守护和 AUTO 控制；
+- `stopped`：不要求 sing-box 运行，不执行进程守护和 AUTO 控制。
+
+管理状态与实际进程状态相互独立。
+
+运行控制遵循以下规则：
+
+- Start：生成并检查配置，成功启动 sing-box 后进入 `running`，失败时保持 `stopped`；
+- Stop：停止 sing-box 并进入 `stopped`；
+- Restart：执行 Stop 后重新 Start；
+- 手动 Stop 状态不跨 ProxyHub 自身重启持久化。
 
 ### 8.2 ProxyHub 启动
 
-**REQ-RUNTIME-002** ProxyHub 自身启动时，只有同时满足以下条件才自动生成、检查并启动 sing-box：
+**REQ-RUNTIME-002** ProxyHub 启动时，Settings 加载及校验成功、sing-box 二进制存在且数据库中至少有一条 Route 时，自动生成并检查配置，检查通过后启动 sing-box，成功后进入 `running`。
 
-- sing-box 二进制存在；
-- Settings 已成功加载并通过校验；
-- 数据库中至少存在一条可以生成有效配置的 Route。
+Settings 异常时终止 ProxyHub 启动。Settings 正常但其他启动条件不满足、配置检查失败或 sing-box 启动失败时，ProxyHub Web 仍正常运行，管理状态保持 `stopped`。
 
-Route 的目标可以是 DIRECT、MANUAL 或 AUTO。没有 Route 时不启动 sing-box；只有 DIRECT Route 时仍属于合法配置，可以正常启动。
+### 8.3 sing-box 运行周期
 
-Settings 已成功加载但其他条件不满足、配置检查失败或进程启动失败时，ProxyHub Web 仍正常运行，sing-box 管理状态保持 `stopped`。Settings 文件异常时按 REQ-SETTINGS-006 终止 ProxyHub 启动。
+**REQ-RUNTIME-003** Runtime State 是 ProxyHub 在当前 sing-box 运行周期中维护的临时运行状态，不跨运行周期保留。
 
-### 8.3 sing-box 启动和重启后的状态
+每次 sing-box 成功启动或重启后开始新的运行周期，并重新初始化 Runtime State：
 
-**REQ-RUNTIME-003** 每次 sing-box 实际启动或重启成功后，ProxyHub 都将其视为一次新的运行周期，清除并重新初始化全部既有运行时状态，包括：
+- 清除所有 Node 的健康状态及检测信息；
+- 被 Route 引用的 MANUAL/AUTO 从数据库 Default Node 初始化 Current Node；AUTO 的 Default Node 即 Fallback Node；
+- AUTO 连续失败次数归零；
+- 清除 Fallback 和 Priority Recovery 相关计时。
 
-- 所有 Node 的健康状态、tcp delay、url delay、last checked time 和 failure reason；
-- MANUAL/AUTO 的 Current Node；
-- AUTO 的连续失败次数、Fallback 持续时间和 Priority Recovery 计时；
-- 其他仅存在于内存中的检测和控制状态。
+启动前不检测 Candidate Node，也不根据历史健康状态改变初始选择。
 
-重新初始化时：
+### 8.4 后台控制循环与调度
 
-- 被 Route 引用的 MANUAL 使用数据库中的 Default Node 初始化 Current Node；
-- 被 Route 引用的 AUTO 使用其 Fallback Node（Default Node）初始化 Current Node；
-- AUTO 的 Fallback 持续时间从零开始累计；
-- 不在启动前检测 Candidate，也不根据历史健康状态改变初始选择。
-
-不恢复 sing-box 重启前的 Current Node 或其他运行时状态。
+**REQ-RUNTIME-004** ProxyHub 运行一个后台控制循环，每个控制周期串行执行：
 
 ```text
-sing-box 启动或重启成功
-          ↓
-所有运行时状态清零
-          ↓
-MANUAL Current Node = Default Node
-AUTO Current Node = Fallback Node（Default Node）
-          ↓
-下一控制周期重新开始检测
-```
+if 管理状态 == running:
+    if sing-box 未运行:
+        尝试恢复 sing-box
+    else:
+        逐个处理 Routed AUTO
 
-### 8.4 后台控制循环
-
-**REQ-RUNTIME-004** ProxyHub 只运行一个后台控制循环，不建立任务队列、多 worker、并行状态机或独立调度器。
-
-每个控制周期严格按以下顺序执行：
-
-1. sing-box 进程守护；
-2. AUTO 故障切换。
-
-如果进程守护或 AUTO 故障切换触发 sing-box 重启，本控制周期立即结束。一个正常控制周期完成后，等待配置的基础间隔，再开始下一个周期；不补跑因为任务执行时间而错过的周期。
-
-### 8.5 调度流程
-
-后台控制循环依次执行两个主要任务：
-
-```text
-控制周期开始
-      ↓
-1. 进程守护
-      ├── sing-box 已退出
-      │       ↓
-      │   从最新数据库生成、检查并启动 sing-box
-      │       ├── 成功 → 重置全部状态 → 本周期结束
-      │       └── 失败 → 记录错误 → 本周期结束
-      ↓
-2. AUTO 故障切换
-      ├── 逐个处理 Routed AUTO
-      ├── 具体流程遵循第 10 章
-      └── AUTO 处于 Fallback 的持续时间超时
-              ↓
-          按 REQ-FAILOVER-010 主动重启 sing-box
-              ├── 成功 → 重置全部状态 → 本周期结束
-              └── 失败 → 记录错误 → 本周期结束
-      ↓
+结束本控制周期
 等待基础控制间隔
-      ↓
-下一控制周期
+开始下一周期
 ```
 
-统一遵循以下原则：
+进程恢复无论成功或失败，均结束本周期。
 
-```text
-一个控制循环
-运行控制整体串行
-sing-box 每次启动或重启成功后，所有运行状态全部重置
-```
+基础控制间隔（Control Interval）从当前控制周期结束后开始计算，等待结束后开始下一周期；不补跑执行期间错过的控制周期。
 
-### 8.6 进程守护
+### 8.5 进程守护
 
-**REQ-RUNTIME-005** 当管理状态为 `running` 时，每个控制周期首先检查 sing-box 是否仍在运行。
+**REQ-RUNTIME-005** 管理状态为 `running` 且 sing-box 未运行时，重新生成并检查配置，检查通过后尝试启动 sing-box：
 
-sing-box 正常运行时，继续执行本周期后续任务。发现 sing-box 意外退出时：
+- 恢复成功：开始新的运行周期；
+- 恢复失败：记录错误，保持 `running`，后续控制周期继续尝试恢复。
 
-1. 从最新数据库生成临时完整配置并执行 `sing-box check`；
-2. 检查成功后原子替换正式配置并启动 sing-box；
-3. 启动成功后按 REQ-RUNTIME-003 清空并重新初始化全部运行时状态；
-4. 本控制周期立即结束；
-5. 下一控制周期重新开始 AUTO 检测。
+### 8.6 AUTO 控制
 
-配置检查、进程启动或 AUTO 故障切换触发的自动重启失败时，记录错误，保持管理状态为 `running` 并结束本周期；下一控制周期由进程守护再次尝试恢复。需要修改配置时，用户必须先执行 Stop。
+**REQ-RUNTIME-006** 仅在管理状态为 `running` 且 sing-box 正常运行时，逐个处理 Routed AUTO。
 
-第一版不记录连续崩溃次数，不执行指数退避，也不建立复杂进程恢复策略。
+### 8.7 运行控制锁
 
-### 8.7 AUTO 故障切换任务
+**REQ-RUNTIME-007** 后台控制周期以及可能改变 sing-box 运行状态、运行配置或 Runtime State 的控制操作串行执行，包括 Start、Stop、Restart、结构配置写操作、priority 调整、MANUAL 在线切换以及 sing-box 下载或升级替换。
 
-**REQ-RUNTIME-006** 进程守护确认管理状态为 `running`、sing-box 实际进程正在运行且运行时节点切换能力可用后，逐个处理所有 Routed AUTO，具体检测、切换和恢复规则遵循第 10 章。进程守护未恢复成功时，本周期不执行 AUTO 检测。
-
-AUTO 触发 sing-box 重启时，本控制周期立即结束。Fallback 持续超时按 REQ-FAILOVER-010 处理；切换失败需要重启时按 REQ-FAILOVER-011 处理。
-
-### 8.8 运行控制锁
-
-**REQ-RUNTIME-007** 系统使用一把进程内运行控制锁，串行化后台控制、sing-box 生命周期、结构配置写操作和 priority 在线重排，不建立任务队列或复杂调度机制。
-
-- 后台控制周期从进程守护开始，到全部 Routed AUTO 的检测、判断和切换处理结束，全程持有该锁；
-- Start、Stop、Restart、结构配置写操作、priority 在线重排、MANUAL Node 人工切换、sing-box 下载或升级替换以及后台故障恢复重启使用同一把锁；
-- 结构配置写操作取得锁后再次确认管理状态为 `stopped`，避免 Start 执行期间修改数据库；
-- priority 在线重排取得锁后不检查 `management_state == stopped`，在 `running` 和 `stopped` 时均可执行；
-- Restart 在一次持锁期间依次完成 Stop 和 Start，中间不释放锁，也不允许插入结构配置修改；
-- Stop 或 Restart 到来时，如果后台控制周期正在执行，则等待该周期完整结束，不取消正在执行的 AUTO 检测；
-- Subscription Refresh、Settings 保存和人工检测不持有运行控制锁；
-- 多个生命周期请求同时发生时，按取得锁的顺序执行，不实现任务取消、请求合并或任务队列。
-
-### 8.9 检测并发
-
-**REQ-RUNTIME-008** 删除后台自动全局 Node 周期扫描。AUTO 检测和人工检测不在全局范围内互斥，可以同时执行。
-
-每个 AUTO 检测过程和每个人工检测请求分别受 Settings 中 `Max Concurrency` 限制；单 Node 人工检测请求只包含一个 Node。第一版不限制用户同时发起的人工检测请求数量，不保证系统级检测总并发上限，也不实现检测请求合并、去重或排队。
+- 后台控制周期从进程守护到 AUTO 处理结束期间，不与其他运行控制操作并发执行；
+- 结构配置写操作开始时管理状态必须为 `stopped`；priority 调整在 `running` 和 `stopped` 时均可执行；
+- Restart 的 Stop 和 Start 连续执行，中间不插入其他运行控制操作；
+- Subscription Refresh、Settings 保存和人工检测可以与运行控制操作并发执行。
 
 ---
 
