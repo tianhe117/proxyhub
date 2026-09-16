@@ -65,6 +65,7 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 - **Candidate Node**：AUTO 的 Node Pool 中除 Default Node 外的 Node。Candidate Node 直接使用其在 Node Pool 中的 `priority` 参与自动择优和 Priority Recovery，不单独重新编号。
 - **Fallback Node**：AUTO 的 Default Node。当自动切换无法选出可用 Candidate Node 时作为备用节点，不参与 Candidate 自动择优和 Priority Recovery。
 - **Current Node**：MANUAL/AUTO 在当前 sing-box 运行周期中实际生效的 Node，仅保存在运行时内存中。MANUAL 由 Default Node 初始化并由用户管理；AUTO 由后台控制循环管理。
+- **Runtime State**：ProxyHub 在当前 sing-box 运行周期中维护的临时运行状态，包括 Node 健康状态、Current Node、AUTO 连续失败次数及相关计时。仅保存在内存中，不跨运行周期保留，不包括管理状态和实际进程状态。
 - **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
 - **Routed AUTO**：至少被一条 Route 引用的 AUTO。该名称只表示 Route 引用关系，不表示 sing-box 当前一定处于 `running` 状态。
 - **管理状态**：ProxyHub 维护的 sing-box 生命周期状态，只有 `running` 和 `stopped` 两种，与 sing-box 实际进程状态相互独立。
@@ -73,11 +74,11 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 
 **REQ-MODEL-001** 每条 Route 必须引用一个 Inbound 和一个 Outbound。一个 Inbound 最多被一条 Route 引用；一个 Outbound 可以被多条 Route 引用。Outbound 可以是 DIRECT、MANUAL 或 AUTO。
 
-**REQ-MODEL-002** 多条 Route 引用同一个 MANUAL/AUTO 时，共享其 Node Pool、priority、Default Node 以及运行时 Current Node 和状态。DIRECT 不具有 Node Pool、Default Node 或 Current Node。
+**REQ-MODEL-002** 多条 Route 引用同一个 MANUAL/AUTO 时，共享其 Node Pool、priority、Default Node 以及 Current Node 等 Runtime State。DIRECT 不具有 Node Pool、Default Node 或 Current Node。
 
 **REQ-MODEL-003** Node 是全局实体，可以被多个 MANUAL/AUTO 复用，但在同一个 Node Pool 中只能出现一次。每个 MANUAL/AUTO 必须至少包含两个不同 Node。
 
-**REQ-MODEL-004** Subscription、Node、Inbound、MANUAL/AUTO、Route、Node Pool priority 和 Default Node 持久化在数据库中；Settings 通过独立配置文件持久化。DIRECT 不保存数据库记录；Current Node、Node 健康状态、delay 和失败计数等运行时状态只保存在内存中。
+**REQ-MODEL-004** Subscription、Node、Inbound、MANUAL/AUTO、Route、Node Pool priority 和 Default Node 持久化在数据库中；Settings 通过独立配置文件持久化。DIRECT 不保存数据库记录；Current Node、Node 健康状态、delay 和失败计数等 Runtime State 只保存在内存中。
 
 ---
 
@@ -104,7 +105,7 @@ Route 可以选择 DIRECT、MANUAL 或 AUTO。只有 DIRECT Route 时同样可�
 sing-box 启动或重启成功
 → MANUAL 从 Default Node 初始化 Current Node
 → AUTO 从 Fallback Node（Default Node）初始化 Current Node
-→ 清空运行时检测和切换状态
+→ 清空 Runtime State 中的检测和切换状态
 → 后台控制循环开始管理 Routed AUTO
 ```
 
@@ -131,7 +132,7 @@ AUTO Current Node 为 Candidate
 → 后续控制周期继续检测 Candidate
 → 存在可用 Candidate：切换到其中优先级最高的 Node
 → 长时间无法恢复且持续处于 Fallback：重启 sing-box
-→ 清空运行时状态并重新开始
+→ 清空 Runtime State 并重新开始
 ```
 
 AUTO 正常运行期间按 Candidate priority 自动选择和恢复，具体规则见第 10 章。
@@ -168,7 +169,7 @@ Node Pool 成员不变时，可以在 `running` 或 `stopped` 状态调整 prior
 管理状态为 running
 → 检测到 sing-box 意外退出
 → 重新生成并检查配置
-→ 检查并启动成功：重新初始化运行时状态
+→ 检查并启动成功：重新初始化 Runtime State
 → 恢复失败：保持 running，并在后续控制周期继续尝试恢复
 ```
 
@@ -405,9 +406,7 @@ Settings 异常时终止 ProxyHub 启动。Settings 正常但其他启动条件�
 
 ### 8.3 sing-box 运行周期
 
-**REQ-RUNTIME-003** Runtime State 是 ProxyHub 在当前 sing-box 运行周期中维护的临时运行状态，不跨运行周期保留。
-
-每次 sing-box 成功启动或重启后开始新的运行周期，并重新初始化 Runtime State：
+**REQ-RUNTIME-003** 每次 sing-box 成功启动或重启后开始新的运行周期，并重新初始化 Runtime State：
 
 - 清除所有 Node 的健康状态及检测信息；
 - 被 Route 引用的 MANUAL/AUTO 从数据库 Default Node 初始化 Current Node；AUTO 的 Default Node 即 Fallback Node；
@@ -552,7 +551,7 @@ URL 检测成功时 `failure reason = null`；URL 检测失败时记录简单失
 
 每个 AUTO 的 Default Node 作为 Fallback Node，其他 Node 为 Candidate Node。Fallback Node 不参与 Candidate 自动择优；Candidate 直接使用完整 Node Pool 中的 priority，数值越小、优先级越高。
 
-AUTO 不在 Start 时把 Candidate priority 固化到 Runtime State。每次执行需要基于 Candidate priority 的择优操作时，以数据库当前保存的 priority 为准；priority 不属于 AUTO Runtime State。
+AUTO 不在 Start 时把 Candidate priority 固化到 Runtime State。每次执行需要基于 Candidate priority 的择优操作时，以数据库当前保存的 priority 为准；priority 不属于 Runtime State。
 
 ### 10.1 总体流程
 
@@ -585,10 +584,10 @@ Current == Fallback？
 能切换就切换
 无法恢复就待在 Fallback
 Fallback 太久就重启 sing-box
-sing-box 每次启动或重启成功后，所有运行状态全部重新开始
+sing-box 每次启动或重启成功后，Runtime State 全部重新初始化
 ```
 
-### 10.2 运行状态和初始化
+### 10.2 Runtime State 和初始化
 
 **REQ-FAILOVER-001** AUTO 只在内存中保存 Current Node、当前 Candidate 连续失败次数、Fallback 持续时间和 Priority Recovery 计时，不建立额外状态机。
 
@@ -674,7 +673,7 @@ Fallback 持续时间 >= Fallback Restart Timeout
 ```text
 重启成功
     ↓
-按 REQ-RUNTIME-003 清空全部运行时状态
+按 REQ-RUNTIME-003 清空全部 Runtime State
     ↓
 所有 Routed AUTO 回到 Fallback，持续时间从零开始
     ↓
