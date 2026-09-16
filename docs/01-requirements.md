@@ -65,7 +65,7 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 - **Candidate Node**：AUTO 的 Node Pool 中除 Default Node 外的 Node。Candidate Node 直接使用其在 Node Pool 中的 `priority` 参与自动择优和 Priority Recovery，不单独重新编号。
 - **Fallback Node**：AUTO 的 Default Node。当自动切换无法选出可用 Candidate Node 时作为备用节点，不参与 Candidate 自动择优和 Priority Recovery。
 - **Current Node**：MANUAL/AUTO 在当前 sing-box 运行周期中实际生效的 Node，仅保存在运行时内存中。MANUAL 由 Default Node 初始化并由用户管理；AUTO 由后台控制循环管理。
-- **Runtime State**：ProxyHub 在当前 sing-box 运行周期中维护的临时运行状态，包括 Node 健康状态、Current Node、AUTO 连续失败次数及相关计时。仅保存在内存中，不跨运行周期保留，不包括管理状态和实际进程状态。
+- **Runtime State**：ProxyHub 在当前 sing-box 运行周期中维护的临时运行状态，包括 Node 健康状态及检测信息、Current Node、AUTO 连续失败次数及相关计时。仅保存在内存中，不跨运行周期保留，不包括管理状态和实际进程状态。
 - **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
 - **Routed AUTO**：至少被一条 Route 引用的 AUTO。该名称只表示 Route 引用关系，不表示 sing-box 当前一定处于 `running` 状态。
 - **管理状态**：ProxyHub 维护的 sing-box 生命周期状态，只有 `running` 和 `stopped` 两种，与 sing-box 实际进程状态相互独立。
@@ -132,7 +132,7 @@ AUTO Current Node 为 Candidate
 → 后续控制周期继续检测 Candidate
 → 存在可用 Candidate：切换到其中优先级最高的 Node
 → 长时间无法恢复且持续处于 Fallback：重启 sing-box
-→ 清空 Runtime State 并重新开始
+→ 开始新的运行周期并重新初始化 Runtime State
 ```
 
 AUTO 正常运行期间按 Candidate priority 自动选择和恢复，具体规则见第 10 章。
@@ -448,7 +448,7 @@ if 管理状态 == running:
 
 ### 8.7 运行控制锁
 
-**REQ-RUNTIME-007** 后台控制周期以及可能改变 sing-box 运行状态、运行配置或 Runtime State 的控制操作串行执行，包括 Start、Stop、Restart、结构配置写操作、priority 调整、MANUAL 在线切换以及 sing-box 下载或升级替换。
+**REQ-RUNTIME-007** 后台控制周期以及可能改变管理状态、sing-box 实际进程状态、运行配置或 Runtime State 的控制操作串行执行，包括 Start、Stop、Restart、结构配置写操作、priority 调整、MANUAL 在线切换以及 sing-box 下载或升级替换。
 
 - 后台控制周期从进程守护到 AUTO 处理结束期间，不与其他运行控制操作并发执行；
 - 结构配置写操作开始时管理状态必须为 `stopped`；priority 调整在 `running` 和 `stopped` 时均可执行；
