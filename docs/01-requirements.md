@@ -2,7 +2,7 @@
 
 > 文档版本：V1.0
 
-> 文档状态：前 9 章冻结
+> 文档状态：全文冻结
 
 > 更新日期：2026-09-17
 
@@ -63,7 +63,7 @@ Inbound 表示本地代理入口，Outbound 表示流量出口。Outbound 分为
 - **MANUAL**：`type = manual` 的 Outbound。运行时 Current Node 由 Default Node 初始化，之后由用户手动切换，不执行自动故障切换。
 - **AUTO**：`type = auto` 的 Outbound。Default Node 作为 Fallback Node，运行时 Current Node 由后台控制循环管理。
 - **Candidate Node**：AUTO 的 Node Pool 中除 Default Node 外的 Node。Candidate Node 直接使用其在 Node Pool 中的 `priority` 参与自动择优和 Priority Recovery，不单独重新编号。
-- **Fallback Node**：AUTO 的 Default Node。当自动切换无法选出可用 Candidate Node 时作为备用节点，不参与 Candidate 自动择优和 Priority Recovery。
+- **Fallback Node**：AUTO 的 Default Node，也是启动时的初始 Current Node。当 Current Candidate 连续检测失败达到阈值时，先切换到该节点；随后继续检测 Candidate，并按优先级恢复。Fallback 不参与 Candidate 自动择优和 Priority Recovery。
 - **Current Node**：MANUAL/AUTO 在当前 sing-box 运行周期中实际生效的 Node，仅保存在运行时内存中。MANUAL 由 Default Node 初始化并由用户管理；AUTO 由后台控制循环管理。
 - **Runtime State**：ProxyHub 在当前 sing-box 运行周期中维护的临时运行状态，包括 Node 健康状态及检测信息、Current Node、AUTO 连续失败次数及相关计时。仅保存在内存中，不跨运行周期保留，不包括管理状态和实际进程状态。
 - **Route**：一个 Inbound 到一个 Outbound 的明确流量映射；目标 Outbound 可以是 DIRECT、MANUAL 或 AUTO。
@@ -236,7 +236,7 @@ Node Pool 成员不变时，可以在 `running` 或 `stopped` 状态调整 prior
 
 #### 5.2.2 MANUAL 节点切换
 
-**REQ-CONFIG-008** MANUAL 支持在 `running` 状态切换 Current Node。切换成功时，更新 sing-box 当前选择、运行时 Current Node 和数据库 Default Node，不重新生成 sing-box 配置；切换失败时 Current Node 和 Default Node 均保持不变。
+**REQ-CONFIG-008** MANUAL 支持在 `running` 状态切换 Current Node。切换成功时，更新 sing-box 当前选择、运行时 Current Node 和数据库 Default Node，不重新生成 sing-box 配置；切换失败时 Current Node 和 Default Node 均保持不变。未被 Route 引用的 MANUAL 没有运行中的 Current Node；在 `running` 状态为其选择 Node 时，仅更新数据库 Default Node，不执行 sing-box 节点切换。
 
 #### 5.2.3 Priority 修改
 
@@ -614,7 +614,7 @@ ProxyHub 启动时必须加载持久化设置。首次运行或持久化设置�
 
 **REQ-SETTINGS-004**
 
-Settings 保存不自动启动 sing-box。通过管理功能修改的设置，除 Username 和 Password 外，在下一次 sing-box Start 后生效；Start 使用开始时已成功保存的设置。Username 和 Password 保存后立即生效，并按 REQ-AUTH-003 处理既有会话。
+Settings 保存不自动启动 sing-box。Username 和 Password 通过管理功能保存后立即生效，并按 REQ-AUTH-003 处理既有会话。其他设置按各配置项定义的生效条件生效；需要运行周期初始化的设置在下一次 sing-box Start 后生效。Start 使用开始时已成功保存的设置。
 
 **REQ-SETTINGS-005**
 
