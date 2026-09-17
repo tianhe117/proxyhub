@@ -495,150 +495,82 @@ if 管理状态 == running:
 
 ## 10. AUTO 故障切换
 
-本章中的 AUTO 指 `type = auto` 的 Outbound。
+### 10.1 AUTO 控制规则
 
-每个 AUTO 的 Default Node 作为 Fallback Node，其他 Node 为 Candidate Node。Fallback Node 不参与 Candidate 自动择优；Candidate 直接使用完整 Node Pool 中的 priority，数值越小、优先级越高。
+**REQ-FAILOVER-001** 只有 Routed AUTO 执行 AUTO 控制。AUTO 的 Default Node 为 Fallback Node，其他 Node 为 Candidate Node；Candidate Node 使用 Node Pool priority 参与自动选择，数值越小优先级越高。
 
-AUTO 不在 Start 时把 Candidate priority 固化到 Runtime State。每次执行需要基于 Candidate priority 的择优操作时，以数据库当前保存的 priority 为准；priority 不属于 Runtime State。
+**REQ-FAILOVER-002** AUTO 按 priority 选择 Candidate Node 时，使用当前 Node Pool priority。priority 在线修改不立即触发 AUTO 节点切换。
 
-### 10.1 总体流程
+AUTO 控制流程：
 
 ```text
-sing-box 启动或重启
-        ↓
-Current = Fallback，持续时间从零开始累计
-        ↓
 逐个处理 Routed AUTO
-        ↓
-Current == Fallback？
-        ├── 是 → 扫描全部 Candidate
-        │          ├── 成功切换 → Current = 优先级最高的可用 Node
-        │          └── 仍在 Fallback → 持续时间超时？
-        │                                  ├── 否 → 处理下一个 AUTO
-        │                                  └── 是 → 重启 sing-box，本周期结束
-        │
-        └── 否 → 检测 Current Candidate
-                   ├── 连续失败达到阈值 → 成功切换 Fallback，本 AUTO 处理结束
-                   └── 未达到阈值 → Priority Recovery 到期？
-                                          ├── 否 → 处理下一个 AUTO
-                                          └── 是 → 扫描优先级更高的 Candidate
-                                                       ├── 有可用 → 切换
-                                                       └── 无可用 → 保持 Current
-```
-
-核心原则：
-
-```text
-能切换就切换
-无法恢复就待在 Fallback
-Fallback 太久就重启 sing-box
-sing-box 每次启动或重启成功后，Runtime State 全部重新初始化
-```
-
-### 10.2 Runtime State 和初始化
-
-**REQ-FAILOVER-001** AUTO 只在内存中保存 Current Node、当前 Candidate 连续失败次数、Fallback 持续时间和 Priority Recovery 计时，不建立额外状态机。
-
-Current Node 为 Fallback 时累计实际经过的 Fallback 持续时间；不在 Fallback 时该时间为零。sing-box 每次启动或重启成功后，按 REQ-RUNTIME-003 清除上述状态，Routed AUTO 以 `Current Node = Fallback Node（Default Node）`、`failure count = 0`、`Fallback 持续时间 = 0` 重新开始。
-
-### 10.3 每周期处理顺序
-
-**REQ-FAILOVER-002** 后台控制循环逐个处理 Routed AUTO：
-
-- Current Node 为 Fallback：执行 Fallback Recovery，然后判断 Fallback 持续时间是否超时；
-- Current Node 为 Candidate：检测 Current Candidate，必要时切回 Fallback；未切回 Fallback 时，到期后执行 Priority Recovery。
-
-未被 Route 引用的 AUTO 不执行检测或自动切换。
-
-### 10.4 Current Candidate 检测和故障切换
-
-**REQ-FAILOVER-003** Current Node 为 Candidate 时，每个控制周期检测一次 Current Candidate。只有本次检测的 URL 最终结果参与连续失败计数：
-
-- 成功：`failure count = 0`；
-- 失败：`failure count += 1`。
-
-TCP 检测、人工检测、Fallback Recovery 和 Priority Recovery 的检测结果本身均不影响该计数。
-
-**REQ-FAILOVER-004** 连续失败达到配置阈值时，立即切换到 Fallback。切换成功后：
-
-```text
-Current Node = Fallback Node
-failure count = 0
-Fallback 持续时间 = 0，并开始累计
-```
-
-该 AUTO 本周期处理结束，下一控制周期再执行 Fallback Recovery。
-
-### 10.5 Fallback Recovery
-
-**REQ-FAILOVER-005** AUTO 在周期开始处理时已经处于 Fallback，则扫描其全部 Candidate。Fallback Node 不参与扫描。
-
-扫描完成后，只按 available 和 priority 选择：
-
-- 存在 available Candidate：选择优先级最高的 Node 并切换；
-- 不存在 available Candidate：保持 Fallback。
-
-不按 delay 排序，不要求连续成功，也不设置最短节点保持时间。
-
-**REQ-FAILOVER-006** 从 Fallback 成功切换到 Candidate 后：
-
-```text
-Current Node = 选中的 Candidate
-failure count = 0
-Fallback 持续时间 = 0
-Priority Recovery Interval 从切换成功时间重新计算
-```
-
-下一个控制周期开始检测新的 Current Candidate。
-
-### 10.6 Candidate Priority Recovery
-
-**REQ-FAILOVER-007** Current Node 为 Candidate、当前 Candidate 不是全部 Candidate 中优先级最高的 Node，并且达到 Priority Recovery Interval 时，执行 Priority Recovery。
-
-只检测优先级高于 Current Candidate 的 Candidate，不检测当前 Candidate、优先级更低的 Candidate 或 Fallback Node。当前 Candidate 已经是优先级最高的 Node 时不执行。
-
-**REQ-FAILOVER-008** Priority Recovery 完成后：
-
-- 存在 available 的更高优先级 Candidate：选择其中优先级最高的 Node 并切换；
-- 不存在：保持 Current Candidate。
-
-检测本身不影响连续失败次数。成功切换后将连续失败次数清零，并从切换成功时间重新计算 Priority Recovery Interval；没有成功切换时，从本次扫描完成时间重新计算该 Interval。
-
-### 10.7 Fallback 超时重启
-
-**REQ-FAILOVER-009** 每个周期先执行 Fallback Recovery。完成后仍在 Fallback，并且：
-
-```text
-Fallback 持续时间 >= Fallback Restart Timeout
-```
-
-则按 REQ-FAILOVER-010 主动重启 sing-box。不额外判断 Fallback 或其他 Node 的健康状态及既往重启次数。
-
-**REQ-FAILOVER-010** Fallback 超时后按 Restart 的 Stop + Start 流程从最新数据库重新生成、检查并启动 sing-box：
-
-后台恢复重启复用与用户发起的 Restart 相同的 Stop + Start 进程操作流程，但不改变管理层的运行意图；失败时管理状态仍为 `running`。
-
-```text
-重启成功
     ↓
-按 REQ-RUNTIME-003 清空全部 Runtime State
-    ↓
-所有 Routed AUTO 回到 Fallback，持续时间从零开始
-    ↓
-本控制周期结束
+Current Node 是否为 Fallback Node？
+    ├── 是 → 执行 Fallback Recovery
+    │        ↓
+    │        是否成功切换到 Candidate Node？
+    │        ├── 是 → 处理下一个 AUTO
+    │        └── 否 → Fallback 持续时间是否超时？
+    │                 ├── 否 → 处理下一个 AUTO
+    │                 └── 是 → 重启 sing-box，本控制周期结束
+    │
+    └── 否 → 检测 Current Candidate
+             ↓
+             连续失败是否达到阈值？
+             ├── 是 → 尝试切换到 Fallback Node
+             │        ├── 成功 → 本 AUTO 处理结束
+             │        └── 失败 → 重启 sing-box，本控制周期结束
+             │
+             └── 否 → 存在更高优先级 Candidate 且 Priority Recovery 间隔已到期？
+                      ├── 否 → 处理下一个 AUTO
+                      └── 是 → 执行 Priority Recovery
+                               ├── 存在可用 Candidate → 尝试切换，失败按 10.7 处理
+                               └── 无可用 Candidate → 保持 Current Node
 ```
 
-配置检查或启动失败时按 REQ-RUNTIME-005 记录错误，保持管理状态 `running`，下一控制周期由进程守护再次尝试恢复。Candidate 长时间无法恢复时，每次重新累计完整超时时间后可以再次重启。
+- Fallback Recovery：当前处于 Fallback Node 时，检测全部 Candidate Node 并尝试恢复到可用 Candidate 的过程。
+- Priority Recovery：当前处于 Candidate Node 时，检测优先级更高的 Candidate Node 并尝试恢复到更高优先级节点的过程。
 
-第一版不设置重启次数上限、指数退避、cooldown、历史统计或其他恢复条件。
+本章由 AUTO 触发的 sing-box 重启保持管理状态为 `running`；重启失败时记录错误，后续控制周期由进程守护继续恢复。无论重启成功或失败，本控制周期均结束。
 
-### 10.8 切换失败
+### 10.2 Runtime State
 
-**REQ-FAILOVER-011** 只有实际切换成功后，才修改 Current Node 和相关状态。切换失败时：
+**REQ-FAILOVER-003** 每个 AUTO 在当前运行周期中维护的 Runtime State 包括 Current Node、Current Candidate 连续失败次数、Fallback 持续时间和 Priority Recovery 计时。
 
-- Current Candidate → Fallback：记录错误并按 Restart 的 Stop + Start 流程从最新数据库重新生成、检查并启动 sing-box；成功后重置全部状态，失败后保持管理状态 `running` 并由下一周期的进程守护再次尝试；
-- Fallback → Candidate：保持 Fallback 并继续累计持续时间，然后执行本周期的超时判断；
-- Priority Recovery：保持 Current Candidate 和连续失败次数，从本次扫描完成时间重新计算 Priority Recovery Interval。
+**REQ-FAILOVER-004** Current Node 为 Fallback 时累计 Fallback 持续时间，离开 Fallback 后停止累计并重置该时间。
+
+### 10.3 Current Candidate 检测与故障切换
+
+**REQ-FAILOVER-005** Current Node 为 Candidate 时，每个控制周期检测一次 Current Candidate 的可用性；检测成功则连续失败次数清零，检测失败则连续失败次数加一。
+
+**REQ-FAILOVER-006** Current Candidate 连续失败达到配置阈值时，尝试切换到 Fallback Node。切换成功后，Current Node 更新为 Fallback Node，连续失败次数清零，并开始累计 Fallback 持续时间；该 AUTO 本控制周期处理结束。
+
+### 10.4 Fallback Recovery
+
+**REQ-FAILOVER-007** Current Node 为 Fallback 时，每个控制周期执行 Fallback Recovery。检测完成后，在可用 Candidate 中选择优先级最高的 Node 并切换；没有可用 Candidate 时保持 Fallback。
+
+**REQ-FAILOVER-008** 从 Fallback 成功切换到 Candidate 后，更新 Current Node，连续失败次数清零，停止累计并重置 Fallback 持续时间，并从切换成功时间开始计算 Priority Recovery 间隔。
+
+### 10.5 Priority Recovery
+
+**REQ-FAILOVER-009** Current Node 为 Candidate 且不是 Candidate Node 中优先级最高的 Node 时，达到 Priority Recovery 间隔后执行 Priority Recovery。
+
+Priority Recovery 仅检测优先级高于 Current Candidate 的 Candidate Node。检测完成后，在可用 Candidate 中选择优先级最高的 Node 并切换；不存在可用 Candidate 时保持 Current Candidate。
+
+**REQ-FAILOVER-010** Priority Recovery 成功切换后，连续失败次数清零，并从切换成功时间重新计算 Priority Recovery 间隔；未发生切换时，从本次检测完成时间重新计算该间隔。
+
+### 10.6 Fallback 超时重启
+
+**REQ-FAILOVER-011** Current Node 为 Fallback 时，在每个控制周期完成 Fallback Recovery 后判断 Fallback 持续时间；达到 Fallback 重启超时阈值且仍处于 Fallback 时，重启 sing-box，并结束当前控制周期。
+
+### 10.7 节点切换失败
+
+**REQ-FAILOVER-012** 只有节点实际切换成功后才更新 Current Node。切换失败时：
+
+- Current Candidate 切换到 Fallback 失败：重启 sing-box，并结束当前控制周期；
+- Fallback 切换到 Candidate 失败：保持 Fallback，继续累计 Fallback 持续时间；
+- Priority Recovery 切换失败：保持 Current Candidate，并从本次检测完成时间重新计算 Priority Recovery 间隔。
 
 ---
 
