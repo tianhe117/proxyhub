@@ -179,6 +179,7 @@
 * 健康状态内部表达方式；
 * TCP 和 URL 检测结果、检测时间、失败原因的字段设计；
 * 延迟、超时、失败等情况的字段表达方式；
+* 页面和日志分别标注 TCP delay 与 URL delay 的展示方式，避免使用含义不明的单一 delay；
 * 新运行周期开始时 Node 健康状态及检测信息的初始化方式；
 * 检测完成后一次性更新健康状态和检测信息的实现方式。
 
@@ -222,6 +223,7 @@ AUTO、Settings 和 API/Page 需求冻结后，再补充对应模块设计，重
 * API 的状态校验、错误码和操作可用性；
 * 人工单 Node 和批量健康检测的 API 及页面交互；
 * 页面中的运行状态、Current Node、Default Node、Node 健康状态、priority 及级联预览展示。
+* sing-box 下载来源、amd64 资产选择和文件完整性验证方法。
 
 ## 7.1 DIRECT、Outbound 与 Route 页面展示
 

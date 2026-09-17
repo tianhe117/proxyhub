@@ -600,50 +600,60 @@ Priority Recovery 仅检测优先级高于 Current Candidate 的 Candidate Node�
 
 ### 12.1 Settings 行为
 
-**REQ-SETTINGS-001** 所有应用设置使用单一 `data/settings.json` 文件持久化，并按运行调度、健康检测、AUTO 故障切换、Web 和认证等领域分组。Settings 不建立数据库表，也不使用数据库键值记录。
+**REQ-SETTINGS-001**
 
-**REQ-SETTINGS-002** 各配置项是否允许通过 Settings 页面在线修改及其生效方式由 12.2 规定。不能在线修改的配置项只能直接修改 JSON，并在 ProxyHub 重启后生效。
+所有应用设置必须采用统一持久化机制保存。Settings 用于保存应用配置参数，不用于保存运行状态或业务运行数据。各配置项必须定义其默认值和修改方式。
 
-**REQ-SETTINGS-003** ProxyHub 启动时加载 `data/settings.json`。文件不存在时，使用内置默认值创建完整文件。Settings 页面保存时必须先通过完整校验，再通过同目录临时文件原子替换正式文件，并同步更新当前进程的内存设置；非法值不得应用。
+**REQ-SETTINGS-002**
 
-**REQ-SETTINGS-004** 通过 Settings 页面保存在线设置不取得运行控制锁，也不启动或重启 sing-box。保存不改变 MANUAL/AUTO 的 Default Node 或 Current Node，不清空 Node 最近检测信息、AUTO 连续失败次数、Fallback 持续时间或 Priority Recovery 计时，也不主动检测或切换 Node。新设置用于保存后的后续相关处理；已经开始的任务不要求取消、重启或重新计算。Username 和 Password 保存后立即生效。
+ProxyHub 启动时必须加载持久化设置。首次运行或持久化设置不存在时，系统应使用内置默认值创建有效配置。
 
-**REQ-SETTINGS-005** 用户直接编辑 `data/settings.json` 时，修改只在下次 ProxyHub 启动后生效。第一版不监视文件变化，也不为手工编辑提供运行时热加载。
+**REQ-SETTINGS-003**
 
-**REQ-SETTINGS-006** `data/settings.json` 能够读取并解析为合法 JSON 对象但缺少部分已定义字段时，使用对应内置默认值在内存中补全，再执行完整校验；不得因为启动加载补全字段而自动重写原文件，用户后续通过 Settings 页面成功保存时再按 REQ-SETTINGS-003 写入完整设置。
+通过管理功能修改 Settings 时，保存请求开始时管理状态必须为 `stopped`。设置保存不取得运行控制锁。保存前必须完成完整校验，仅在校验通过后更新设置；校验失败时原有设置保持不变，非法设置不得生效。
 
-`data/settings.json` 无法读取、不是合法 JSON、包含未知结构，或补全缺失字段后仍无法通过完整校验时，记录明确错误并终止 ProxyHub 启动，ProxyHub Web 和 sing-box 均不启动。文件中已经提供但值非法的字段不得用默认值静默替代；保留原文件，不自动修改、覆盖或静默回退，也不启动临时 Web 地址或修复页面。错误通过启动输出和正常日志渠道报告，不要求通过管理页面显示。
+**REQ-SETTINGS-004**
 
-**REQ-SETTINGS-007** JSON 中只保存密码安全哈希，不保存明文密码。用于签名登录会话的随机 secret 不属于普通 Settings，应保存在独立密钥文件中，不在 Settings 页面显示。
+Settings 保存不自动启动 sing-box。通过管理功能修改的设置，除 Username 和 Password 外，在下一次 sing-box Start 后生效；Start 使用开始时已成功保存的设置。Username 和 Password 保存后立即生效，并按 REQ-AUTH-003 处理既有会话。
 
-**REQ-SETTINGS-008** 需求只规定 Settings 保存和启动加载前必须通过完整校验、非法值不得应用；端口、正整数、超时和取值范围等常规校验规则由实现设计确定，不在需求中逐项展开。
+**REQ-SETTINGS-005**
+
+直接修改持久化配置文件的内容仅在 ProxyHub 下一次启动时加载并生效。
+
+**REQ-SETTINGS-006**
+
+持久化设置缺少已定义配置项时，系统应仅对缺失项使用对应默认值补全，并继续执行完整校验；补全后的完整配置应自动写回持久化设置。回写失败时，报告错误并终止启动，不使用未成功持久化的补全配置继续运行。
+
+当持久化设置无法加载、格式错误、包含非法配置项或校验失败时，ProxyHub 必须终止启动，不启动 Web 服务或 sing-box。系统不得使用默认值替代已存在但非法的配置项。
+
+**REQ-SETTINGS-007**
+
+用户密码不得以明文形式持久化保存。认证所需的敏感密钥应独立管理，不作为普通应用设置保存或展示。
 
 ### 12.2 Settings 配置项与默认值
 
-“在线修改”表示可以通过 Settings 页面修改且不需要重启 ProxyHub，具体生效方式遵循 REQ-SETTINGS-004。不能在线修改的设置只能直接修改 JSON，并在 ProxyHub 重启后生效。
+“管理修改”表示配置项是否支持通过 ProxyHub 管理功能进行修改；此类修改遵循 12.1 的状态限制和生效规则。不支持管理修改的配置项只能直接修改持久化配置文件，并在 ProxyHub 下一次启动时加载生效。
 
-| Setting | 默认值 | 在线修改 | 备注 |
+| Setting | 默认值 | 管理修改 | 备注 |
 |---|---:|:---:|---|
-| Control Interval | 15 秒 | 是 | 一个控制周期完成后，到下一周期开始前的等待时间 |
-| TCP Timeout | 3 秒 | 是 | 单个 Node 的 TCP 检测超时时间 |
-| URL Timeout | 5 秒 | 是 | 单个 Node 的 URL 检测超时时间 |
+| Control Interval | 15 秒 | 是 | 后台控制循环周期等待时间 |
+| TCP Timeout | 3 秒 | 是 | 单个 Node TCP 检测超时时间 |
+| URL Timeout | 5 秒 | 是 | 单个 Node URL 检测超时时间 |
 | Test URL | `https://www.gstatic.com/generate_204` | 是 | 所有 Node 共用的 URL 健康检测地址 |
-| Max Concurrency | 10 | 是 | 每个 AUTO 检测过程或每个人工检测请求内同时检测的最大 Node 数量 |
+| Max Concurrency | 10 | 是 | AUTO 检测或人工批量检测中的最大并发 Node 数量 |
 | Failure Threshold | 3 次 | 是 | Current Candidate 连续 URL 检测失败达到该次数后切换到 Fallback |
-| Priority Recovery Interval | 60 秒 | 是 | Current Candidate 不是最高优先级时，扫描更高优先级 Candidate 的间隔 |
-| Fallback Restart Timeout | 300 秒 | 是 | AUTO 持续处于 Fallback 达到该时间后重启 sing-box |
-| Web Listen Address | `127.0.0.1` | 否 | ProxyHub Web 的监听地址 |
-| Web Port | 8080 | 否 | ProxyHub Web 的监听端口 |
+| Priority Recovery Interval | 60 秒 | 是 | Candidate 优先级恢复检测间隔 |
+| Fallback Restart Timeout | 300 秒 | 是 | AUTO 持续处于 Fallback 时触发 sing-box 重启的超时时间 |
+| Web Listen Address | `127.0.0.1` | 否 | ProxyHub Web 监听地址 |
+| Web Port | 8080 | 否 | ProxyHub Web 监听端口 |
 | Username | `admin` | 是 | 登录用户名 |
-| Password | 空 | 是 | 为空时跳过认证；JSON 只保存密码哈希 |
+| Password | 空 | 是 | 为空时关闭认证；仅保存密码安全哈希 |
 
 ### 12.3 日志
 
-**REQ-LOG-001** 后端文件日志记录足够的运行和排错信息。桌面页面只显示最近关键事件，不提供完整日志浏览，但允许下载日志文件。Node 健康检测相关展示和日志必须明确区分 tcp delay 与 url delay，不使用未注明类型的单一 delay 表述。
+**REQ-LOG-001** 系统应记录足够的运行和排错信息。桌面页面只显示最近关键事件，不提供完整日志浏览，但允许下载日志文件。
 
 **REQ-LOG-002** Node 切换、Fallback 持续超时、人工检测、sing-box 启动/停止/重启、配置生成和升级属于关键事件。
-
-**REQ-LOG-003** 第一版不实现消息推送。未来推送可以作为关键事件日志的附加处理，但不得预先引入推送平台抽象。
 
 ---
 
@@ -651,38 +661,58 @@ Priority Recovery 仅检测优先级高于 Current Candidate 的 Candidate Node�
 
 ### 13.1 下载与升级
 
-**REQ-UPGRADE-001** ProxyHub Web 在 sing-box 不存在时仍可运行，状态显示“未安装”并且管理状态保持 stopped。用户可以人工下载官方 GitHub Release 中适用于 `amd64` 的 sing-box。下载与升级流程只匹配和安装 `amd64` 资产，不支持 32 位 x86、arm64 或其他架构。
+**REQ-UPGRADE-001**
 
-**REQ-UPGRADE-002** sing-box 二进制存在时，页面始终显示检测到的本地当前版本；二进制不存在时显示“未安装”。管理状态为 stopped 或二进制不存在时，允许检查远程新版本并根据当前安装状态执行下载、安装或升级；管理状态为 running 时禁止检查远程新版本、下载和升级，只显示本地当前版本。下载、安装或升级替换使用运行控制锁，成功后保持 stopped，不自动启动 sing-box。
+ProxyHub Web 在 sing-box 二进制不存在时仍应正常运行。sing-box 二进制不存在时，管理状态保持 `stopped`。
 
-**REQ-UPGRADE-003** 下载、安装或升级采用最小失败保护：
+**REQ-UPGRADE-002**
 
-1. 下载到同一文件系统的临时文件；
-2. 验证下载完成、架构为 `amd64`、可执行并能读取合法版本；
-3. 验证成功后原子替换正式二进制；
-4. 任一步失败都保留原二进制、记录错误日志，并在发起操作的页面显示简单失败提示。
+当 sing-box 二进制存在时，页面应显示检测到的本地当前版本；二进制不存在时显示“未安装”。
 
-第一版不保存多版本、不自动回滚历史版本，也不后台自动升级。
+管理状态为 `stopped` 时，允许执行远程版本检查以及下载或升级操作。管理状态为 `running` 时禁止执行上述操作，仅显示本地当前版本。下载或升级成功后保持 `stopped` 状态，不自动启动 sing-box。
+
+**REQ-UPGRADE-003**
+
+sing-box 下载和升级必须采用失败保护机制：
+
+1. 下载内容必须先保存到临时文件；
+2. 完成下载后必须验证文件完整性、架构、可执行性以及版本信息；
+3. 验证通过后才能替换正式二进制文件；
+4. 任一步失败时必须保留原有二进制文件，记录错误日志，并向发起操作的页面返回失败提示。
 
 ### 13.2 部署
 
-**REQ-DEPLOY-001** 第一版同时提供 Docker Compose 和 Ubuntu Python/venv 部署方式，共用同一种简单配置格式。
+**REQ-DEPLOY-001**
 
-**REQ-DEPLOY-002** 支持 Ubuntu 20.04 及以上版本、`amd64` CPU；不要求支持 Windows、macOS、其他 Linux 发行版、32 位 x86 或 arm64。
+第一版支持 Docker Compose 和 Ubuntu Python/venv 两种部署方式，并保持配置格式一致。
+
+**REQ-DEPLOY-002**
+
+第一版支持 Ubuntu 20.04 及以上版本以及 amd64 架构 CPU。不要求支持 Windows、macOS、其他 Linux 发行版、32 位 x86 或 arm64 架构。
 
 ---
 
 ## 14. 最低可靠性要求
 
-**REQ-REL-001** 所有运行控制锁的使用与串行化规则统一遵循 REQ-RUNTIME-007。第一版不建立跨进程锁或分布式事务。
+**REQ-REL-001**
 
-**REQ-REL-002** Subscription Sync 的请求、解析或预览失败时原数据不变；用户确认后，Subscription（适用时）、Node、Default Node 自动替换、MANUAL/AUTO 更新或删除和 Route 删除作为一个业务事务完成。
+所有运行控制锁的使用与串行化规则统一遵循 REQ-RUNTIME-007。第一版不建立跨进程锁或分布式事务。
 
-**REQ-REL-003** 删除 Subscription、Node、Inbound、MANUAL、AUTO 或 Route 前显示简单确认；涉及级联时显示受影响对象和 Default Node 自动替换。删除 MANUAL/AUTO 时必须删除引用它的 Route，不得把 Route 自动或静默改为系统内置 DIRECT。
+**REQ-REL-002**
 
-**REQ-REL-004** ProxyHub Web 已启动时，sing-box 启动或配置检查失败由前端显示简单错误和关键事件，详细信息写入可下载日志。Settings 文件异常导致 ProxyHub 无法启动时按 REQ-SETTINGS-006 通过启动输出和正常日志渠道报告。不建立大型结构化错误模型或专项错误页面。
+Subscription Sync 的请求、解析或预览失败时原数据不变；用户确认后，Subscription（适用时）、Node、Default Node 自动替换、MANUAL/AUTO 更新或删除和 Route 删除作为一个业务事务完成。
 
-**REQ-REL-005** 第一版不承诺配置更新无中断，允许人工 Stop、修改、Start 过程中出现短暂停顿。
+**REQ-REL-003**
+
+删除 Subscription、Node、Inbound、MANUAL、AUTO 或 Route 前显示简单确认；涉及级联时显示受影响对象以及必要的 Default Node 自动替换。删除 MANUAL/AUTO 时必须删除引用它的 Route，不得把 Route 自动或静默改为系统内置 DIRECT。
+
+**REQ-REL-004**
+
+ProxyHub Web 已启动时，sing-box 启动或配置检查失败由前端显示简单错误和关键事件，详细信息写入可下载日志。Settings 文件异常导致 ProxyHub 无法启动时按 REQ-SETTINGS-006 通过启动输出和正常日志渠道报告。不建立大型结构化错误模型或专项错误页面。
+
+**REQ-REL-005**
+
+第一版不承诺配置更新无中断，允许人工 Stop、修改、Start 过程中出现短暂停顿。
 
 ---
 
@@ -693,14 +723,14 @@ Priority Recovery 仅检测优先级高于 Current Candidate 的 Candidate Node�
 - 多用户、角色和权限管理；
 - 多台 ProxyHub 主机集中管理；
 - 多 sing-box 实例或多代理引擎；
-- 不提供多条 URI 批量导入；
-- 不提供节点文件批量导入；
+- 多条 URI 批量导入；
+- 节点文件批量导入；
 - Xray、sslocal 和 TUIC；
 - 面向第三方的稳定公共 API；
 - 多 Web worker、多进程共享状态；
 - 分布式任务队列、任务历史和任务恢复；
 - 自动执行 Subscription Sync；
-- 配置热重载或独立“应用配置”；
+- 配置热重载或运行时动态应用配置；
 - 完整规则路由、分流规则和通用 sing-box 配置编辑器；
 - 历史健康、历史延迟、流量统计和分析报表；
 - 消息推送；
