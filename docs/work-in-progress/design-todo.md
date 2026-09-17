@@ -222,3 +222,15 @@ AUTO、Settings 和 API/Page 需求冻结后，再补充对应模块设计，重
 * API 的状态校验、错误码和操作可用性；
 * 人工单 Node 和批量健康检测的 API 及页面交互；
 * 页面中的运行状态、Current Node、Default Node、Node 健康状态、priority 及级联预览展示。
+
+## 7.1 DIRECT、Outbound 与 Route 页面展示
+
+设计时需要明确：
+
+* DIRECT 是否在 Outbound 页面展示，以及桌面和移动页面中的展示位置、只读样式和操作入口；
+* 创建或修改 Route 时，DIRECT 与已有 MANUAL/AUTO 的目标选择方式，以及已有 Route 目标的展示；
+* 用户创建和编辑 Outbound 时，仅提供 MANUAL/AUTO 类型，并沿用已有类型转换规则；
+* DIRECT 的字段显隐，不展示其不具备的 Node、Current Node 或健康状态；
+* DIRECT 系统标识在页面和内部 API 中的表达，以及 Route 保存 DIRECT 目标选择的方式。
+
+展示方案遵循第 2、5、7 章的业务规则：DIRECT 为系统内置、全局唯一的只读 Outbound，不保存独立数据库记录；Route 仍需持久化其目标选择。

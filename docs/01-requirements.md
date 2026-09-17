@@ -578,19 +578,21 @@ Priority Recovery 仅检测优先级高于 Current Candidate 的 Candidate Node�
 
 ### 11.1 页面范围
 
-**REQ-UI-001** 桌面页面提供 Subscription、Node、Inbound、Outbound、Route、Settings、状态、关键日志和 sing-box 管理功能。Outbound 页面和 Route 目标选择中统一展示 DIRECT、MANUAL 和 AUTO：DIRECT 为只读系统项；用户创建的 Outbound type 只能是 `manual` 或 `auto`，仅允许按 REQ-OUTBOUND-005 在二者之间修改 type。DIRECT 不显示 Node、Current Node 或健康状态。
+**REQ-UI-001** 桌面页面提供 Subscription、Node、Inbound、Outbound、Route、Settings、管理状态、sing-box 实际进程状态、关键日志和 sing-box 管理功能。
 
-**REQ-UI-002** 桌面页面支持新增、修改、删除 Subscription、Subscription Sync、Subscription Refresh、对单个 Node 发起人工检测、按全部自建 Node、指定 Subscription 或全部全局 Node 发起人工批量检测、切换 MANUAL 的 Current Node、调整 MANUAL/AUTO 的 Node priority、Start、Stop、Restart、下载日志以及人工检查和升级 sing-box。Subscription 相关操作的运行状态限制遵循 REQ-CONFIG-001，删除和 Subscription Sync 产生的差异预览、级联影响与事务规则遵循第 6 章。
+**REQ-UI-002** 桌面页面支持 Subscription、Node、Inbound、Outbound、Route 和 Settings 的管理操作，以及 Subscription Sync、Subscription Refresh、Start、Stop、Restart、关键日志查看、日志下载和 sing-box 管理操作。
 
-**REQ-UI-003** 移动页面只提供整体管理状态和实际进程状态、MANUAL/AUTO 状态、Node 健康状态、只读 DIRECT 状态项和 MANUAL 的 Current Node 切换，不提供结构配置、priority 编辑、Settings、升级或完整日志管理。
+**REQ-UI-003** 桌面页面支持单个或批量 Node 健康检测、MANUAL Current Node 切换和 MANUAL/AUTO Node Pool priority 调整。
+
+**REQ-UI-004** 移动页面提供管理状态、sing-box 实际进程状态、Inbound 和 Outbound 展示及 Node 健康状态展示，并支持 MANUAL Current Node 切换和 MANUAL/AUTO Node Pool priority 调整。
 
 ### 11.2 登录
 
-**REQ-AUTH-001** 登录使用用户名和密码。默认用户名为 `admin`，默认密码为空；密码为空时按个人部署需求跳过认证。
+**REQ-AUTH-001** 登录使用用户名和密码。默认用户名为 `admin`，默认密码为空；密码为空时不启用登录认证。
 
-**REQ-AUTH-002** 密码非空时，桌面页面、移动页面、全部内部 API 和日志下载都必须认证。系统提供登录和退出。
+**REQ-AUTH-002** 密码非空时，桌面页面、移动页面、全部内部 API 和日志下载均必须认证。系统提供登录和退出功能。
 
-**REQ-AUTH-003** 密码只保存安全哈希，不保存或记录明文。修改用户名或密码后立即使既有会话失效并要求重新登录。
+**REQ-AUTH-003** 密码只保存安全哈希，不保存或记录明文。修改用户名或密码后立即使既有会话失效；认证启用时要求重新登录。
 
 ---
 
