@@ -2,9 +2,9 @@
 
 > 文档版本：v1.0
 
-> 文档状态：前 8 章冻结
+> 文档状态：前 9 章冻结
 
-> 更新日期：2026-09-16
+> 更新日期：2026-09-17
 
 > 适用范围：ProxyHub 新版本第一版
 
@@ -459,89 +459,37 @@ if 管理状态 == running:
 
 ## 9. 节点健康检测
 
-### 9.1 检测流程
+### 9.1 检测方式与流程
 
-**REQ-HEALTH-001** 所有 Node 使用相同的健康检测流程。每次 Node 检测依次执行：
-
-```text
-TCP 检测
-    ↓
-URL 检测
-    ↓
-更新 Node 健康状态
-```
-
-无论 TCP 检测成功还是失败，都继续执行 URL 检测。TCP 和 URL 检测分别使用 Settings 中配置的超时时间。
+**REQ-HEALTH-001** AUTO 控制触发的 Node 检测和用户主动发起的人工检测使用相同的单 Node 检测流程，依次执行 TCP 检测和 URL 检测，URL 检测不受 TCP 检测结果影响。
 
 ### 9.2 TCP 检测
 
-**REQ-HEALTH-002** TCP 检测用于检查 Node 服务器的基础 TCP 连接情况，其结果只用于页面展示、日志和人工排错，不参与 Node 最终健康判断，也不参与 AUTO 控制。Hysteria2 与其他 Node 使用相同流程，不增加协议专用分支；Hysteria2 的 TCP 检测允许失败，失败后仍继续执行 URL 检测。
-
-- 检测成功：`tcp delay` 记录实际毫秒数；
-- 检测超时：`tcp delay = -1`；
-- 其他无法取得有效 delay 的失败：`tcp delay = null`。
+**REQ-HEALTH-002** TCP 检测用于检查 Node 的 TCP 连接情况并测量连接延迟，检测结果不参与 Node 最终健康判断。
 
 ### 9.3 URL 检测
 
-**REQ-HEALTH-003** URL 检测必须通过被检测 Node 的真实代理流量访问 Settings 中统一配置的 HTTPS 测试 URL。
-
-测试请求返回 HTTP 2xx 且取得 `delay > 0` 时检测成功：
-
-```text
-result = available
-url delay = 实际取得的 delay
-```
-
-其他情况均为检测失败：
-
-```text
-result = unavailable
-```
-
-- URL 检测超时：`url delay = -1`；
-- 其他没有取得有效 delay 的失败：`url delay = null`。
-
-Node 的最终健康状态只由 URL 检测结果决定。
+**REQ-HEALTH-003** URL 检测通过被检测 Node 的代理流量访问 HTTPS 测试 URL，根据 HTTP 2xx 状态码和响应延迟判断 URL 是否可用，并记录响应延迟。
 
 ### 9.4 Node 健康状态
 
-**REQ-HEALTH-004** 每个 Node 在内存中保存最近一次完成检测的 `result`、`tcp delay`、`url delay`、`last checked time` 和 `failure reason`。
+**REQ-HEALTH-004** 每个 Node 保存最近一次完成检测的健康状态及检测信息，包括 TCP 和 URL 检测结果、检测时间和失败原因。Node 完成检测后，根据 URL 检测结果更新健康状态。
 
-`result` 只有 `unknown`、`available` 和 `unavailable` 三种。Node 首次检测前：
+### 9.5 检测执行与状态更新
 
-```text
-result = unknown
-tcp delay = null
-url delay = null
-```
+**REQ-HEALTH-005** 单个 Node 的 TCP 和 URL 检测全部完成后，一次性更新其健康状态和检测信息。
 
-URL 检测成功时 `failure reason = null`；URL 检测失败时记录简单失败原因。
+**REQ-HEALTH-006** AUTO 检测和人工检测相互独立，可以并发执行，并分别控制批量检测的并发数量。人工检测由用户触发，不参与后台控制循环的串行执行。
 
-### 9.5 状态更新时间
+**REQ-HEALTH-007** 同一 Node 存在并发检测时，各检测完成后正常更新其健康状态和检测信息，后完成覆盖先完成。
 
-**REQ-HEALTH-005** TCP 和 URL 检测全部完成后，一次性更新该 Node 的健康状态。检测过程中页面继续显示该 Node 上一次已经完成的检测结果。
-
-健康状态只保存在内存中，不写入数据库。ProxyHub 重启以及 sing-box 启动或重启后，全部 Node 健康状态重新变为 `unknown`。
+**REQ-HEALTH-008** AUTO 控制不使用 Node 已保存的健康状态作为当前控制依据，每次需要判断 Node 状态时执行检测，并使用本次检测结果进行后续控制。
 
 ### 9.6 人工检测
 
-**REQ-HEALTH-006** 用户可以从页面发起人工检测，每次选择以下一种检测范围：
+**REQ-HEALTH-009** sing-box 进程正常运行时，用户可以主动发起单个或批量 Node 健康检测。
 
-- 任意一个现存的全局 Node，包括自建 Node 或 Subscription Node；
-- 全部自建 Node；
-- 某一个 Subscription 下的全部 Node；
-- 全部全局 Node，包括自建 Node 和所有 Subscription Node。
-
-人工检测遵循以下规则：
-
-- 只允许在管理状态为 `running` 且 sing-box 实际进程正在运行时发起；
-- 发起时确定本次 Node 集合，空集合直接返回没有可检测节点；
-- 不持有运行控制锁，可以与 AUTO 控制、其他人工检测、Stop 或 Restart 并发；
-- 检测过程中 sing-box 因 Stop、Restart 或意外退出而不可用时，尚未完成的检测允许失败；
-- 检测完成时只更新仍然存在的 Node 健康展示状态和日志，Node 已不存在时丢弃其状态结果；
-- 不修改 AUTO 的连续失败次数、Current Node、Default Node（Fallback Node）或 Priority Recovery 状态，也不触发 AUTO 切换。
-
-**REQ-HEALTH-007** AUTO 检测和人工检测都在每个 Node 的 TCP 和 URL 检测全部完成后更新其最近健康状态。同一 Node 存在并发检测时，按检测完成顺序更新，后完成的结果覆盖先完成的结果。AUTO 只使用其自身控制流程本次取得的检测结果作出判断，Node 最近健康状态只用于页面展示、日志和排错。
+**REQ-HEALTH-010** 人工检测只更新 Node 健康状态和检测信息，不修改 AUTO 的 Current Node、连续失败次数及恢复相关状态，也不触发 AUTO 控制。
 
 ---
 
