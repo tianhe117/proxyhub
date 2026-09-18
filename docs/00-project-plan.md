@@ -1,1880 +1,201 @@
-# ProxyHub 个人版项目实施计划
+# ProxyHub V1.0 项目实施计划
 
-> 文档版本：v1.0
-> 适用范围：ProxyHub 新版本第一版
-> 文档用途：规定需求冻结后，从设计、开发、测试到第一版发布的实施顺序、阶段产出和完成条件。
-> 当前阶段：Requirements v1.0 已冻结，Architecture v1.0 已冻结，当前进入专项核心设计阶段。
+> 需求基线：[ProxyHub V1.0 需求规范](01-requirements.md)（全文冻结）
+>
+> 文档用途：规定设计审核、AI 实现、AI 验证和 V1.0 交付的顺序、产物及完成条件。
+>
+> 更新日期：2026-09-18
 
----
+## 1. 项目目标与计划边界
 
-## 1. 项目目标
+ProxyHub V1.0 面向单人自行部署的家庭代理网关，以 sing-box 为唯一代理引擎。交付结果应能管理 Subscription 与自建 Node、Inbound、DIRECT/MANUAL/AUTO Outbound 和 Route，提供健康检测、自动故障恢复、人工切换、运行控制、管理页面、日志以及 sing-box 下载升级。
 
-ProxyHub 是供个人使用、自行部署的本地代理网关管理工具。
+`01-requirements.md` 是业务行为的唯一基线。本计划不重新定义需求，也不预设需求未指定的技术栈、数据库产品、接口路径或订阅格式。第 15 章排除的能力不进入 V1.0。项目保持单 ProxyHub 实例、单 Web 进程、单 sing-box 进程和单后台控制循环，优先完成简单、确定、可排错的实现。
 
-项目以 sing-box 作为唯一代理运行引擎，通过 Web 管理：
+本计划的重点是工作如何交接：**需求由用户确认并冻结；设计由 AI 准备、用户深度审核；实现与验证主要由 AI 完成。** 用户重点判断设计是否准确表达需求、是否适合实际使用，以及关键取舍是否可以接受。AI 负责把通过审核的设计落实为代码，并提供可复查的验证证据。
 
-- Subscription；
-- Node；
-- Inbound；
-- MANUAL / AUTO / DIRECT Outbound；
-- Route；
-- Node 健康检测；
-- MANUAL Current Node；
-- AUTO 自动故障恢复；
-- sing-box 生命周期；
-- Settings、日志和升级。
+## 2. 职责与决策边界
 
-第一版以：
+| 事项 | AI 负责 | 用户负责 |
+|---|---|---|
+| 需求 | 发现并说明冲突、遗漏及其影响 | 决定是否修改冻结需求及最终业务行为 |
+| 设计 | 起草方案、验证 sing-box 能力、列出取舍和样例、根据意见修订 | 深度审核并确认关键设计结论 |
+| 实现 | 拆分任务、编码、维护测试、修复常规缺陷、保持设计与代码一致 | 对改变业务行为或关键设计的事项作决定 |
+| 验证 | 执行自动化与端到端场景、分析失败、修复并复验、整理证据 | 审阅交付结果，决定是否接受 V1.0 |
 
-> 功能完整、行为确定、结构简单、容易排错
+冻结需求高于设计，已确认设计高于当前代码。现有代码或工具行为不能成为修改需求的理由。AI 可自行处理不改变用户可见行为的实现细节；如果有两种实现会造成不同的业务结果，先形成具体方案供用户在设计阶段确认。
 
-为主要目标。
+### 2.1 问题分类
 
-不以建设通用代理平台、多用户系统、复杂任务系统或企业级高可用系统为目标。
+- **实现缺陷**：代码不符合需求或已确认设计。AI 修复并复验。
+- **设计待定或设计冲突**：需求明确，但实现路径、数据契约或模块责任不清。AI 提供方案和证据，待设计审核后继续相关实现。
+- **需求变更**：需要改变用户可见行为、支持范围或已冻结约束。由用户明确决定，再同步设计、实现和验收预期。
 
-正式业务需求统一以：
+正常开发不因普通实现选择反复请求用户确认；关键设计审核和需求变更才进入用户决策环节。
 
-```text
-docs/01-requirements.md
-```
+## 3. 项目文档体系与编写顺序
 
-为准。
+`docs/` 下的正式文档是用户在项目中主要参与和审核的产物。AI 可以准备初稿、配置样例、流程图和验证证据，用户按下表顺序深度审核设计结论。文件已存在不等于内容已通过审核；每份设计文档以明确的审核结论作为对应实现的依据。
 
----
+| 顺序 | 文档 | 主要内容 | 用户审核重点 |
+|---|---|---|---|
+| 00 | `00-project-plan.md` | 实施顺序、分工、关口和完成条件 | 开发流程是否符合用户主导设计、AI 主导实现和验证的方式 |
+| 01 | `01-requirements.md` | V1.0 唯一业务需求基线，已全文冻结 | 仅在确需改变业务行为时重新确认 |
+| 02 | `02-architecture.md` | 技术栈、单进程运行模型、模块边界、数据与文件所有权、依赖方向和全局约束 | 整体结构是否简单，是否支撑全部需求而不增加无关机制 |
+| 03 | `03-data-model.md` | 业务实体、Node Pool、DIRECT 标识、约束、Subscription 请求解析与身份差异、级联事务 | 数据能否表达业务规则，删除与 Sync 是否整体正确 |
+| 04 | `04-singbox-design.md` | Node 协议与分享 URI、配置映射、selector 控制、配置检查和二进制管理 | sing-box 实际能力、配置样例和切换行为是否满足需求 |
+| 05 | `05-runtime-control.md` | 管理状态、进程生命周期、运行控制锁、Runtime State、Settings 运行参数、健康检测和 AUTO 控制 | 状态转换、时序、失败处理与恢复行为是否清楚 |
+| 06 | `06-web-ui.md` | 桌面与移动页面、操作入口、状态与节点角色展示、确认及错误流程 | 实际使用流程是否直观，页面是否忠实表达需求 |
+| 07 | `07-api.md` | 页面使用的内部 API、认证与 Settings 接口、状态校验及错误表达 | 接口是否足以支撑页面，是否避免形成需求外的公共 API |
+| 08 | `08-test-plan.md` | 需求覆盖、规则测试、sing-box 集成、故障场景与部署验收步骤 | 验收是否能证明关键行为，而不只证明实现能运行 |
+| 09 | `09-deployment.md` | Docker Compose 与 Ubuntu Python/venv 的安装、配置、升级和排错 | 两种部署能否按说明独立复现，配置格式是否一致 |
 
-# 2. 实施原则
+当前工作区已有 00、01、02 编号文档；03～09 是后续计划产物。02 的审核状态以用户确认记录为准，不能仅凭文件是否存在判断。
 
-## 2.1 Requirements 是唯一业务基准
+建议按 `02 → 03 → 04 → 05 → 06 → 07 → 08 → 09` 编写和审核。02 为共同结构基线；03、04 确定数据与 sing-box 映射；05 在二者基础上确定运行控制；06、07 再把已确认的能力转为页面与接口。08 的场景可以随前述设计逐步起草，在 07 完成后统一核对；09 可以提前准备部署方案，在实际安装验证后定稿。
 
-`01-requirements.md` 描述：
+02～07 的每份设计文档应列出对应需求、关键方案、可检查样例和未决问题。用户确认的设计结论允许对应实现批次开始；未确认的部分继续修订。08、09 可由 AI 先整理测试与部署材料，再由用户审核覆盖和可操作性。`docs/history/` 与 `docs/work-in-progress/` 用于过程记录，不作为已冻结需求或已审核设计的替代依据。
 
-> 系统应该做什么。
-
-后续设计文档只描述：
-
-> 系统如何实现这些需求。
-
-设计和开发不得重新定义已有业务行为。
-
-如果设计过程中发现需求无法实现、存在冲突或必须增加新的业务概念，应先回到需求层确认，而不是在代码中自行补充规则。
-
----
-
-## 2.2 不重复设计已经明确的业务规则
-
-新版 Requirements 已经明确大量运行规则，包括：
-
-- Subscription / Node / Inbound / Outbound / Route 的关系；
-- MANUAL / AUTO / DIRECT 的行为；
-- priority；
-- Current Node；
-- Fallback Node；
-- Route 引用规则；
-- 结构配置修改限制；
-- Subscription Sync 和级联删除；
-- sing-box Start / Stop / Restart；
-- 运行控制锁；
-- Node 健康检测；
-- AUTO 故障恢复；
-- Settings；
-- Web 功能范围；
-- sing-box 下载和升级。
-
-后续设计文档不得重新发明第二套业务规则。
-
-设计阶段重点回答：
+## 4. 总体流程与阶段关口
 
 ```text
-这些需求具体由哪些模块实现？
-数据保存在哪里？
-模块之间如何调用？
-异常如何返回？
-如何映射为 sing-box 配置？
-如何测试？
+01 需求全文冻结
+    ↓
+设计分包起草与关键能力验证
+    ↓
+用户深度审核对应设计
+    ↓
+AI 按已确认设计分批实现并随批验证
+    ↓
+AI 完成集成、回归和两种部署方式的验收
+    ↓
+用户审阅 V1.0 交付结果
 ```
 
----
+设计按依赖分包审核，不要求所有页面和部署细节在第一行代码前全部确定；**任何实现批次开始前，其依赖的设计必须已通过审核。** 为验证 sing-box、协议或订阅输入的可行性，可以先做范围明确的试验；试验结论进入设计，试验代码不自动视为正式实现。
 
-## 2.3 按依赖推进，不采用完整瀑布流程
-
-项目不要求所有设计文档全部完成后才开始编码。
-
-推荐采用：
-
-```text
-Requirements 冻结
-        ↓
-Architecture 设计
-        ↓
-专项核心设计
-        ↓
-核心后端开发
-        ↓
-Web / API 设计
-        ↓
-Web / API 开发
-        ↓
-集成与验收
-        ↓
-部署与发布
-```
-
-Architecture 先确定全局技术和结构基线，随后完成三份专项核心设计：
-
-```text
-数据模型
-sing-box 集成
-运行控制
-```
-
-上述设计原则上应在对应核心代码大规模开发前确定。
-
-Web UI、内部 API 和部署细节可以在核心后端结构稳定后继续完善。
-
----
-
-## 2.4 设计保持最小化
-
-第一版只设计当前需求真正需要的能力。
-
-原则上不提前建立：
-
-- 通用任务系统；
-- Event Bus；
-- Plugin 系统；
-- Repository 抽象体系；
-- 分布式锁；
-- 多 worker；
-- 多进程状态同步；
-- 配置版本状态机；
-- Pending Config；
-- 通用 Workflow；
-- 通用消息通知框架；
-- 为未来版本准备的大量抽象层。
-
-如果普通函数、类、事务和一把进程内锁已经能够满足需求，就不增加额外架构。
-
----
-
-## 2.5 测试跟随开发
-
-不采用：
-
-```text
-全部功能开发完成
-→ 最后统一补测试
-```
-
-而采用：
-
-```text
-实现一个模块
-→ 完成对应单元/集成测试
-→ Review
-→ 再进入下一模块
-```
-
-最终再执行完整场景验收。
-
----
-
-# 3. 项目文档体系
-
-正式文档统一放置于：
-
-```text
-docs/
-```
-
-建议结构：
-
-```text
-docs/
-├── 00-project-plan.md
-├── 01-requirements.md
-├── 02-architecture.md
-├── 03-data-model.md
-├── 04-singbox-design.md
-├── 05-runtime-control.md
-├── 06-web-ui.md
-├── 07-api.md
-├── 08-test-plan.md
-├── 09-deployment.md
-└── history/
-    └── requirements-discussion.md
-```
-
-各文档职责如下：
-
-| 文档 | 职责 |
+| 关口 | 进入下一步所需证据 |
 |---|---|
-| `00-project-plan.md` | 项目阶段、实施顺序、交付物和完成条件 |
-| `01-requirements.md` | 第一版正式业务需求 |
-| `02-architecture.md` | 技术栈、运行模型、模块边界、依赖方向、目录结构和全局实现约束 |
-| `03-data-model.md` | 数据库实体、字段、关系、约束、事务和持久化边界 |
-| `04-singbox-design.md` | Node / Inbound / Outbound / Route 到 sing-box 的映射，以及 Clash API、配置生成和升级 |
-| `05-runtime-control.md` | 应用运行状态、内存状态、控制循环、运行控制锁、健康检测和 AUTO 控制实现 |
-| `06-web-ui.md` | Desktop / Mobile 页面、信息结构和用户操作流程 |
-| `07-api.md` | Web 前端使用的内部 API |
-| `08-test-plan.md` | 单元测试、集成测试和场景验收 |
-| `09-deployment.md` | Docker Compose 和 Ubuntu venv 部署 |
-| `history/` | 历史讨论和决策记录，不作为开发直接依据 |
+| G0 需求基线 | `01-requirements.md` 全文冻结；新增业务行为按需求变更处理 |
+| G1 设计审核 | 相关需求有明确实现映射；数据与状态所有权、主流程、失败处理和验证样例清楚；用户确认设计结论 |
+| G2 单批实现 | 代码符合需求与已确认设计；相关验证通过；变更范围、结果和剩余问题可复查 |
+| G3 系统验收 | 关键跨模块场景在目标环境通过；失败项已修复并复验；需求覆盖记录完整 |
+| G4 V1.0 交付 | 两种部署方式可复现，运行与排错材料齐备，用户可依据证据判断是否接受 |
 
----
+## 5. 设计阶段：由用户深度审核
 
-# 4. 第一阶段：Requirements 冻结
+设计先解决会影响后续模块的约束，再处理局部页面和接口。设计文件可以按模块拆分，但每份提交审核时都应说明：对应需求、采用方案、关键数据或状态流、正常与失败样例、对其他模块的影响，以及尚待决定的问题。不要把需求原文改写成第二份业务规范。
 
-## 4.1 目标
+### 5.1 审核包及顺序
 
-形成 ProxyHub 第一版稳定业务基线。
+| 审核包 | 对应文档 | 需要确定的内容 | 进入实现前的检查点 |
+|---|---|---|---|
+| A. 全局结构 | 02 | 单进程运行模型、模块职责与依赖、数据库/配置文件/内存状态的所有权、运行控制锁、外部系统边界 | 不存在第二套业务规则；单实例与并发边界清楚 |
+| B. 业务数据与事务 | 03 | Subscription、Node、Inbound、Outbound、Node Pool、Route 的模型与约束；DIRECT 的虚拟标识；priority、Default Node、级联预览和事务 | 可以表达全部合法关系；删除和 Sync 能原子完成 |
+| C. Node 与 Subscription 输入 | 03、04 | 五种 Node 协议、原生插件、单条分享 URI、实际订阅格式、解析与过滤顺序、Refresh 元信息 | 有真实或脱敏的有效/无效样例；不支持输入的处理清楚 |
+| D. sing-box 集成 | 04 | 配置字段和 tag、selector 与 Route 映射、配置检查和替换、控制接口、Current Node 查询/切换、二进制管理 | 在目标 sing-box 上验证 DIRECT、MANUAL、AUTO 和切换能力；配置失败不破坏旧正式配置 |
+| E. 运行控制与健康/AUTO | 05 | Start/Stop/Restart、进程守护、Runtime State 初始化、检测流程和并发、AUTO 计数与计时、Fallback/Priority Recovery | 状态转换和控制周期有可执行样例；符合第 8～10 章 |
+| F. Settings、认证、页面与 API | 05～07 | 各设置的保存和生效时机、认证与会话、操作状态校验、桌面/移动页面、内部 API、错误提示和日志展示 | 页面与 API 不改变业务规则；用户能区分管理状态、进程状态与节点角色 |
+| G. 验证与部署 | 08、09 | 需求到场景的覆盖、可控故障注入、日志脱敏、下载升级验证、Docker Compose 与 Ubuntu Python/venv | 验收步骤与环境可复现；两种部署使用相同配置格式 |
 
-阶段状态：已完成。
+A 是其余审核包的共同基线。B、C、D 的关键结论决定业务数据和配置生成；E 依赖 D 的控制能力；F 可随已确认的业务接口逐步细化；G 随设计和实现持续更新。对已审核包的修改，应说明影响到哪些后续设计和实现批次。
 
-阶段产出：
+### 5.2 设计审核结果
 
-```text
-docs/01-requirements.md
-```
+每个审核包结束时记录以下一种结果：
 
-版本：
+1. **通过**：结论足以支撑对应实现批次。
+2. **需修订**：列明具体问题，AI 修订后再次提交相关部分。
+3. **需求问题**：指出受影响需求及实际场景，由用户决定是否调整冻结需求。
 
-```text
-Requirements v1.0
-```
+用户审核关注的是行为、边界和取舍。AI 应提供配置样例、状态转换示例、数据变化示例和页面流程，使结论可以检查；无须让用户靠阅读实现代码来推断设计。
 
----
+## 6. AI 实现批次
 
-## 4.2 完成条件
+实现按可运行的纵向路径推进。每批包含代码、必要的测试或可重复验证、配置与文档同步以及 AI 自检；可并行完成独立模块，但不得越过其设计审核关口。下面的顺序表示主要依赖，不要求把一个阶段的全部页面做完才开始下个后端模块。
 
-进入正式设计前应确认：
+| 批次 | 实现范围 | 完成时能证明什么 |
+|---|---|---|
+| I1 应用基础与 DIRECT | Web 单实例、数据初始化、Settings 加载/校验、基础认证与日志、DIRECT Route、配置生成/检查、Start/Stop/Restart | 无二进制或无 Route 时 Web 正常；只有 DIRECT Route 也可运行；非法 Settings 阻止启动 |
+| I2 业务对象与 MANUAL | 五种远程 Node、自建表单和 URI、五种 Inbound、Node Pool/priority/Default、MANUAL、Route、级联处理及在线切换 | MANUAL 从 Default 启动、在线切换并更新 Default；未引用 MANUAL 只改 Default；共享 Outbound 行为一致 |
+| I3 Subscription | 多订阅、HTTPS 请求、Sync/Refresh、Filter/Exclude、名称匹配、差异预览、确认与事务、删除级联 | Sync 失败或取消不改数据；确认整体生效；Refresh 不修改 Node |
+| I4 检测与 AUTO | TCP/URL 检测、人工批量检测、单控制循环、Routed AUTO、故障切换、优先级恢复、超时重启和进程守护 | 可复现 Candidate 故障、Fallback 恢复、Priority Recovery、切换失败和进程退出恢复 |
+| I5 管理页面与 API | 桌面完整管理、移动端限定功能、状态与节点角色展示、操作错误、认证会话、关键日志与下载 | 页面和 API 体现相同操作限制；认证启用后所有要求的入口受到保护 |
+| I6 二进制与部署 | sing-box 版本检查、下载/升级失败保护、Docker Compose、Ubuntu 20.04+ amd64 Python/venv、安装与排错说明 | 两种部署能执行首次安装及完整运行路径；升级失败保留原二进制 |
 
-- Requirements 已完成；
-- 核心业务关系不存在已知冲突；
-- MANUAL / AUTO / DIRECT 行为明确；
-- Route 行为明确；
-- stopped / running 下允许和禁止的操作明确；
-- Subscription Sync 和级联删除明确；
-- sing-box 生命周期明确；
-- Node 健康检测明确；
-- AUTO 故障恢复流程明确；
-- 第一版明确不做的能力已经确定；
-- 不存在阻塞设计的 P0/P1 未决问题。
+批次 I1～I4 的内部 API 可以随用例实现，I5 负责统一页面体验和接口契约。日志、敏感信息处理和设置校验从首批开始贯穿开发，在 I5/I6 完整验收。
 
-Requirements 冻结后，普通实现问题不再修改需求。
+### 6.1 单个 AI 工作任务的交付格式
 
-只有业务行为本身发生改变时才进行需求变更。
+为避免一次实现过多互相关联的行为，每个工作任务应包含：
 
----
+- **依据**：相关需求编号和已确认的设计结论。
+- **范围**：本次处理的用例、模块及明确的完成结果。
+- **实现**：代码、数据结构、接口或页面变更；必要时更新对应设计说明。
+- **验证**：执行的测试或复现步骤、结果、失败修复与复验。
+- **自检**：与需求不符的风险、敏感信息、持久化边界、并发和额外复杂度。
 
-# 5. 第二阶段：Architecture 设计
+AI 在提交结果时说明改了什么、为什么、如何验证以及仍有什么限制。提交应围绕单一可理解的功能或修复，便于回看和回退。
 
-阶段状态：已完成，Architecture v1.0 已冻结。
+## 7. AI 验证计划
 
-产出：
+验证跟随每个实现批次进行，最后再做全链路验收。AI 负责创建测试输入、运行检查、分析失败、修复并复验；用户主要审核设计和最终交付证据。测试应验证行为和边界，不以与实现完全相同的逻辑重复计算作为通过依据。
 
-```text
-docs/02-architecture.md
-```
+### 7.1 验证层次
 
-## 5.1 目标
+| 层次 | 重点 | 典型证据 |
+|---|---|---|
+| 规则验证 | Filter/Exclude、节点身份、priority、级联影响、Settings 校验、AUTO 状态转移 | 有明确输入和预期输出的自动化测试 |
+| 模块集成 | 数据库事务、配置生成与 `sing-box check`、控制接口、健康检测、内部 API、认证 | 在可控依赖或真实 sing-box 上执行的集成结果 |
+| 端到端场景 | Web 操作到 sing-box 实际运行、切换、恢复、日志和升级 | 目标环境中的可重复步骤、结果与关键日志 |
+| 部署复验 | Docker Compose 与 Ubuntu Python/venv 首次安装、重启和升级 | 两种环境的安装及运行记录 |
 
-在各专项设计开始前，确定 ProxyHub 第一版共同遵循的技术和结构基线，使数据模型、sing-box 集成、运行控制、Web UI、内部 API、测试和部署使用一致的架构假设。
+AUTO 计时、检测成功/失败、进程退出和切换失败需要可控测试条件；真实 sing-box 的配置、查询、切换和连接中断另做集成验证。订阅解析使用实际格式的脱敏样例，避免仅靠临时在线订阅结果判断是否正确。
 
-Architecture 只定义全局结构和跨模块约束，不重复 Requirements 中的业务规则，也不替代后续专项设计。
+### 7.2 必须覆盖的场景
 
----
+| 场景组 | 关键检查点 |
+|---|---|
+| 首次安装与 DIRECT | 无二进制、无有效 Route、仅 DIRECT Route、未引用 Inbound |
+| 配置与生命周期 | 最新数据库生成、检查失败不替换或使用旧配置、自动启动、手动 Stop、Restart、意外退出恢复 |
+| Node 与 MANUAL | 五种协议和输入校验、Default 初始化、在线切换失败/成功、旧连接中断、未引用 MANUAL、共享 Route |
+| 业务修改 | `running` 结构修改禁止、priority 在线调整不立即切换、Node 删除后的 Default/Outbound/Route 级联 |
+| Subscription | HTTPS 与格式错误、Filter/Exclude、同名/改名、跳过、空结果、差异预览、事务回滚、Refresh 独立性 |
+| 健康检测 | TCP 与 URL 分别记录、URL 决定健康状态、人工与 AUTO 并发、批量并发限制 |
+| AUTO | 初始 Fallback、Candidate 连续失败、Fallback Recovery、Priority Recovery、Fallback 超时、三类切换失败 |
+| Settings 与认证 | 缺失文件与字段补全、非法文件阻止启动、保存及生效时机、密码哈希、会话失效、API/日志下载保护 |
+| 页面、日志与升级 | 桌面和移动功能范围、管理状态与进程状态分别展示、敏感信息脱敏、版本检查和下载升级失败保护 |
+| 部署 | Docker Compose 与 Ubuntu Python/venv 配置格式一致，主要场景均可复现 |
 
-## 5.2 技术栈
+每个场景记录所对应的需求、环境和结果。失败应修复后重跑相关场景；最终发布前重跑跨模块回归，不以单次人工观察替代验证记录。
 
-明确并记录：
+## 8. Review、变更与交付控制
 
-- Python 版本和支持范围；
-- Web 框架及其运行方式；
-- 数据库、数据库访问和迁移方案；
-- Settings 与其他文件的读写方案；
-- 请求和领域数据校验方案；
-- Desktop / Mobile Web 的前端实现方式；
-- 后台控制循环和并发实现方式；
-- 测试框架、代码质量工具和依赖管理方式。
+### 8.1 AI 自检与用户审核
 
-技术选择必须兼容 Requirements 规定的 Ubuntu 20.04+、amd64、Docker Compose 和 Python/venv 部署，并符合单实例、单 Web 进程、单 sing-box 进程和单后台控制循环的边界。
+AI 对每批代码先做自检，重点检查：是否偏离冻结需求或已确认设计；是否错误持久化 Runtime State；是否绕过运行控制锁或事务；是否把敏感信息写进日志或预览；是否增加了 V1.0 不需要的任务、历史或多进程机制；关键失败路径是否有验证证据。
 
----
+用户的主要审核关口在设计。实现中的常规缺陷由 AI 持续修复；只有需要改变业务行为或关键设计取舍时，再将具体方案交给用户决定。最终交付时，AI 提供需求覆盖、测试结果、部署记录和剩余限制的汇总，供用户作接收判断。
 
-## 5.3 运行模型
+### 8.2 设计或需求变化
 
-明确：
+冻结后发现问题，先按第 2.1 节分类。只影响技术实现的，更新设计及受影响任务后继续；会改变用户可见行为或 V1.0 范围的，先由用户决定是否调整 `01-requirements.md`，再更新设计、实现和验证预期。不得让代码里的特殊处理成为未经确认的新规则。
 
-- ProxyHub Web、后台控制循环和 sing-box 子进程之间的关系；
-- 应用启动、正常关闭和异常退出的顺序；
-- 同步、线程或异步边界；
-- 运行控制锁所在层级及其统一入口；
-- 数据库连接、事务和内存 Runtime State 的进程内所有权；
-- 单实例保护的实现位置。
+### 8.3 V1.0 完成标准
 
-本节只确定总体运行方式。Start / Stop / Restart、健康检测和 AUTO 控制的详细流程由 Runtime 设计规定。
+只有同时满足以下条件，才把 V1.0 视为可交付：
 
----
+1. 冻结需求中的适用功能均有实现位置和通过的验收结果；不存在未处理的需求偏差。
+2. 用户已审核全部适用设计包，代码与审核后的设计一致；技术可行性假设已经由实际集成验证。
+3. DIRECT、MANUAL、Subscription、健康检测、AUTO、生命周期、Settings、认证、页面、日志和升级的关键场景全部通过。
+4. Docker Compose 与 Ubuntu Python/venv 均能按说明部署，在受支持环境完成首次安装和主要回归场景。
+5. 错误能通过页面、启动输出或可下载日志定位，凭据、密钥、分享 URI 和完整 Subscription URL 不在日志或差异预览中明文出现。
+6. 第 15 章排除的功能未被作为 V1.0 完成条件引入。
 
-## 5.4 模块边界和依赖方向
+计划不预设开发工期。后续可按资源和实际进度安排日期，但不能以日期替代设计审核与验收关口。
 
-需要说明：
+## 9. 当前推进方式
 
-- Web / Internal API、业务用例、核心业务规则和外部设施分别由哪些模块承载；
-- 采用的整体软件架构及选择理由；
-- 每个模块允许包含的职责；
-- 模块之间的依赖方向；
-- CRUD、Subscription Sync、生命周期控制、MANUAL Switch、Node Detection 和 AUTO Control 的应用入口；
-- 数据库事务由谁开启和提交；
-- 外部 HTTP、文件系统、时钟和 sing-box 交互的封装边界；
-- Web 入口不得重复实现核心业务规则；
-- 后台控制代码不得绕过统一业务入口直接修改业务数据。
+需求基线已经冻结。下一步按第 3 节的文档顺序核对 02 的审核状态，再推进 03、04 和 05；各文档的具体审核内容见第 5 节。已由用户确认的结论直接作为对应实现依据；尚未确认的，由 AI 整理方案、验证样例和待决问题后提交审核。
 
-不为第一版建立通用 Event Bus、任务队列、Plugin、Repository 抽象体系或其他 Requirements 未要求的基础设施。
-
----
-
-## 5.5 状态和数据所有权
-
-从架构层明确以下数据分别由哪个模块拥有：
-
-```text
-SQLite 持久化业务数据
-settings.json
-secret key
-日志文件
-sing-box binary 和配置文件
-management state
-sing-box process state
-Node Health State
-AUTO Runtime State
-```
-
-字段、关系和具体状态转换仍由对应专项设计规定。
-
----
-
-## 5.6 项目目录结构
-
-在开始编码前确定顶层目录，包括：
-
-- 应用入口和装配代码；
-- 核心业务、业务用例、外部设施和 Web 入口对应的模块；
-- 数据库模型和迁移；
-- 页面资源；
-- 单元测试、集成测试和验收测试；
-- 部署文件；
-- `data/` 中的持久化数据、生成配置、二进制、临时文件和日志。
-
-目录名称应能直接映射到 Architecture 中定义的模块职责，避免在开发阶段重新划分边界。
-
----
-
-## 5.7 全局实现约束
-
-明确所有模块共同遵循的最小规则：
-
-- 错误分类、传播和用户提示边界；
-- 日志记录和敏感信息脱敏；
-- 原子文件替换；
-- 输入校验与业务不变量校验的分工；
-- 时间、网络、文件系统和 sing-box 调用的可测试方式；
-- 配置路径和部署差异不得进入 Domain 规则；
-- 不为第一版增加兼容层、通用抽象或多进程能力。
-
----
-
-## 5.8 完成条件
-
-- 技术栈不存在阻塞后续设计的待定项；
-- 运行和并发模型明确；
-- 模块职责、调用关系和依赖方向明确；
-- 数据、文件和 Runtime State 的所有权明确；
-- 顶层目录结构明确；
-- 数据库、sing-box、文件系统和网络交互边界明确；
-- 测试所需的替换边界明确；
-- Docker Compose 与 Ubuntu venv 使用同一套应用架构；
-- 没有引入 Requirements 明确排除的复杂基础设施。
-
-完成后，后续专项设计必须遵循本文确定的架构基线。Architecture 发生变化时，应先更新本文并评估所有专项设计的影响。
-
----
-
-# 6. 第三阶段：数据模型设计
-
-产出：
-
-```text
-docs/03-data-model.md
-```
-
-## 6.1 目标
-
-把 Requirements 中需要持久化的数据转换为最小数据库模型。
-
-核心对象：
-
-```text
-Subscription
-Node
-Inbound
-Outbound
-Outbound Node Pool
-Route
-```
-
-同时明确：
-
-```text
-Settings → settings.json
-运行状态 → 内存
-DIRECT → 系统内置对象
-```
-
----
-
-## 6.2 重点设计
-
-需要确定：
-
-### Subscription / Node
-
-- Subscription 表；
-- Subscription 与 Node 的关系；
-- 自建 Node 与订阅 Node 的来源表达；
-- Node 的稳定身份；
-- Subscription Sync 匹配需要的字段；
-- Subscription 元信息。
-
-### Outbound
-
-数据库只保存用户创建的：
-
-```text
-MANUAL
-AUTO
-```
-
-明确：
-
-- Node Pool；
-- priority；
-- MANUAL Current Node；
-- AUTO Fallback Node；
-- type 转换；
-- Node Pool 最少两个 Node；
-- Node 在多个 Outbound 中复用。
-
-DIRECT 不建立普通数据库记录。
-
-priority 是 Outbound Node Pool 的持久化排序和策略数据，只保存在 SQLite，不属于 sing-box Config。数据模型必须支持在一个事务中完成整体重排，保证最终 priority 为连续、唯一的 `1...N`，并保证在线重排不增加或删除 Node Pool 成员。
-
-### Route
-
-明确：
-
-```text
-Route
-→ 一个 Inbound
-→ 一个 Outbound
-```
-
-并保证：
-
-- 一个 Inbound 最多属于一个 Route；
-- 一个 Outbound 可以被多个 Route 引用；
-- DIRECT 使用稳定系统标识表示。
-
----
-
-## 6.3 事务和级联设计
-
-重点设计统一业务事务：
-
-```text
-删除 Node
-删除 Subscription
-Subscription Sync 删除 Node
-```
-
-需要能够：
-
-```text
-计算影响
-→ 返回预览
-→ 用户确认
-→ 一个事务完成：
-   Subscription
-   Node
-   Outbound
-   Route
-```
-
-并实现 Requirements 中规定的：
-
-- priority 在一个事务中原子重排；
-- Current Node 自动替换；
-- Fallback Node 自动替换；
-- Node Pool 少于两个时删除 Outbound；
-- 继续级联删除 Route。
-
----
-
-## 6.4 完成条件
-
-- 每个持久化需求都能够映射到明确字段；
-- 没有无业务用途的数据表；
-- MANUAL / AUTO 可以完整表达；
-- DIRECT 不被错误建模成普通 Outbound；
-- priority 有稳定数据结构并能保证连续、唯一的 `1...N`；
-- MANUAL Current Node 可以持久化；
-- AUTO Current Node 没有被持久化；
-- AUTO Fallback Node 可以持久化；
-- Subscription Sync 能够稳定识别节点；
-- 所有删除和级联规则能够在一个事务中实现。
-
-完成后可以开始数据库和 Domain 层开发。
-
----
-
-# 7. 第四阶段：sing-box 集成设计
-
-产出：
-
-```text
-docs/04-singbox-design.md
-```
-
-## 7.1 目标
-
-定义：
-
-> ProxyHub 业务对象如何转换成 sing-box 配置，以及 ProxyHub 如何控制 sing-box。
-
----
-
-## 7.2 Node 映射
-
-为以下协议建立字段矩阵：
-
-```text
-VMess
-VLESS
-Trojan
-Shadowsocks
-Hysteria2
-```
-
-明确：
-
-- ProxyHub 字段；
-- 分享 URI 字段；
-- sing-box 字段；
-- 必填字段；
-- 可选字段；
-- Reality；
-- uTLS；
-- WebSocket；
-- gRPC；
-- HTTP/2；
-- Shadowsocks obfs。
-
-已有代码只能作为参考。
-
-最终以新版设计确认的字段矩阵为准。
-
----
-
-## 7.3 Inbound 映射
-
-定义各类 Inbound 到 sing-box 的转换。
-
-同时处理：
-
-- tag；
-- listen；
-- port；
-- 用户输入校验；
-- 明显端口冲突。
-
----
-
-## 7.4 Outbound 和 Route 映射
-
-明确：
-
-```text
-Node
-→ sing-box proxy outbound
-
-MANUAL
-→ selector
-
-AUTO
-→ selector
-
-DIRECT
-→ direct outbound
-
-Route
-→ Inbound 到 Outbound 的 routing
-```
-
-配置 Builder 必须按照 Routed 对象生成运行配置。
-
-未被 Route 引用的 Inbound、MANUAL、AUTO 不生成对应运行对象。
-
-priority 不映射到 sing-box 配置：不生成 priority 字段，不通过 selector Node 顺序表达 priority，不因 priority 修改生成新配置或触发 Restart。
-
----
-
-## 7.5 Selector
-
-明确：
-
-### MANUAL
-
-生成配置时：
-
-```text
-数据库 Current Node
-→ selector 默认节点
-```
-
-MANUAL selector 默认节点只来自持久化 Current Node，不由 priority 决定。
-
-### AUTO
-
-生成配置时：
-
-```text
-Fallback Node
-→ selector 默认节点
-```
-
-AUTO selector 初始节点只来自持久化 Fallback Node，不由 priority 决定。
-
-并支持：
-
-```text
-interrupt_exist_connections
-```
-
-满足节点切换后已有连接中断的需求。
-
----
-
-## 7.6 Clash API
-
-设计最小 Client，支持：
-
-- Node URL Delay；
-- selector Current Node 查询；
-- selector 节点切换；
-- Clash API 可用性判断；
-- HTTP / JSON 错误处理。
-
-不建立通用 Clash API SDK。
-
----
-
-## 7.7 配置生命周期
-
-实现模型：
-
-```text
-最新数据库
-    ↓
-生成临时配置
-    ↓
-sing-box check
-    ↓
-检查成功
-    ↓
-原子替换正式配置
-    ↓
-启动 sing-box
-```
-
-同时：
-
-- 保留上一份可用正式配置供人工排错；
-- check 失败不自动恢复旧运行配置；
-- stopped 下普通结构修改只改数据库，不生成配置。
-
----
-
-## 7.8 sing-box 二进制管理
-
-明确：
-
-- 二进制路径；
-- 当前版本检测；
-- GitHub Release 获取；
-- amd64 资产选择；
-- 下载；
-- 临时文件；
-- 校验；
-- 原子替换；
-- 升级失败保护。
-
-版本筛选等具体策略在本文中规定，不额外增加需求。
-
----
-
-## 7.9 完成条件
-
-- 五种 Node 协议映射明确；
-- Inbound 映射完整；
-- MANUAL / AUTO / DIRECT 映射完整；
-- Routed 配置裁剪明确；
-- Route 可以生成正确配置；
-- selector 默认节点规则明确；
-- Clash API 行为明确；
-- 配置 check / 替换 / 启动流程明确；
-- 下载和升级方案明确。
-
-完成后可以实现 Config Builder 和 sing-box Client。
-
----
-
-# 8. 第五阶段：运行控制设计
-
-产出：
-
-```text
-docs/05-runtime-control.md
-```
-
-第一版不设计额外复杂状态机。
-
----
-
-## 8.1 目标
-
-实现 Requirements 已经确定的：
-
-```text
-管理状态
-实际进程状态
-运行控制锁
-后台控制循环
-Node Health State
-AUTO Runtime State
-```
-
----
-
-## 8.2 状态边界
-
-明确三类数据。
-
-### 持久化业务数据
-
-数据库：
-
-```text
-Subscription
-Node
-Inbound
-MANUAL / AUTO
-Route
-MANUAL Current Node
-AUTO Fallback Node
-```
-
-### Settings
-
-```text
-data/settings.json
-```
-
-### Runtime State
-
-只存在于内存，例如：
-
-```text
-Node Health
-TCP Delay
-URL Delay
-Last Checked
-Failure Reason
-
-AUTO Current Node
-Failure Count
-Fallback Started Time
-Priority Recovery Timer
-
-sing-box Process State
-```
-
----
-
-## 8.3 管理状态和进程状态
-
-实现：
-
-```text
-management_state:
-running
-stopped
-```
-
-同时独立观察：
-
-```text
-process running
-process exited
-start failed
-not installed
-```
-
-禁止用进程是否存在替代管理状态。
-
----
-
-## 8.4 运行控制锁
-
-系统只使用一把进程内运行控制锁。
-
-需要明确哪些操作持锁：
-
-```text
-Start
-Stop
-Restart
-后台控制周期
-结构配置写操作
-MANUAL 在线切换
-sing-box 下载 / 升级替换
-后台恢复 Restart
-priority online reorder
-```
-
-以及哪些操作不持锁：
-
-```text
-Settings 保存
-人工 Node 检测
-Subscription Metadata Refresh
-```
-
-priority online reorder 持有 `runtime_control_lock`，但不要求管理状态为 stopped；它只修改 SQLite，AUTO 后续需要依据 Candidate priority 决策时读取数据库中的最新值。不得为此增加第二把锁、任务队列或新的并发机制。
-
-实现时不得另外建立任务队列或复杂锁体系。
-
----
-
-## 8.5 后台控制循环
-
-实现固定流程：
-
-```text
-控制周期
-    ↓
-进程守护
-    ↓
-AUTO 控制
-    ↓
-等待基础间隔
-    ↓
-下一周期
-```
-
-如果本周期触发 sing-box Restart：
-
-```text
-立即结束当前周期
-```
-
----
-
-## 8.6 Node 健康检测
-
-统一 Node 检测实现：
-
-```text
-TCP Test
-    ↓
-URL Delay
-    ↓
-更新 Health State
-```
-
-明确：
-
-- available / unavailable / unknown；
-- TCP Delay；
-- URL Delay；
-- Failure Reason；
-- Last Checked；
-- Max Concurrency；
-- Hysteria2 与其他 Node 使用相同检测流程；
-- 人工检测；
-- AUTO 检测。
-
-不同检测来源不得错误修改 AUTO failure count。
-
----
-
-## 8.7 AUTO 控制
-
-不额外建立状态枚举。
-
-每个 Routed AUTO 只维护 Requirements 规定的少量运行数据。
-
-控制流程实现为普通条件流程：
-
-```text
-Current == Fallback
-→ Fallback Recovery
-→ Fallback Timeout
-
-Current == Candidate
-→ Current Check
-→ Failover
-→ Priority Recovery
-```
-
-重点实现：
-
-- Fallback Recovery；
-- Current Candidate 连续失败；
-- Candidate → Fallback；
-- Priority Recovery；
-- Fallback 超时 Restart；
-- selector 切换失败；
-- Restart 后全部 Runtime State 初始化。
-
----
-
-## 8.8 完成条件
-
-- 任意运行数据属于 DB / Settings / Memory 中哪一类都明确；
-- Start / Stop / Restart 顺序明确；
-- 锁范围明确；
-- 后台控制周期没有隐藏并发；
-- Node Health 数据修改规则明确；
-- AUTO 控制可以直接翻译为代码；
-- sing-box 意外退出恢复明确；
-- Restart 后 Runtime 初始化明确；
-- 不存在额外隐式状态机。
-
-完成后可以实现完整 Runtime 层。
-
----
-
-# 9. 第六阶段：核心后端开发
-
-完成 Architecture 和三份专项核心设计后，可以正式进入核心后端实现。
-
-不需要等待 Web UI、API 和 Deployment 文档全部完成。
-
-推荐按以下批次实施。
-
----
-
-## 9.1 第一批：应用基础和 Settings
-
-实现：
-
-- 按 Architecture 建立项目目录和模块骨架；
-- 配置路径；
-- data 目录；
-- Settings 默认值；
-- Settings 加载；
-- 缺失字段补全；
-- 完整校验；
-- 原子保存；
-- Logging 基础设施；
-- 单实例基础保护。
-
-完成对应测试。
-
----
-
-## 9.2 第二批：数据库与基础业务模型
-
-实现：
-
-```text
-Subscription
-Node
-Inbound
-Outbound
-Outbound Node Pool
-Route
-```
-
-以及：
-
-- CRUD；
-- 唯一约束；
-- 外键；
-- priority；
-- Current / Fallback；
-- type 转换；
-- 基础业务校验。
-
-完成数据库单元和集成测试。
-
----
-
-## 9.3 第三批：Subscription 和 Node
-
-实现：
-
-- Subscription 请求；
-- Subscription Parser；
-- Filter；
-- Exclude；
-- Diff；
-- Subscription Metadata Refresh；
-- 自建 Node；
-- URI Parser；
-- Node 修改和删除。
-
-然后实现：
-
-```text
-影响计算
-→ Preview
-→ Confirm
-→ Transaction
-```
-
-以及完整级联规则。
-
-本批次必须拆清两个功能：Subscription Metadata Refresh 只读取流量、总流量、到期时间等元信息并更新 Subscription，不进入 Parser；Subscription Sync 执行 request、parser、Filter/Exclude、validation、diff、impact、Preview、Confirm 和 Transaction，用于更新 Node。
-
----
-
-## 9.4 第四批：sing-box Config Builder
-
-实现：
-
-- Node outbound；
-- Inbound；
-- MANUAL selector；
-- AUTO selector；
-- DIRECT；
-- Route；
-- Clash API 配置；
-- Routed 对象裁剪；
-- 临时配置；
-- sing-box check；
-- 正式配置原子替换。
-
-阶段目标：
-
-> 数据库能够稳定生成符合 Requirements 的 sing-box 配置。
-
----
-
-## 9.5 第五批：sing-box 生命周期
-
-实现：
-
-- binary version；
-- download；
-- upgrade；
-- Start；
-- Stop；
-- Restart；
-- management state；
-- process state；
-- process watchdog；
-- runtime 初始化；
-- 运行控制锁。
-
-阶段目标：
-
-> ProxyHub 可以稳定控制一个 sing-box 进程。
-
----
-
-## 9.6 第六批：Node Health
-
-实现：
-
-- TCP Test；
-- URL Delay；
-- 统一 Node 检测流程；
-- Health State；
-- 检测并发；
-- 单 Node 人工检测；
-- 批量人工检测。
-
-完成独立测试后再进入 AUTO。
-
-Hysteria2 不建立协议专用健康检测分支，与其他 Node 一样执行 TCP Test → URL Delay；Hysteria2 TCP Test 失败仍继续 URL Delay。协议 Parser 和 sing-box 字段映射仍可按 Hysteria2 协议实现。
-
----
-
-## 9.7 第七批：AUTO 控制
-
-实现：
-
-- Routed AUTO 初始化；
-- Fallback Recovery；
-- Current Candidate 检测；
-- failure count；
-- Candidate → Fallback；
-- Priority Recovery；
-- Fallback Timeout；
-- Restart Recovery；
-- selector 切换失败处理。
-
-完成后应能够在没有 Web UI 的情况下通过测试完整验证 AUTO 行为。
-
----
-
-# 10. 第七阶段：Web UI 与内部 API 设计
-
-核心后端结构基本稳定后，完成：
-
-```text
-docs/06-web-ui.md
-docs/07-api.md
-```
-
----
-
-## 10.1 UI 设计原则
-
-页面直接围绕 Requirements 中已有对象和操作设计。
-
-不增加新的业务层。
-
-桌面页面至少包括：
-
-```text
-Status / Dashboard
-Subscriptions
-Nodes
-Inbounds
-Outbounds
-Routes
-Settings
-Logs
-sing-box Management
-```
-
-移动页面只实现 Requirements 明确允许的状态查看和 MANUAL 在线切换。
-
----
-
-## 10.2 stopped / running 页面状态
-
-页面必须根据管理状态明确表现：
-
-```text
-enabled
-disabled
-read-only
-hidden
-```
-
-而不是仅依赖后端报错。
-
-重点覆盖：
-
-### stopped
-
-允许完整结构配置。
-
-### running
-
-禁止以下结构修改：
-
-- Subscription CRUD / Sync；
-- Node CRUD；
-- Inbound CRUD；
-- Outbound CRUD；
-- Node Pool 成员增加或删除；
-- type 修改；
-- AUTO Fallback 修改；
-- Route CRUD；
-- MANUAL 结构 Current 修改。
-
-但仍允许 Requirements 明确规定的在线行为，例如：
-
-- 查看状态；
-- Subscription Metadata Refresh；
-- Node 人工检测；
-- MANUAL 在线 Current Node 切换；
-- MANUAL/AUTO priority reorder；
-- 在线 Settings；
-- Stop；
-- Restart。
-
-页面不得因为 `management_state = running` 而禁用 MANUAL/AUTO priority 排序控件；该控件只能重排现有成员，不能借此增删 Node Pool 成员。
-
----
-
-## 10.3 内部 API
-
-API 只服务 ProxyHub 自己的 Web 前端。
-
-不以公共 API 为目标。
-
-设计原则：
-
-```text
-页面操作
-    ↓
-业务 Service
-    ↓
-内部 API
-```
-
-而不是：
-
-```text
-先建设通用 REST 平台
-→ 再寻找页面用途
-```
-
-API 应清晰表达：
-
-- CRUD；
-- Preview / Confirm；
-- Start / Stop / Restart；
-- MANUAL switch；
-- Node detect；
-- Subscription Metadata Refresh；
-- Subscription Sync；
-- Outbound structural update；
-- priority reorder；
-- Settings；
-- status；
-- logs；
-- upgrade。
-
-Outbound structural update 与 priority reorder 必须表达为不同业务操作，避免 priority reorder 因复用普通 Outbound update 而被 stopped-only 校验拒绝；具体 URL 和 Method 由 `07-api.md` 决定。
-
----
-
-# 11. 第八阶段：Web 开发
-
-## 11.1 后端 API
-
-先实现：
-
-- API route；
-- request validation；
-- error response；
-- auth；
-- session；
-- status API；
-- 业务 Service 调用。
-
-不得在 API Controller 内重新实现 Domain 规则。
-
----
-
-## 11.2 Desktop
-
-完成完整配置管理页面。
-
-重点保证：
-
-- stopped / running 状态；
-- 级联删除 Preview；
-- Subscription Sync Preview；
-- Node priority；
-- MANUAL Current；
-- AUTO Fallback；
-- DIRECT；
-- Node Health；
-- lifecycle；
-- upgrade；
-- 关键错误反馈。
-
----
-
-## 11.3 Mobile
-
-只实现：
-
-- 管理状态；
-- 实际进程状态；
-- MANUAL / AUTO 状态；
-- Node Health；
-- DIRECT 状态；
-- MANUAL Current Node 在线切换。
-
-不复制 Desktop 完整配置页面。
-
----
-
-# 12. 第九阶段：测试与验收
-
-产出：
-
-```text
-docs/08-test-plan.md
-```
-
-测试从开发开始同步建立，本阶段主要进行完整集成和场景验收。
-
-验收设计不属于 Requirements 冻结内容。本阶段基于 Requirements v1.0 建立需求到测试用例的对应关系，并明确各业务场景的前置条件、操作步骤和预期结果。
-
----
-
-## 12.1 单元测试
-
-重点：
-
-- Parser；
-- URI Parser；
-- Filter / Exclude；
-- Subscription Diff；
-- priority；
-- 业务校验；
-- 级联影响计算；
-- Config Builder；
-- Settings 校验；
-- AUTO 条件判断。
-
----
-
-## 12.2 集成测试
-
-重点：
-
-- SQLite；
-- 业务事务；
-- sing-box check；
-- sing-box lifecycle；
-- Clash API；
-- selector switch；
-- Node detect；
-- Settings 保存；
-- auth；
-- API。
-
----
-
-## 12.3 必测场景
-
-### 首次安装
-
-```text
-没有 sing-box
-→ Web 正常运行
-→ 下载 sing-box
-→ 创建配置
-→ Start
-→ 正常代理
-```
-
-### 无 Route 启动
-
-```text
-数据库没有 Route
-→ Start 失败
-```
-
-### DIRECT
-
-```text
-Inbound
-→ DIRECT Route
-→ Start
-→ 正常直连
-```
-
-### 结构配置冻结
-
-```text
-running
-→ 尝试执行结构配置修改
-→ 禁止
-```
-
-典型结构修改包括 Subscription CRUD / Sync、Node CRUD、Inbound CRUD、Outbound 新增/删除、name/type 修改、Node Pool 成员增删、Fallback 修改和 Route CRUD；纯 priority reorder 不属于结构修改。
-
-### running 在线操作
-
-验证：
-
-- Subscription Metadata Refresh；
-- Node 人工检测；
-- MANUAL 在线切换；
-- MANUAL/AUTO priority reorder；
-- 允许在线生效的 Settings；
-- Stop；
-- Restart。
-
-priority reorder 至少覆盖：
-
-1. `running` 时 priority 调整成功；
-2. `stopped` 时 priority 调整成功；
-3. 排序后数据库 priority 为连续、唯一的 `1...N`；
-4. Node Pool 成员不变；
-5. MANUAL Current 不变；
-6. AUTO Fallback 不变；
-7. AUTO Runtime Current 不被直接修改，Failure Count、Fallback Started Time 和 Priority Recovery Timer 也不重置；
-8. 不生成 config；
-9. 不执行 `sing-box check`；
-10. 不调用 Clash API；
-11. 不触发 Restart；
-12. AUTO 后续 Fallback Recovery 使用新 priority；
-13. AUTO 后续 Priority Recovery 使用新 priority；
-14. 当前 Candidate 因重排不再最高时不立即切换，仍遵循既有 Priority Recovery Timer；
-15. MANUAL 当前运行节点不因 priority 调整变化。
-
-### Subscription Sync
-
-覆盖：
-
-- 新增 Node；
-- 修改 Node；
-- 删除 Node；
-- Filter；
-- Exclude；
-- 空结果；
-- 请求失败；
-- parser 失败；
-- 影响预览；
-- Current 自动替换；
-- Fallback 自动替换；
-- Outbound 级联删除；
-- Route 级联删除；
-- 事务失败。
-
-### MANUAL
-
-验证：
-
-- 默认 Current；
-- 结构编辑 Current；
-- running 在线切换；
-- 持久化；
-- Clash API 查询实际 Current；
-- 切换失败不修改数据库；
-- Restart 后恢复数据库 Current。
-
-### AUTO 初始化
-
-```text
-Start / Restart
-→ Current = Fallback
-→ 下一周期 Fallback Recovery
-```
-
-### AUTO Candidate 故障
-
-```text
-Current Candidate
-→ 连续 URL 检测失败
-→ 达到阈值
-→ 切换 Fallback
-→ 下一周期扫描 Candidate
-→ 恢复可用 Candidate
-```
-
-### Priority Recovery
-
-```text
-当前 Candidate 不是最高 priority
-→ Priority Recovery 到期
-→ 检测更高 priority Candidate
-→ 可用则切换
-```
-
-### Fallback 超时
-
-```text
-长期无法恢复 Candidate
-→ Fallback Timeout
-→ Restart
-→ Runtime State 重新初始化
-```
-
-### sing-box 意外退出
-
-```text
-management_state = running
-→ kill sing-box
-→ watchdog 检测
-→ 从最新数据库重新生成配置
-→ check
-→ start
-→ Runtime State 重置
-```
-
-### selector 切换失败
-
-分别验证：
-
-- Candidate → Fallback；
-- Fallback → Candidate；
-- Priority Recovery。
-
-### Settings
-
-验证：
-
-- 文件不存在；
-- 缺少字段；
-- 非法 JSON；
-- 非法字段；
-- 页面原子保存；
-- 在线设置即时用于后续任务；
-- 直接修改 JSON 只在 ProxyHub 重启后生效。
-
-### Authentication
-
-验证：
-
-- 空密码无需登录；
-- 非空密码要求登录；
-- 内部 API 受保护；
-- 日志下载受保护；
-- 修改账号后旧 Session 失效。
-
-### sing-box Upgrade
-
-验证：
-
-- 未安装；
-- stopped；
-- running；
-- 下载失败；
-- 校验失败；
-- 升级成功；
-- 升级后保持 stopped。
-
----
-
-# 13. 第十阶段：部署和发布
-
-产出：
-
-```text
-docs/09-deployment.md
-```
-
----
-
-## 13.1 Docker Compose
-
-验证：
-
-- data 持久化；
-- 日志；
-- 端口；
-- sing-box 二进制；
-- 容器重启；
-- 升级；
-- 正常 Start / Stop。
-
----
-
-## 13.2 Ubuntu Python / venv
-
-验证：
-
-```text
-Ubuntu 20.04+
-amd64
-Python / venv
-```
-
-包括：
-
-- 依赖安装；
-- 目录；
-- 权限；
-- 启动；
-- 停止；
-- 日志；
-- 升级。
-
----
-
-# 14. 开发批次总览
-
-推荐最终开发顺序：
-
-```text
-1. Settings / App 基础
-        ↓
-2. Database / Domain Model
-        ↓
-3. Subscription / Node
-        ↓
-4. Outbound / Route / Cascade
-        ↓
-5. sing-box Config Builder
-        ↓
-6. sing-box Lifecycle + Runtime Lock
-        ↓
-7. Node Health
-        ↓
-8. AUTO Control
-        ↓
-9. Internal API + Auth
-        ↓
-10. Desktop Web
-        ↓
-11. Mobile Web
-        ↓
-12. Upgrade / Logs / UX 收尾
-        ↓
-13. Integration / Acceptance
-        ↓
-14. Deployment / Release
-```
-
-每一批都应满足：
-
-```text
-实现
-→ 测试
-→ Review
-→ 合并
-```
-
-再进入下一批。
-
----
-
-# 15. AI / Codex 使用原则
-
-Codex 主要负责：
-
-> 根据已经确认的 Requirements 和设计实现代码。
-
-不负责自行设计新的业务规则。
-
----
-
-## 15.1 单次任务尽量小
-
-推荐：
-
-```text
-目标：
-实现 Subscription Diff 和 Subscription Sync 预览。
-
-依据：
-- docs/01-requirements.md
-- docs/02-architecture.md
-- docs/03-data-model.md
-
-范围：
-- subscription service
-- diff
-- tests
-
-本次不做：
-- Web UI
-- sing-box
-- AUTO
-
-验收：
-相关 Requirements 和测试全部通过。
-```
-
-避免：
-
-```text
-实现 ProxyHub 后端
-```
-
-这种范围过大的任务。
-
----
-
-## 15.2 AI 必须遵循文档优先级
-
-优先级：
-
-```text
-01-requirements.md
-        ↓
-02-architecture.md
-        ↓
-对应设计文档
-        ↓
-现有代码
-```
-
-如果旧代码与正式 Requirements 冲突：
-
-> 修改旧代码。
-
-不得因为“原来就是这样实现”而修改需求。
-
----
-
-## 15.3 发现设计问题时停止扩展
-
-出现以下情况时，不应由 AI 自行发挥：
-
-- Requirements 相互冲突；
-- sing-box 实际能力不满足需求假设；
-- 设计无法满足 Requirements；
-- 必须增加新的业务对象；
-- 必须突破第一版明确边界；
-- 存在两种明显不同且都会改变用户行为的实现。
-
-应先进行设计或需求确认。
-
----
-
-# 16. Commit 和 Review
-
-提交应围绕单一功能。
-
-例如：
-
-```text
-feat: add settings loader
-feat: add outbound schema
-feat: add subscription diff
-feat: add cascade preview
-feat: add singbox config builder
-feat: add runtime control lock
-feat: add node health checker
-feat: add auto fallback recovery
-feat: add priority recovery
-```
-
-避免：
-
-```text
-feat: implement proxyhub
-```
-
----
-
-每个开发批次完成后进行 Review，重点检查：
-
-1. 是否满足 Requirements；
-2. 是否违反设计；
-3. 是否引入需求之外的行为；
-4. 是否增加不必要复杂度；
-5. 是否存在隐藏持久化状态；
-6. 是否存在未经设计的并发；
-7. 是否有测试覆盖关键行为。
-
----
-
-# 17. 第一版完成标准
-
-ProxyHub v1 只有同时满足以下条件才视为完成：
-
-- Requirements v1.0 已全部实现；
-- Architecture 与实际代码结构一致；
-- 数据模型稳定；
-- Subscription / Node 完整可用；
-- 删除和同步级联事务正确；
-- Inbound / Outbound / Route 完整可用；
-- DIRECT 工作正常；
-- MANUAL Current Node 工作正常；
-- AUTO 故障恢复完整；
-- Node Health 工作正常；
-- sing-box 配置生成和 check 稳定；
-- sing-box 生命周期管理稳定；
-- process watchdog 正常；
-- 运行控制锁行为正确；
-- Settings 行为符合 Requirements；
-- Authentication 正常；
-- Desktop 功能完整；
-- Mobile 第一版功能完整；
-- 日志和下载正常；
-- sing-box 下载和升级正常；
-- Docker Compose 部署通过；
-- Ubuntu venv 部署通过；
-- 核心验收场景全部通过；
-- 第一版明确不做的功能没有被无意引入。
-
----
-
-# 18. 后续需求变更
-
-Requirements v1.0 冻结后，新需求不直接进入代码。
-
-流程：
-
-```text
-提出需求
-    ↓
-判断是否属于 Bug / Design / Requirement
-    ↓
-如果改变用户可见业务行为
-    ↓
-修改 Requirements
-    ↓
-评估影响：
-Architecture
-Data Model
-sing-box Design
-Runtime
-UI
-API
-Tests
-    ↓
-更新设计
-    ↓
-开发
-```
-
-如果只是：
-
-- 内部类结构；
-- 数据库实现细节；
-- 协议字段映射细节；
-- 错误码；
-- API 路径；
-- 页面布局；
-- sing-box Release 筛选方式；
-
-且不改变正式业务行为，则直接修改对应设计文档，不需要修改 Requirements。
-
----
-
-# 19. 当前项目下一步
-
-当前执行顺序建议为：
-
-```text
-1. 编写并评审 docs/02-architecture.md
-
-2. 编写 docs/03-data-model.md
-
-3. 编写 docs/04-singbox-design.md
-
-4. 编写 docs/05-runtime-control.md
-
-5. Review 三份专项核心设计及其与 Architecture 的一致性
-
-6. 开始核心后端开发：
-   Settings
-   → Database
-   → Subscription / Node
-   → Outbound / Route
-   → Config Builder
-   → Lifecycle
-   → Health
-   → AUTO
-
-7. 核心后端接口稳定后：
-   编写 docs/06-web-ui.md
-   编写 docs/07-api.md
-
-8. 开发 Desktop / Mobile Web
-
-9. 完善 docs/08-test-plan.md
-   明确验收标准并执行完整集成与场景验收
-
-10. 完成 docs/09-deployment.md
-
-11. Docker / Ubuntu 实机验收
-
-12. 发布 ProxyHub v1
-```
+一个实现批次的依赖设计通过审核后，AI 即可按第 6 节开展该批开发，并同步执行第 7 节验证；其余设计包可以继续审核。每次阶段交接保留审核结论、实现变更和测试证据，使后续问题能够追溯到需求、设计或实现中的具体位置。
