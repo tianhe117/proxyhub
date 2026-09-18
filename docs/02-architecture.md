@@ -5,7 +5,7 @@
 > 更新日期：2026-09-18
 > 需求基线：[ProxyHub V1.0 需求规范](01-requirements.md)
 
-本文确定 ProxyHub V1.0 的技术选型、项目组织方式，以及各部分如何协作。数据表与约束、sing-box 字段映射、运行控制规则、页面和 API 契约分别在后续专题设计中展开。
+本文确定 ProxyHub V1.0 的技术选型、项目组织方式，以及各部分如何协作。
 
 主要对应需求：REQ-GEN-007、REQ-MODEL-004、REQ-CONFIG-001～012、REQ-RUNTIME-001～007、REQ-SETTINGS-001～006、REQ-REL-001～002。
 
@@ -24,7 +24,7 @@
 | sing-box 进程 | `subprocess` | 检查配置、启动、停止和查询进程 |
 | 日志与测试 | Python `logging`、pytest | 记录运行事件并验证核心模块 |
 
-业务数据直接使用 `sqlite3` 访问。页面由 Flask 模板渲染，通过 `fetch` 调用内部 API；CSS 和 JavaScript 作为 `static/` 文件直接加载。桌面和移动页面可复用基础模板与样式，具体页面组织由 Web UI 设计确定。部署目标为 Docker Compose 和 Ubuntu Python/venv，两种方式使用相同的业务数据与 Settings 格式。
+业务数据直接使用 `sqlite3` 访问。页面由 Flask 模板渲染，通过 `fetch` 调用内部 API；CSS 和 JavaScript 作为 `static/` 文件直接加载。桌面和移动页面可复用基础模板与样式。部署目标为 Docker Compose 和 Ubuntu Python/venv，两种方式使用相同的业务数据与 Settings 格式。
 
 ## 2. 总体架构
 
@@ -71,7 +71,7 @@ sing-box 子进程（最多 1 个）
 
 ### 3.1 目录结构
 
-目录按职责划分；下图确定模块级结构，模块内部文件可随专题设计细化。
+目录按职责划分；下图确定模块级结构。
 
 ```text
 proxyhub/
@@ -99,7 +99,7 @@ proxyhub/
 └── requirements.txt     # Python 依赖
 ```
 
-Docker Compose、Dockerfile 和 Ubuntu 安装脚本位于项目根目录；具体文件与部署步骤由部署设计确定。
+Docker Compose、Dockerfile 和 Ubuntu 安装脚本位于项目根目录。
 
 ### 3.2 模块职责
 
@@ -190,5 +190,3 @@ Subscription、Node、Inbound、Outbound 和 Route 的结构修改在 `stopped` 
 ### 6.3 运行中的协作
 
 用户请求 Start、Stop、Restart 或 MANUAL 切换时，Service 调用 Runtime，由 Runtime 协调状态、sing-box 子进程或控制接口。MANUAL 在线切换成功后，sing-box 当前选择、运行时 Current Node 和数据库 Default Node 保持一致；未被 Route 引用的 MANUAL 仅更新 Default Node。后台 AUTO 则由 Runtime Controller 调用 Checker 获取检测结果，再通过 sing-box 集成层执行节点切换并更新 Runtime State。
-
-这些流程只确定模块间的责任和顺序；数据约束、sing-box 字段、状态转换、页面交互与 API 格式在对应专题设计中细化。

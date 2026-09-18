@@ -1,14 +1,14 @@
 # ProxyHub V1.0 数据模型设计
 
-> 文档状态：待审核
+> 文档状态：已确认
 > 更新日期：2026-09-18
 > 上游文档：[需求规范](01-requirements.md)、[软件架构设计](02-architecture.md)
 
-本文定义业务表、关联及数据约束，对应需求中的实体关系、订阅 Node 身份和 Node Pool。协议参数字段与 sing-box 映射由 04 设计确定。
+本文定义业务表、关联及数据约束，对应需求中的实体关系、订阅 Node 身份和 Node Pool。
 
 ## 1. 表结构
 
-表名和字段名是本设计的实现契约。时间字段采用 UTC Unix 秒；未知元信息使用 `NULL`，不以 `0` 表示未知。协议专用 JSON 的具体键由 04 设计给出。
+表名和字段名是本设计的实现契约。时间字段采用 UTC Unix 秒；未知元信息使用 `NULL`，不以 `0` 表示未知。`nodes.config_json` 与 `inbounds.config_json` 仅定义存储列，不约束协议专用参数的具体键。
 
 ### 1.1 `subscriptions`
 
@@ -99,7 +99,3 @@ Route 对 Inbound 和 Outbound 的外键使用 `ON DELETE RESTRICT`。多个 Rou
 数据库初始化采用 WAL；每个 SQLite 连接启用 `PRAGMA foreign_keys=ON` 和 `busy_timeout=5000` 毫秒。数据库使用外键、`CHECK`、主键及唯一索引约束单行取值和已建立的关联；Pool 成员数量、监听地址重叠及 Route 目标是否显式选择由应用层校验。
 
 实现复合外键时使用显式事务与延迟校验；SQLite 对延迟外键、`RESTRICT` 的即时行为及部分唯一索引的规则见[官方外键文档](https://www.sqlite.org/foreignkeys.html)和[部分索引文档](https://www.sqlite.org/partialindex.html)。
-
-## 2. 后续设计衔接
-
-04 设计确定 `nodes.config_json`、`inbounds.config_json` 的协议字段及 sing-box 映射，并承接分享 URI 与订阅内容解析。后续服务、运行控制及接口设计承接订阅请求与 Refresh、监听冲突校验、priority 调整、运行时 Node 切换、Node 删除后的 Outbound/Route 级联处理及预览确认。
