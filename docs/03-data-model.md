@@ -4,7 +4,7 @@
 > 更新日期：2026-09-18
 > 上游文档：[需求规范](01-requirements.md)、[软件架构设计](02-architecture.md)
 
-本文定义业务表、关联、数据库约束及数据变更后的持久化规则，对应需求中的实体关系、订阅 Node 身份、Node Pool 和级联删除。协议参数字段与 sing-box 映射由 04 设计确定。
+本文定义业务表、关联及数据约束，对应需求中的实体关系、订阅 Node 身份和 Node Pool。协议参数字段与 sing-box 映射由 04 设计确定。
 
 ## 1. 表结构
 
@@ -68,7 +68,7 @@ WHERE subscription_id IS NOT NULL;
 | `outbound_nodes` | `outbound_id`、`node_id` | 复合主键，分别引用 Outbound、Node | Node Pool 成员 |
 |  | `priority` | `INTEGER NOT NULL`，同 Pool 内唯一 | 数值越小，顺序越靠前 |
 
-`outbound_nodes` 对 Outbound 使用 `ON DELETE CASCADE`，对 Node 使用 `ON DELETE RESTRICT`。`PRIMARY KEY(outbound_id, node_id)` 防止 Pool 内重复 Node，`UNIQUE(outbound_id, priority)` 防止 priority 重复。
+`outbound_nodes` 对 Outbound 使用 `ON DELETE CASCADE`，对 Node 使用 `ON DELETE RESTRICT`。前者只在删除 Outbound 时清理成员行，不会根据成员数量反向删除 Outbound。`PRIMARY KEY(outbound_id, node_id)` 防止 Pool 内重复 Node，`UNIQUE(outbound_id, priority)` 防止 priority 重复。
 
 Default Node 与成员关系使用复合外键保证：
 
@@ -78,7 +78,7 @@ FOREIGN KEY (id, default_node_id)
     DEFERRABLE INITIALLY DEFERRED
 ```
 
-该外键在事务提交时校验 Default Node 属于对应 Pool。
+该外键在事务提交时校验 Default Node 属于对应 Pool。同一 Pool 的 priority 最终为正整数且允许不连续；每个 Outbound 至少有两个不同 Node。成员数量是跨行约束，由应用层在提交前校验，外键本身无法保证。
 
 ### 1.5 `routes` 与 DIRECT
 
@@ -98,29 +98,6 @@ Route 对 Inbound 和 Outbound 的外键使用 `ON DELETE RESTRICT`。多个 Rou
 
 实现复合外键时使用显式事务与延迟校验；SQLite 对延迟外键、`RESTRICT` 的即时行为及部分唯一索引的规则见[官方外键文档](https://www.sqlite.org/foreignkeys.html)和[部分索引文档](https://www.sqlite.org/partialindex.html)。
 
-## 2. 数据约束与持久化规则
+## 2. 后续设计衔接
 
-### 2.1 Node 身份与归属
-
-订阅 Node 以同一 Subscription 内的原始 `name` 作为身份键。同名更新保留 `nodes.id`；名称变化对应删除旧 Node、插入新 Node，新 Node 获得新 ID。自建 Node 的 `subscription_id` 为 `NULL`，不参与订阅名称唯一约束。
-
-Node 是全局数据，`outbound_nodes` 只保存 Pool 成员关系。从一个 Pool 移除成员只删除关联行；删除全局 Node 时，须先处理它在所有 Pool 中的关联。
-
-### 2.2 Node Pool 与 Default Node
-
-每个保留的 MANUAL/AUTO 在事务提交时至少有两个不同 Node。复合外键保证 Default Node 属于其 Pool；成员数由跨行校验保证。创建时未指定 Default Node，或保留的 Pool 中原 Default Node 被移除时，持久化 priority 最小的成员为新的 Default Node。
-
-同一 Pool 的 priority 唯一，最终保存值为正整数，允许间隔。成员顺序变化只更新相关 priority；MANUAL/AUTO 类型转换只更新 `outbounds.type`，成员、Default Node 和引用它的 Route 保持原关联。
-
-### 2.3 删除后的关联状态
-
-删除 Subscription 时，一并删除其所属 Node。删除一个或多个全局 Node 时，先从每个受影响 Pool 扣除整个待删除集合，再依据最终成员数处理：
-
-1. 剩余不足两个 Node：删除该 Outbound 及引用它的全部 Route。
-2. 剩余至少两个 Node：保留其他成员的 priority；原 Default Node 被删除时，改为剩余成员中 priority 最小者。
-
-删除 Inbound 或 Outbound 时，一并删除引用它的 Route；Route 不自动改指 DIRECT。一次操作涉及的 Node、Pool 成员、Default Node、Outbound 和 Route 变更在同一数据库事务中提交，失败时整体回滚。
-
-## 3. 后续设计衔接
-
-04 设计确定 `nodes.config_json`、`inbounds.config_json` 的协议字段及 sing-box 映射，并承接分享 URI 与订阅内容解析。后续服务、运行控制及接口设计承接订阅请求与 Refresh、监听冲突校验、priority 调整、运行时 Node 切换及级联预览确认。
+04 设计确定 `nodes.config_json`、`inbounds.config_json` 的协议字段及 sing-box 映射，并承接分享 URI 与订阅内容解析。后续服务、运行控制及接口设计承接订阅请求与 Refresh、监听冲突校验、priority 调整、运行时 Node 切换、Node 删除后的 Outbound/Route 级联处理及预览确认。
