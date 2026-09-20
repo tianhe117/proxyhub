@@ -12,6 +12,14 @@ cases:
   expected:
     parse_accepted: true
     live_connectivity: false
+    node:
+      name: test
+      protocol: shadowsocks
+      address: www.test.com
+      port: 666
+      config:
+        method: aes-256-gcm
+        password: password
     purpose: 验证 Shadowsocks SIP002 分享 URI 的解析与字段回填，不执行真实连接。
 - id: share-uri-vmess-non-live
   kind: share_uri
@@ -20,7 +28,98 @@ cases:
   expected:
     parse_accepted: true
     live_connectivity: false
+    node:
+      name: test
+      protocol: vmess
+      address: 192.168.1.100
+      port: 8443
+      config:
+        uuid: 8e600429-f5ba-495e-b0a6-d8fbc9ec878b
+        security: none
+        alter_id: 0
+        tls:
+          enabled: true
+          insecure: false
+          server_name: www.test.com
+        transport:
+          type: ws
+          path: /49c866/
+          headers:
+            Host: www.test.com
     purpose: 验证 VMess Base64 JSON 分享 URI 的解析与字段回填，不执行真实连接。
+- id: share-uri-vless-reality-non-live
+  kind: share_uri
+  protocol: vless
+  input: vless://11111111-1111-4111-8111-111111111111@vless.example:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=reality.example&fp=chrome&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=0123456789abcdef#VLESS-Reality
+  expected:
+    parse_accepted: true
+    live_connectivity: false
+    node:
+      name: VLESS-Reality
+      protocol: vless
+      address: vless.example
+      port: 443
+      config:
+        uuid: 11111111-1111-4111-8111-111111111111
+        flow: xtls-rprx-vision
+        tls:
+          enabled: true
+          insecure: false
+          server_name: reality.example
+          utls:
+            enabled: true
+            fingerprint: chrome
+          reality:
+            enabled: true
+            public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            short_id: 0123456789abcdef
+    purpose: 验证 VLESS Reality、uTLS 和字段别名映射，不执行真实连接。
+- id: share-uri-trojan-ws-non-live
+  kind: share_uri
+  protocol: trojan
+  input: trojan://test-password@trojan.example:443?security=tls&sni=trojan.example&type=ws&host=cdn.example&path=%2Fproxy#Trojan-Test
+  expected:
+    parse_accepted: true
+    live_connectivity: false
+    node:
+      name: Trojan-Test
+      protocol: trojan
+      address: trojan.example
+      port: 443
+      config:
+        password: test-password
+        tls:
+          enabled: true
+          insecure: false
+          server_name: trojan.example
+        transport:
+          type: ws
+          path: /proxy
+          headers:
+            Host: cdn.example
+    purpose: 验证 Trojan TLS 与 WebSocket 参数映射，不执行真实连接。
+- id: share-uri-hysteria2-non-live
+  kind: share_uri
+  protocol: hysteria2
+  input: hysteria2://test-password@hy2.example:443?sni=hy2.example&insecure=0&obfs=salamander&obfs-password=test-obfs#HY2-Test
+  expected:
+    parse_accepted: true
+    live_connectivity: false
+    node:
+      name: HY2-Test
+      protocol: hysteria2
+      address: hy2.example
+      port: 443
+      config:
+        password: test-password
+        obfs:
+          type: salamander
+          password: test-obfs
+        tls:
+          enabled: true
+          insecure: false
+          server_name: hy2.example
+    purpose: 验证 Hysteria2 TLS、布尔值和 salamander 混淆映射，不执行真实连接。
 - id: share-uri-vless-invalid
   kind: share_uri
   protocol: vless
@@ -29,6 +128,188 @@ cases:
     parse_accepted: false
     live_connectivity: false
     purpose: 验证无有效 UUID 和标准 authority 的 VLESS URI 被拒绝。
+- id: uri-list-base64-filter
+  kind: subscription_body
+  body_encoding: base64url-utf8-no-padding
+  body: dHJvamFuOi8vb25lQG9uZS5leGFtcGxlOjQ0MyNLZWVwLUhLCnRyb2phbjovL3R3b0B0d28uZXhhbXBsZTo0NDMjS2VlcC1VUwp0cm9qYW46Ly90aHJlZUB0aHJlZS5leGFtcGxlOjQ0MyNCYWNrdXAtSEsK
+  filter_text: keep
+  exclude_text: us
+  expected:
+    parse_accepted: true
+    source_format: uri_list
+    base64_wrapped: true
+    candidate_names:
+    - Keep-HK
+    filtered_count: 2
+    purpose: 验证 Base64URL 外层、大小写不敏感的 Filter/Exclude 以及 Exclude 优先。
+- id: uri-list-duplicate-name
+  kind: subscription_body
+  body_encoding: utf-8
+  body: |
+    trojan://one@one.example:443#Same-Name
+    trojan://two@two.example:443#Same-Name
+  filter_text: Same
+  exclude_text: ''
+  expected:
+    parse_accepted: false
+    failure_code: duplicate_name
+    duplicate_name: Same-Name
+    duplicate_entries: [1, 2]
+    purpose: 验证合法 Node 的重复名称在 Filter/Exclude 前使整个 Sync 失败。
+- id: subscription-body-unknown-numeric
+  kind: subscription_body
+  body_encoding: utf-8
+  body: '12345678901234567890'
+  expected:
+    parse_accepted: false
+    failure_code: unknown_format
+    purpose: 验证纯数字响应不会被误判为 Base64 或 URI 列表。
+- id: clash-five-protocols-compact
+  kind: subscription_body
+  body_encoding: utf-8
+  body: |
+    proxies:
+    - name: VMess-WS
+      type: vmess
+      server: vmess.example
+      port: 443
+      uuid: 11111111-1111-4111-8111-111111111111
+      alterId: 0
+      cipher: auto
+      tls: true
+      servername: vmess.example
+      client-fingerprint: chrome
+      network: ws
+      ws-opts:
+        path: /vmess
+        headers:
+          Host: cdn.example
+    - name: VLESS-Reality
+      type: vless
+      server: vless.example
+      port: 443
+      uuid: 22222222-2222-4222-8222-222222222222
+      flow: xtls-rprx-vision
+      reality-opts:
+        public-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        short-id: 0123456789abcdef
+      servername: reality.example
+      client-fingerprint: chrome
+      network: tcp
+    - name: Trojan-gRPC
+      type: trojan
+      server: trojan.example
+      port: 443
+      password: test-trojan-password
+      sni: trojan.example
+      network: grpc
+      grpc-opts:
+        grpc-service-name: proxy
+    - name: SS-obfs
+      type: ss
+      server: ss.example
+      port: 8388
+      cipher: aes-256-gcm
+      password: test-ss-password
+      plugin: obfs
+      plugin-opts:
+        mode: http
+        host: cdn.example
+    - name: HY2
+      type: hysteria2
+      server: hy2.example
+      port: 443
+      password: test-hy2-password
+      auth: test-hy2-password
+      sni: hy2.example
+      alpn: [h3]
+      up: 50 Mbps
+      down: 100 Mbps
+      obfs: salamander
+      obfs-password: test-obfs-password
+  expected:
+    parse_accepted: true
+    source_format: clash_yaml
+    base64_wrapped: false
+    nodes:
+    - name: VMess-WS
+      protocol: vmess
+      address: vmess.example
+      port: 443
+      config:
+        uuid: 11111111-1111-4111-8111-111111111111
+        security: auto
+        alter_id: 0
+        tls:
+          enabled: true
+          insecure: false
+          server_name: vmess.example
+          utls:
+            enabled: true
+            fingerprint: chrome
+        transport:
+          type: ws
+          path: /vmess
+          headers:
+            Host: cdn.example
+    - name: VLESS-Reality
+      protocol: vless
+      address: vless.example
+      port: 443
+      config:
+        uuid: 22222222-2222-4222-8222-222222222222
+        flow: xtls-rprx-vision
+        tls:
+          enabled: true
+          insecure: false
+          server_name: reality.example
+          utls:
+            enabled: true
+            fingerprint: chrome
+          reality:
+            enabled: true
+            public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            short_id: 0123456789abcdef
+    - name: Trojan-gRPC
+      protocol: trojan
+      address: trojan.example
+      port: 443
+      config:
+        password: test-trojan-password
+        tls:
+          enabled: true
+          insecure: false
+          server_name: trojan.example
+        transport:
+          type: grpc
+          service_name: proxy
+    - name: SS-obfs
+      protocol: shadowsocks
+      address: ss.example
+      port: 8388
+      config:
+        method: aes-256-gcm
+        password: test-ss-password
+        plugin: obfs-local
+        plugin_opts: obfs=http;obfs-host=cdn.example
+        network: tcp
+    - name: HY2
+      protocol: hysteria2
+      address: hy2.example
+      port: 443
+      config:
+        password: test-hy2-password
+        up_mbps: 50
+        down_mbps: 100
+        obfs:
+          type: salamander
+          password: test-obfs-password
+        tls:
+          enabled: true
+          insecure: false
+          server_name: hy2.example
+          alpn: [h3]
+    purpose: 验证五种协议的 Clash 字段统一映射和 config_json 规范形状。
 - id: clash-hy2-response
   kind: http_subscription
   request:

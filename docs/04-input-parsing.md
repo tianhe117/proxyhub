@@ -1,6 +1,6 @@
 # ProxyHub V1.0 Node 与 Subscription 输入解析设计
 
-> 文档版本：v0.1
+> 文档版本：v0.2
 > 文档状态：待确认
 > 更新日期：2026-09-20
 > 需求基线：[ProxyHub V1.0 需求规范](01-requirements.md)
@@ -50,6 +50,30 @@ Parser 是确定性的纯解析模块：相同输入产生相同 Node 或问题�
 
 问题记录只包含条目序号、可安全显示的 Node 名称、协议、类别和概括原因。错误消息可以说明字段名，不包含密码、UUID、密钥、服务器地址、完整 URI、完整 Subscription URL 或原始条目。
 
+每个被跳过的条目只产生一条终止性 issue，优先级依次为：语法或公共字段无效、协议必要字段无效、已知字段组合无效、不支持的连接能力。warning 只为最终接受的 Node 生成，一个被忽略字段对应一条 warning。
+
+### 1.4 Parser 输入输出契约
+
+单条 URI 解析返回一个 `NodeDraft`。完整 Subscription 输入链返回一个 `SubscriptionInputResult`：Parser 产生正文解析字段，Service 在同一结构上补充请求失败。这里规定数据含义，不要求实现使用特定 Python 类。
+
+| 结果 | 字段 | 含义 |
+|---|---|---|
+| `NodeDraft` | `name` | 解码后的名称；单条 URI 中可以为 `NULL`，Subscription 中必须为非空字符串 |
+|  | `protocol`、`address`、`port`、`config` | 标准 Node 字段；`config` 是写入 `config_json` 前的对象 |
+|  | `warnings` | 此 Node 已忽略的非关键字段名，不包含字段值 |
+| `SubscriptionInputResult` | `source_format` | `clash_yaml`、`uri_list` 或请求/识别失败时的 `NULL` |
+|  | `base64_wrapped` | 是否成功去除了 Base64 外层 |
+|  | `nodes` | 通过解析、统一校验、重复检查和筛选的标准 Node，保持原订阅顺序 |
+|  | `issues` | `invalid`、`unsupported` 和 `warning` 记录，保持条目顺序 |
+|  | `counts` | 固定包含 `source_entries`、`valid_before_filter`、`invalid`、`unsupported`、`warnings`、`filtered`、`candidates` |
+|  | `failure_code` | 成功时为 `NULL`；失败时使用第 6.4 节规定的稳定类别 |
+
+`issues` 的 `entry` 从 1 开始：Clash YAML 使用 `proxies` 数组序号，URI 列表使用忽略空行和独立注释行后的条目序号。每条 issue 包含 `entry`、可选的 `name`、可选的 `protocol`、`kind`、`field` 和安全消息。单条 URI 解析失败只返回一条同结构 issue。
+
+`counts.source_entries` 是参与解析的条目数，`valid_before_filter` 是统一校验后的合法 Node 数，`invalid` 和 `unsupported` 按终止性 issue 计数，`warnings` 按 warning 记录计数，`filtered` 是被 Filter 或 Exclude 排除的 Node 数，`candidates` 是最终候选 Node 数。
+
+Parser 不返回数据库 ID，也不把 `config` 序列化为 JSON 字符串。Service 在进入数据比较前，以 UTF-8、键名排序、紧凑分隔符序列化 `config_json`，使相同配置得到相同文本。
+
 ## 2. 通用协议参数
 
 ### 2.1 TLS 参数
@@ -62,10 +86,12 @@ VMess、VLESS、Trojan 和 Hysteria2 使用相同的 TLS 对象：
 | `server_name` | 字符串，可选 | TLS Server Name；缺省时由 sing-box 使用服务器地址 |
 | `insecure` | 布尔值 | 是否跳过 Node 服务器证书验证；缺省为 `false` |
 | `alpn` | 字符串数组，可选 | 数组成员必须为非空字符串 |
-| `utls_fingerprint` | 字符串，可选 | uTLS 指纹；仅在输入明确提供时保存 |
-| `reality` | 对象，可选 | 只用于 VLESS，包含 `public_key` 和可选 `short_id` |
+| `utls` | 对象，可选 | 包含固定的 `enabled=true` 和非空 `fingerprint` |
+| `reality` | 对象，可选 | 只用于 VLESS，包含固定的 `enabled=true`、`public_key` 和可选 `short_id` |
 
-TLS 未启用时不保存其余 TLS 参数。布尔字段只接受布尔值、`0/1` 以及大小写不敏感的 `true/false`，其他文本不作真假推断。
+TLS 未启用时整个 `tls` 键省略。TLS 对象存在时始终保存 `enabled=true` 和 `insecure`；`server_name`、`alpn`、`utls`、`reality` 仅在有值时保存。布尔字段只接受布尔值、`0/1` 以及大小写不敏感的 `true/false`，其他文本不作真假推断。
+
+uTLS fingerprint 统一转为小写，只接受 `chrome`、`firefox`、`edge`、`safari`、`360`、`qq`、`ios`、`android`、`random`、`randomized`。ALPN 的 Clash 数组保持顺序；URI 中以逗号分隔，去除每项外围空白并拒绝空项。
 
 ### 2.2 V2Ray Transport 参数
 
@@ -81,13 +107,36 @@ VMess、VLESS 和 Trojan 支持以下传输形式：
 
 外部 VMess JSON 的 `net` 和 Clash 的 `network` 表示 Transport；值为 `tcp` 时表示没有额外 Transport。`config_json.network` 表示 sing-box Outbound 可承载的目标网络，是另一项参数；Clash `udp: false` 映射为 `network=tcp`，`udp: true` 时省略并使用 sing-box 默认值。
 
+Transport 的规范化结构固定如下：
+
+| 类型 | `transport` 中保存的键 | 规范化规则 |
+|---|---|---|
+| WebSocket | `type=ws`、`path`、可选 `headers.Host` | `path` 缺省为 `/`；其他 header 无法无损表达时记为 unsupported |
+| HTTP/H2 | `type=http`、`path`、可选 `host` | `path` 缺省为 `/`；只接受字符串或单元素数组；`host` 统一为字符串数组 |
+| gRPC | `type=grpc`、可选 `service_name` | 空 service name 省略 |
+
+Clash `ws-opts.path/headers.Host`、`h2-opts.path/host`、`grpc-opts.grpc-service-name` 分别映射到上述结构。URI 使用 `path`、`host`、`serviceName/service_name`。Clash 或 URI 提供的 early data、HTTP 自定义 method/header、gRPC user-agent/连接控制等无法表达的关键 Transport 参数使该 Node 记为 `unsupported`。
+
 ### 2.3 通用校验
 
 - UUID 使用标准 UUID 文本，解析后保存为小写带连字符形式。
+- 地址先去除结构性外围空白；IPv4/IPv6 保存为规范文本，域名经 IDNA 转为小写 ASCII。地址不得包含 scheme、路径、端口、空白、控制字符或 IPv6 zone id。
 - 密码、UUID、密钥、加密方法等必要文本不得为空。地址、UUID 和枚举值可以去除结构性的外围空白；密码和密钥按解码后的完整内容保存，不自动修剪。
 - URI 的 percent-encoding 和 Base64 必须能完整解码为 UTF-8；解码失败时拒绝该条目。
 - 未知字段不会自动进入 `config_json`。未知的非关键字段产生 `warning`；会改变连接方式的未知取值产生 `unsupported`。
 - 页面逐项填写、单条 URI 回填和 Subscription 导入最终都经过标准 Node 校验，避免三个入口接受不同的数据。
+
+### 2.4 规范化与省略规则
+
+`config_json` 使用以下统一规则，开发时不得由不同解析器自行选择是否保存默认值：
+
+- VMess 的 `security` 和 `alter_id` 始终保存；其他协议只保存自身必填字段。
+- `network` 省略表示同时支持 TCP 和 UDP，只在输入明确限制时保存 `tcp` 或 `udp`。
+- 未启用 TLS 时省略 `tls`；启用时固定保存 `enabled=true`、`insecure=false/true`。
+- 普通 TCP 不保存 `transport`；启用 Transport 时固定保存其 `type` 和该类型的必要字段。
+- 可选字符串为空、可选数组为空、可选对象未启用时省略对应键，不保存空字符串、空数组或空对象。
+- 数字统一保存为 JSON integer，布尔值统一保存为 JSON boolean，不能保留外部输入中的数字或布尔文本。
+- 字段别名同时出现时按各协议映射表中从左到右的优先级取值；值互相冲突时增加 warning，重复的 URI query 参数使用最后一个值。
 
 ## 3. 五种 Node 协议
 
@@ -105,6 +154,18 @@ VMess、VLESS 和 Trojan 支持以下传输形式：
 
 VMess JSON 必须是对象。`type` 是旧格式的传输附加参数，不作为 VMess 加密方法；`type` 非空且不是 `none` 时，如果无法无损映射则跳过该 Node。
 
+| 内部字段 | VMess URI JSON | Clash YAML | 缺省值 |
+|---|---|---|---|
+| 名称、地址、端口 | `ps`、`add`、`port` | `name`、`server`、`port` | 无 |
+| `uuid` | `id` | `uuid` | 无 |
+| `security` | `scy`、`security` | `cipher` | `auto` |
+| `alter_id` | `aid` | `alterId`、`alter-id` | `0` |
+| Transport | `net`，以及 `host/path` | `network`，以及对应 `*-opts` | 普通 TCP |
+| TLS 开关 | `tls` | `tls` | `false` |
+| TLS Server Name | `sni`、`serverName` | `servername`、`sni` | 省略 |
+| TLS insecure | `allowInsecure` | `skip-cert-verify` | `false` |
+| uTLS | `fp`、`fingerprint` | `client-fingerprint` | 省略 |
+
 ### 3.2 VLESS
 
 | `config_json` 键 | 必要性与规则 |
@@ -118,6 +179,20 @@ VLESS 分享 URI 采用 `vless://uuid@host:port?...#name`。`encryption` 缺省�
 
 URI 的 `type`、`host`、`path`、`serviceName` 映射到 Transport；`sni/servername`、`alpn`、`fp/fingerprint`、`insecure/allowInsecure` 映射到 TLS；`pbk/public-key`、`sid/short-id` 映射到 Reality。
 
+| 内部字段 | VLESS URI | Clash YAML | 缺省值 |
+|---|---|---|---|
+| 名称、地址、端口 | Fragment、host、port | `name`、`server`、`port` | 无 |
+| `uuid` | userinfo | `uuid` | 无 |
+| `flow` | `flow` | `flow` | 省略 |
+| encryption 校验 | `encryption` | `encryption` | `none`，不写入 `config_json` |
+| Transport | `type` 和对应参数 | `network` 和对应 `*-opts` | 普通 TCP |
+| TLS 模式 | `security` | `tls` 或 `reality-opts` | 未启用 |
+| TLS Server Name | `sni`、`servername` | `servername`、`sni` | 省略 |
+| TLS insecure | `insecure`、`allowInsecure` | `skip-cert-verify` | `false` |
+| uTLS | `fp`、`fingerprint` | `client-fingerprint` | 省略 |
+| Reality public key | `pbk`、`public-key` | `reality-opts.public-key` | Reality 启用时必填 |
+| Reality short id | `sid`、`short-id` | `reality-opts.short-id` | 省略 |
+
 ### 3.3 Trojan
 
 | `config_json` 键 | 必要性与规则 |
@@ -128,6 +203,17 @@ URI 的 `type`、`host`、`path`、`serviceName` 映射到 Transport；`sni/serv
 | `transport` | 可选，按第 2 章规则保存 |
 
 Trojan 分享 URI 采用 `trojan://password@host:port?...#name`。Transport 与 TLS 查询参数使用和 VLESS 相同的映射；不能关闭 TLS。
+
+| 内部字段 | Trojan URI | Clash YAML | 缺省值 |
+|---|---|---|---|
+| 名称、地址、端口 | Fragment、host、port | `name`、`server`、`port` | 无 |
+| `password` | userinfo | `password` | 无 |
+| Transport | `type` 和对应参数 | `network` 和对应 `*-opts` | 普通 TCP |
+| TLS Server Name | `sni`、`servername` | `sni`、`servername` | 省略 |
+| TLS insecure | `insecure`、`allowInsecure` | `skip-cert-verify` | `false` |
+| uTLS | `fp`、`fingerprint` | `client-fingerprint` | 省略 |
+
+Trojan URI 的 `security` 省略或为 `tls` 时接受，其他值记为 `unsupported`。Clash `reality-opts`、`ss-opts`、ShadowTLS 等扩展不在当前 Trojan 输入范围，不能忽略后继续导入。
 
 ### 3.4 Shadowsocks
 
@@ -149,19 +235,123 @@ V1.0 固定接受以下 Shadowsocks 2022、AEAD 和 legacy 方法：
 
 URI 的 `plugin` 参数按 SIP002 解码为插件名和选项。Clash `plugin: obfs` 映射为 `obfs-local`；其他插件只有在 sing-box 原生支持时才能导入。插件不受支持时跳过整个 Node，避免保存一个丢失插件后无法连接的配置。
 
+| 内部字段 | Shadowsocks URI | Clash YAML | 缺省值 |
+|---|---|---|---|
+| 名称、地址、端口 | Fragment、host、port | `name`、`server`、`port` | 无 |
+| `method` | userinfo 中冒号前内容 | `cipher` | 无 |
+| `password` | userinfo 中冒号后完整内容 | `password` | 无 |
+| `plugin`、`plugin_opts` | query `plugin` | `plugin`、`plugin-opts` | 省略 |
+| `network` | 无 | `udp: false` → `tcp` | 省略 |
+
+插件选项使用确定的转换规则：
+
+- SIP002 中的插件名和选项文本先按转义规则拆分；插件名必须是 `obfs-local` 或 `v2ray-plugin`，随后使用和 Clash 相同的规则重新生成规范选项文本。
+- `obfs-local`（Clash 别名 `obfs`）只接受 `obfs/mode=http|tls` 和可选 `obfs-host/host`，输出 `obfs=<mode>`，存在 host 时追加 `;obfs-host=<host>`。
+- `v2ray-plugin` 接受 `mode=websocket` 或 `mode=quic`，省略 mode 时使用 `websocket`；两种模式可带 `host`、`tls`，`path` 只用于 WebSocket。输出固定从 `mode=<mode>` 开始，再按顺序追加适用的 `;host=<host>`、`;path=<path>`、`;tls`。
+- 出现其他插件选项时，该 Node 记为 `unsupported`，避免相同连接配置因来源不同产生不同的 `plugin_opts` 文本。
+- 重新生成时按 SIP003 规则转义反斜杠、分号和等号，不能直接拼接未经转义的选项值。
+- 插件启用后 `network` 固定为 `tcp`；输入同时要求 UDP 时产生 warning，因为 SIP003 插件只承载 TCP。
+
 ### 3.5 Hysteria2
 
 | `config_json` 键 | 必要性与规则 |
 |---|---|
 | `password` | 必填 |
 | `up_mbps`、`down_mbps` | 可选，存在时为正整数 |
-| `obfs` | 可选对象；V1.0 支持 `salamander`，启用时必须包含非空 `password` |
+| `obfs` | 可选对象；支持 `salamander`、`gecko`，启用时必须包含非空 `password` |
 | `network` | 可选，`tcp`、`udp` 或省略表示两者 |
 | `tls` | 必填且 `enabled=true` |
 
 分享 URI 支持 `hysteria2://` 和 `hy2://`，userinfo 为 password；省略端口时使用标准默认值 443。`sni/peer`、`insecure/allowInsecure`、`alpn` 映射到 TLS；`up/up_mbps`、`down/down_mbps` 映射到带宽；`obfs-password/obfs_password` 映射到混淆密码。证书 pin、ECH 等无法无损映射的连接参数使该 Node 记为 `unsupported`，不能静默丢弃。
 
 `hysteria://` 属于另一协议标识，不作为 Hysteria2 别名。端口跳跃、多端口和无法由 `address + port` 完整表达的输入在 V1.0 中记为 `unsupported`。
+
+| 内部字段 | Hysteria2 URI | Clash YAML | 缺省值 |
+|---|---|---|---|
+| 名称、地址、端口 | Fragment、host、port | `name`、`server`、`port` | URI 端口缺省为 443 |
+| `password` | userinfo | `password`、`auth` | 无；Clash 两者冲突时无效 |
+| `up_mbps` | `up`、`up_mbps` | `up`、`up_mbps` | 省略 |
+| `down_mbps` | `down`、`down_mbps` | `down`、`down_mbps` | 省略 |
+| `obfs.type` | `obfs` | `obfs` | 省略 |
+| `obfs.password` | `obfs-password`、`obfs_password` | `obfs-password` | obfs 启用时必填 |
+| `obfs.min_packet_size` | 无 | `obfs-min-packet-size` | 仅 gecko，可选 |
+| `obfs.max_packet_size` | 无 | `obfs-max-packet-size` | 仅 gecko，可选 |
+| TLS Server Name | `sni`、`peer` | `sni`、`servername` | 省略 |
+| TLS insecure | `insecure`、`allowInsecure` | `skip-cert-verify` | `false` |
+| TLS ALPN | `alpn` | `alpn` | 省略 |
+
+带宽文本接受正整数或带 `Mbps` 后缀的正整数，统一保存整数 Mbps；其他单位、零和负数无效。gecko 的 packet size 必须为正整数，两个值同时存在时最小值不得大于最大值。Clash 同时提供 `password` 和 `auth` 时，两者相同则取 `password`，不同则记为 `invalid`。
+
+### 3.6 `config_json` 规范形状
+
+以下 YAML 仅用于展示 JSON 对象的形状，`name`、`protocol`、`address`、`port` 不在其中重复出现：
+
+```yaml
+vmess:
+  uuid: 11111111-1111-4111-8111-111111111111
+  security: auto
+  alter_id: 0
+  tls:
+    enabled: true
+    insecure: false
+    server_name: vmess.example
+    alpn: [h2, http/1.1]
+    utls:
+      enabled: true
+      fingerprint: chrome
+  transport:
+    type: ws
+    path: /proxy
+    headers:
+      Host: cdn.example
+
+vless:
+  uuid: 22222222-2222-4222-8222-222222222222
+  flow: xtls-rprx-vision
+  tls:
+    enabled: true
+    insecure: false
+    server_name: reality.example
+    utls:
+      enabled: true
+      fingerprint: chrome
+    reality:
+      enabled: true
+      public_key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+      short_id: 0123456789abcdef
+
+trojan:
+  password: test-password
+  tls:
+    enabled: true
+    insecure: false
+    server_name: trojan.example
+  transport:
+    type: grpc
+    service_name: proxy
+
+shadowsocks:
+  method: aes-256-gcm
+  password: test-password
+  plugin: obfs-local
+  plugin_opts: obfs=http;obfs-host=cdn.example
+  network: tcp
+
+hysteria2:
+  password: test-password
+  up_mbps: 50
+  down_mbps: 100
+  obfs:
+    type: salamander
+    password: test-obfs-password
+  tls:
+    enabled: true
+    insecure: false
+    server_name: hy2.example
+    alpn: [h3]
+```
+
+上述对象展示所有常用层级，不表示每个可选字段都必须出现。实际存储继续遵循第 2.4 节的省略规则。
 
 ## 4. 单条分享 URI
 
@@ -180,6 +370,8 @@ URI 的 `plugin` 参数按 SIP002 解码为插件名和选项。Clash `plugin: o
 输入必须恰好包含一条 URI；多行内容、Subscription URL 和 Base64 包装的 URI 列表不属于单条回填。解析只回填表单，不直接写数据库。解析失败时保留用户当前表单内容，并返回协议及概括原因。
 
 URI scheme 大小写不敏感，查询参数按各协议已知别名读取；同一个参数重复出现时使用最后一个值并给出 `warning`。Fragment 经过一次 percent-decoding 后作为名称，不将 `+` 当作空格。
+
+URI query 中的 `remarks`、`remark`、`name` 和 `udp` 只影响展示或客户端能力，忽略并记录 warning；其他未映射 query 参数可能改变连接语义，整条 Node 记为 `unsupported`。VMess Base64 JSON 中的未知标量字段按 warning 处理，未知对象或 `*-opts` 按 unsupported 处理。
 
 ### 4.2 名称与敏感信息
 
@@ -225,13 +417,31 @@ YAML 使用 safe loader，禁止 alias，最大嵌套深度为 64，最多组合
 Clash 条目的 `name`、`type`、`server`、`port` 映射为标准 Node 公共字段。`type: ss` 映射为 `shadowsocks`，`type: hy2` 映射为 `hysteria2`。五种协议的其余常用字段按第 2、3 章映射：
 
 - `skip-cert-verify` → `tls.insecure`；
-- `servername/sni`、`alpn`、`client-fingerprint/fingerprint` → TLS；
+- `servername/sni`、`alpn`、`client-fingerprint` → TLS；
 - `ws-opts`、`h2-opts`、`grpc-opts` → Transport；
 - `reality-opts.public-key/short-id` → VLESS Reality；
 - `cipher` → VMess security 或 Shadowsocks method；
 - Hysteria2 的 `password/auth`、`up/down`、`obfs/obfs-password` → 对应协议参数。
 
 顶层 `proxies` 中的每个条目独立解析。一个条目无效或不受支持不会阻止其他条目解析；条目中已知但无法表达的连接能力会使该条目跳过，普通未知字段只记录字段名警告。
+
+Clash `fingerprint` 表示证书指纹，不能当作 uTLS `client-fingerprint`；当前数据契约无法无损保存时，该 Node 记为 `unsupported`。
+
+### 5.4 Clash 字段分类
+
+为了让独立实现得到相同结果，Clash Proxy 中未进入第 2、3 章映射表的字段按下表处理：
+
+| 输入情况 | 处理 |
+|---|---|
+| `udp: true` | 接受并省略 `config.network` |
+| `udp: false` | 接受并保存 `config.network=tcp` |
+| `tfo`、`mptcp`、`interface-name`、`routing-mark`、`ip-version`、`prefer-ipv6`、`smux` | Node 仍可连接，忽略并按字段名记录 warning |
+| 已知扩展对象未启用，或值为空 | 忽略并按字段名记录 warning |
+| 未映射的 `*-opts`、TLS/Reality/Transport/插件扩展或其他会改变远端握手的字段 | 跳过 Node，记录 unsupported |
+| 其他未知标量字段 | 忽略并按字段名记录 warning |
+| `proxies` 之外的 Clash 顶层字段 | 不属于 Node 条目，直接忽略且不产生 warning |
+
+warning 和 unsupported 消息只列字段名。解析器维护显式的已知字段集合，不通过字段值或异常文本推断是否敏感。
 
 ## 6. Subscription Sync 解析规则
 
@@ -249,6 +459,37 @@ Clash 条目的 `name`、`type`、`server`、`port` 映射为标准 Node 公共�
 ```
 
 格式可识别后，无效协议条目和不受支持条目分别记录并跳过。不存在“最低有效率”阈值：只要至少有一个合法 Node、没有重复名称，并且筛选后仍有 Node，解析阶段即可成功。这样不会因订阅中混有较多其他协议而拒绝所需的合法节点。
+
+格式识别采用以下伪代码；“像 Base64”本身不构成格式识别成功：
+
+```text
+decode_and_detect(body):
+    严格 UTF-8 解码并去除开头 BOM
+    尝试将全文空白移除后作标准/Base64URL 解码
+    如果解码文本可识别为 Clash YAML 或 URI 列表：
+        使用解码文本，并标记 base64_wrapped
+    否则继续使用原文
+
+    如果 YAML 根对象含顶层 proxies：按 Clash YAML 处理
+    否则如果存在以 URI scheme 开头的条目：按 URI 列表处理
+    否则返回 unknown_format
+```
+
+条目处理、重复检查和筛选采用以下伪代码：
+
+```text
+build_candidates(entries, filter_text, exclude_text):
+    按原顺序逐条解析并执行统一 Node 校验
+    invalid 或 unsupported → 记录 issue 后跳过
+    合法 Node → 保留，warning 与 Node 关联
+
+    没有合法 Node → no_valid_nodes
+    按名称原值分组；任一组多于一个 Node → duplicate_name
+
+    对合法 Node 执行 Filter，再执行 Exclude
+    结果为空 → filtered_empty
+    返回保持原订阅顺序的候选 Node、issues 和 counts
+```
 
 ### 6.2 重复名称
 
@@ -288,6 +529,22 @@ Filter 和 Exclude 的关键词分别按逗号或换行拆分，去除每个关�
 - 合法 Node 中存在重复名称；
 - Filter/Exclude 后没有 Node。
 
+失败结果使用以下稳定 `failure_code`，页面文案可以本地化，但代码和测试按这些值判断：
+
+| 类别 | `failure_code` |
+|---|---|
+| URL 不是合法 HTTPS | `invalid_subscription_url` |
+| DNS、连接、TLS、超时或重定向失败 | `subscription_request_failed` |
+| HTTP 状态不是 2xx | `subscription_http_error` |
+| 响应体超过限制 | `subscription_too_large` |
+| 响应不是 UTF-8 | `invalid_utf8` |
+| 无法识别正文格式 | `unknown_format` |
+| YAML/Base64 结构已经识别但内容破损 | `malformed_format` |
+| 条目或 YAML 结构超过限制 | `resource_limit` |
+| 没有合法 Node | `no_valid_nodes` |
+| 合法 Node 名称重复 | `duplicate_name` |
+| Filter/Exclude 后为空 | `filtered_empty` |
+
 上述失败均不产生可确认的 Node 变更，原有 Subscription 和 Node 数据保持不变。成功解析中的 `invalid`、`unsupported` 和 `warning` 随候选结果进入差异预览；被跳过的原订阅 Node 仍可因不在候选结果中进入删除范围。
 
 ## 7. Subscription Refresh 元信息
@@ -303,9 +560,22 @@ Refresh 使用与 Sync 相同的 URL、请求头、HTTPS、证书、超时和重
 | `total` | `total_bytes` | 非负十进制整数，单位为 byte |
 | `expire` | `expires_at` | 正整数 UTC Unix 秒；明确返回 `0` 时保存 `NULL` |
 
-未知键忽略。缺少或无效的已知键不覆盖数据库中原值；服务端明确给出合法值时只更新对应字段。HTTPS 请求成功即更新 `refreshed_at`，即使响应没有可用的流量字段，同时向页面说明未返回可用元信息。请求失败时所有元信息及 `refreshed_at` 保持不变。
+未知键忽略。Header 超过 4 KiB 时整体视为无可用元信息。缺少或无效的已知键不覆盖数据库中原值；服务端明确给出合法值时只更新对应字段。HTTPS 请求成功即在响应完成时以 UTC Unix 秒更新 `refreshed_at`，即使响应没有可用的流量字段，同时向页面说明未返回可用元信息。请求失败时所有元信息及 `refreshed_at` 保持不变。
 
 Sync 只处理 Node 内容，不更新上述元信息或 `refreshed_at`。这样 Sync 与 Refresh 的数据效果保持独立。
+
+Refresh 的更新规则采用以下伪代码：
+
+```text
+refresh_metadata(subscription):
+    使用保存的 URL 发起与 Sync 相同约束的 GET
+    请求失败或状态不是 2xx → 不写数据库
+    解析 Subscription-Userinfo 中每个已知键
+    合法且明确出现的键 → 覆盖对应字段
+    缺失或无效的键 → 保留原字段
+    expire=0 → 将 expires_at 设为 NULL
+    更新 refreshed_at，并在一个事务中提交上述字段
+```
 
 ## 8. 安全、资源限制与日志
 
@@ -326,25 +596,31 @@ Sync 只处理 Node 内容，不更新上述元信息或 `refreshed_at`。这样
 |---|---|---|
 | `share-uri-ss-non-live` | Shadowsocks SIP002、Base64 userinfo、Fragment 名称 | 解析并回填；协议统一为 `shadowsocks` |
 | `share-uri-vmess-non-live` | VMess Base64 JSON、WebSocket、TLS | 解析并回填；不执行连通性测试 |
+| `share-uri-vless-reality-non-live` | VLESS Reality、uTLS、别名优先级 | 解析为规范 TLS/Reality 对象 |
+| `share-uri-trojan-ws-non-live` | Trojan TLS、WebSocket | 解析为规范 TLS/Transport 对象 |
+| `share-uri-hysteria2-non-live` | Hysteria2 TLS、布尔值、salamander | 解析为规范 TLS/obfs 对象 |
 | `share-uri-vless-invalid` | 无有效 UUID 和标准 authority | 拒绝，且错误不回显 URI 内容 |
+| `uri-list-base64-filter` | 无 padding 的 Base64URL、Filter/Exclude | 只保留 `Keep-HK` |
+| `uri-list-duplicate-name` | 两个合法同名 Node | 在筛选前以 `duplicate_name` 失败 |
+| `subscription-body-unknown-numeric` | 纯数字响应 | 以 `unknown_format` 失败 |
+| `clash-five-protocols-compact` | 五种协议的紧凑 Clash YAML | 逐字段得到规范 `config_json` 对象 |
 | `clash-hy2-response` | 完整 HTTP 头、Clash YAML、3 个 Hysteria2 Node、额外 proxy groups/rules | 只导入 3 个 `proxies`；读取 Refresh 元信息；忽略其他 Clash 配置 |
 | `clash-ss-response` | `text/html` Content-Type、chunked 响应、3 个 Shadowsocks Node | 依据正文识别 YAML，不受 Content-Type 误导 |
 
 HTTP fixture 同时保存了真实响应中观察到的请求头、响应头顺序、正文结构和无关字段，敏感域名、token、密码及节点地址已替换。测试读取 fixture，不向原始订阅地址发起网络请求。
 
-### 9.2 必须补齐的表驱动样本
+### 9.2 自动化验证矩阵
 
-实现时在同一 fixture 中补充小型脱敏输入，覆盖：
+实现测试必须覆盖以下边界；适合复用的数据继续放入同一 fixture，单一字段边界可在测试中直接构造：
 
-1. VLESS TLS、VLESS Reality、Trojan、Hysteria2 URI 的有效解析；
-2. 五种协议在 Clash `proxies` 中的字段映射；
-3. URI 列表、标准/Base64URL 包装、缺 padding、UTF-8 BOM 和 CRLF；
-4. 名称大小写、前后空白、Unicode、重复名称及 Filter/Exclude 优先级；
-5. 无效 UUID、端口、布尔值、TLS/Reality、Transport、Shadowsocks method/plugin 和 Hysteria2 obfs；
-6. 未知格式、HTML、纯数字正文、破损 YAML、alias、超深 YAML、超大正文和超过 5,000 条；
-7. HTTPS 证书失败、HTTP URL、重定向到 HTTP、超时、非 2xx 及 URL 脱敏；
-8. `Subscription-Userinfo` 的部分字段、未知字段、负数、非整数、`expire=0`、缺失 Header；
-9. Sync 不更新元信息，Refresh 不解析或修改 Node，所有失败保持原数据。
+1. 五种协议在小型 Clash `proxies` 中的逐字段映射；
+2. VLESS 普通 TLS、标准 Base64 包装、UTF-8 BOM 和 CRLF；
+3. 名称大小写、前后空白、Unicode 以及更多 Filter/Exclude 组合；
+4. 无效 UUID、端口、布尔值、TLS/Reality、Transport、Shadowsocks method/plugin 和 Hysteria2 obfs；
+5. HTML、破损 YAML、alias、超深 YAML、超大正文和超过 5,000 条；
+6. HTTPS 证书失败、HTTP URL、重定向到 HTTP、超时、非 2xx 及 URL 脱敏；
+7. `Subscription-Userinfo` 的部分字段、未知字段、负数、非整数、`expire=0`、缺失 Header；
+8. Sync 不更新元信息，Refresh 不解析或修改 Node，所有失败保持原数据。
 
 单元测试验证 Parser 和统一 Node 校验；HTTP 测试使用本地受控响应或 mock transport 验证请求头、TLS/重定向和资源上限；业务集成测试验证候选结果及失败时数据库不变。fixture 中的非 live Node 只验证解析和字段映射，不以连接成功作为预期。
 
