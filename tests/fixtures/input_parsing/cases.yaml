@@ -290,8 +290,10 @@ cases:
       config:
         method: aes-256-gcm
         password: test-ss-password
-        plugin: obfs-local
-        plugin_opts: obfs=http;obfs-host=cdn.example
+        plugin:
+          type: obfs-local
+          mode: http
+          host: cdn.example
         network: tcp
     - name: HY2
       protocol: hysteria2
