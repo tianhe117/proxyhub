@@ -43,10 +43,10 @@ ProxyHub V1.0 面向单人自行部署的家庭代理网关，以 sing-box 为�
 | 01 | `01-requirements.md` | V1.0 唯一业务需求基线，已全文冻结 | 仅在确需改变业务行为时重新确认 |
 | 02 | `02-architecture.md` | 技术栈、单进程运行模型、模块边界、数据与文件所有权、依赖方向和全局约束 | 整体结构是否简单，是否支撑全部需求而不增加无关机制 |
 | 03 | `03-data-model.md` | 业务表结构、关联、数据库约束及跨行数据不变量 | 合法关系能否表达，数据库与应用层的约束责任是否清楚 |
-| 04 | `04-input-parsing.md` | 五种 Node 协议参数、单条分享 URI、订阅 HTTPS 获取与内容解析、Filter/Exclude、重复名称和 Refresh 元信息 | Node 与订阅输入的有效及失败样例是否得到明确处理 |
+| 04 | `04-input-parsing.md` | 五种 Node 数据库参数、单条分享 URI、订阅 HTTPS 输入获取、内容解析与筛选、订阅内重复名称和 Refresh 响应头 | Node 与订阅输入的有效及失败样例是否得到明确处理 |
 | 05 | `05-singbox-design.md` | Node/Inbound/Outbound/Route/DIRECT 配置映射、selector、配置检查替换、控制接口、子进程适配，以及二进制版本、下载和升级 | 目标 sing-box 上的配置与切换能力是否可验证；配置或升级失败是否保留原可用文件 |
 | 06 | `06-runtime-control.md` | 管理状态、进程生命周期、运行控制锁、Runtime State、Settings 运行参数、健康检测和 AUTO 控制 | 状态转换、时序、失败处理与恢复行为是否清楚 |
-| 07 | `07-business-services.md` | Node Pool 更新、Inbound 冲突、Subscription Sync、级联预览确认及业务事务 | 数据操作与级联结果是否符合需求，失败时是否整体回滚 |
+| 07 | `07-business-services.md` | Node Pool 更新、Inbound 冲突、Subscription Sync/Refresh 编排、数据比较、级联预览确认及业务事务 | 数据操作与级联结果是否符合需求，失败时是否整体回滚 |
 | 08 | `08-web-ui.md` | 桌面与移动页面、操作入口、状态与节点角色展示、确认及错误流程 | 实际使用流程是否直观，页面是否忠实表达需求 |
 | 09 | `09-api.md` | 页面使用的内部 API、认证与 Settings 接口、状态校验及错误表达 | 接口是否支撑已确认的业务操作且保持一致 |
 | 10 | `10-test-plan.md` | 需求覆盖、规则测试、sing-box 集成、故障场景与部署验收步骤 | 验收是否能证明关键行为，而不只证明实现能运行 |
@@ -96,10 +96,10 @@ AI 完成集成、回归和两种部署方式的验收
 |---|---|---|---|
 | A. 全局结构 | 02 | 单进程运行模型、模块职责与依赖、数据库/配置文件/内存状态的所有权、运行控制锁、外部系统边界 | 不存在第二套业务规则；单实例与并发边界清楚 |
 | B. 业务数据与约束 | 03 | Subscription、Node、Inbound、Outbound、Node Pool、Route 的表结构与约束；DIRECT 的 Route 表达；Pool 成员数量等跨行不变量 | 可以表达全部合法关系；数据库与应用层的约束责任明确 |
-| C. Node 与 Subscription 输入 | 04 | 五种 Node 协议和单条分享 URI、HTTPS 请求、订阅格式、解析与过滤顺序、Refresh 元信息 | 有效及失败输入均有可检查的脱敏样例 |
+| C. Node 与 Subscription 输入 | 04 | 五种 Node 数据库参数和单条分享 URI、HTTPS 输入获取、订阅格式、解析与过滤顺序、Refresh 响应头解析 | 有效及失败输入均有可检查的脱敏样例 |
 | D. sing-box 集成 | 05 | Node 与 Inbound 等配置映射、tag 与 selector、配置检查替换、Current Node 查询与切换、子进程适配、二进制下载升级 | 在目标 sing-box 上验证 DIRECT、MANUAL、AUTO；配置或升级失败保留原可用文件 |
 | E. 运行控制与健康/AUTO | 06 | Start/Stop/Restart、进程守护、Runtime State、运行控制锁、检测与 AUTO 控制 | 状态转换、失败处理及并发边界清楚 |
-| F. 业务服务与事务 | 07 | Node Pool 更新、Inbound 冲突、Subscription Sync、级联预览确认和原子事务 | 数据变更结果符合需求，失败时整体回滚 |
+| F. 业务服务与事务 | 07 | Node Pool 更新、Inbound 冲突、Subscription Sync/Refresh、现有数据比较、级联预览确认和原子事务 | 数据变更结果符合需求，失败时整体回滚 |
 | G. 页面 | 08 | 桌面与移动页面、操作入口、状态与节点角色展示、确认和错误流程 | 页面清楚表达已确认的业务状态与操作 |
 | H. 内部 API | 09 | 业务接口、Settings、认证与会话、状态校验和错误表达 | 接口支撑页面且不形成需求外的公共 API |
 | I. 验证与部署 | 10、11 | 需求覆盖、故障注入、集成与部署验收、Docker Compose 与 Ubuntu Python/venv | 场景及安装步骤可复现 |

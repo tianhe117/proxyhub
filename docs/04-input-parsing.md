@@ -1,6 +1,6 @@
 # ProxyHub V1.0 Node 与 Subscription 输入解析设计
 
-> 文档版本：v0.4
+> 文档版本：v0.5
 > 文档状态：待确认
 > 更新日期：2026-09-20
 > 需求基线：[ProxyHub V1.0 需求规范](01-requirements.md)
@@ -8,7 +8,7 @@
 
 本文定义五种远程 Node 的数据库输入契约、单条分享 URI 解析、Subscription 的 HTTPS 获取与内容解析、Filter/Exclude、重复名称处理和 Refresh 元信息。解析结果使用 `nodes` 表规定的 `name`、`protocol`、`address`、`port`、`config_json` 字段；`nodes.config_json` 是 ProxyHub 保存的 Node 协议参数，不是运行配置文件。
 
-主要对应需求：REQ-NODE-001～006、REQ-CONFIG-007、REQ-SUB-001～012、REQ-REL-002。
+主要对应需求：REQ-NODE-001～003、REQ-NODE-005～006、REQ-SUB-003～008。
 
 第 1～7 章是主要设计，供方案和流程评审；附录给出开发所需的精确数据契约、协议映射和错误码。
 
@@ -18,25 +18,25 @@
 
 | 位置 | 职责 |
 |---|---|
-| `app/parser/` | 识别订阅格式，解析分享 URI 和 Clash YAML，将外部字段转换为统一 Node 数据；不访问网络和数据库 |
-| `app/services/` | 获取 Subscription、调用 Parser、应用 Filter/Exclude、检查重复名称，并把标准 Node、问题记录和元信息交给业务操作 |
+| Subscription 输入请求器 | 按本文约束获取 Subscription 正文或 Refresh 响应头，返回响应数据或安全失败结果；不访问数据库 |
+| `app/parser/` | 识别订阅格式，解析分享 URI 和 Clash YAML，执行 Filter/Exclude 与订阅内重复名称检查，将外部字段转换为统一 Node 数据；不访问网络和数据库 |
 | Node 统一校验器 | 校验页面表单、分享 URI 和 Subscription 产生的 Node；三个入口使用同一组字段规则 |
 
-Parser 是确定性的纯解析模块：相同输入产生相同 Node 或问题结果。它不读取或写入数据库，也不生成运行配置。网络请求由 Service 执行，数据库事务和级联变更由业务操作处理。
+Parser 是确定性的纯解析模块：相同输入产生相同 Node 或问题结果。输入请求器和 Parser 共同提供 Subscription 输入处理能力，业务 Service 负责调用它们以及后续持久化。现有数据比较、差异与级联计算、确认和数据库事务不进入本设计。
 
 ### 1.2 输入处理路径
 
 ```text
 单条分享 URI ─→ Parser ─→ 统一 Node ─→ 页面回填 ─→ 保存前校验
 
-Subscription URL ─→ HTTPS 获取 ─→ 格式识别 ─→ 条目解析
-                 ─→ 统一校验 ─→ 重复名称检查 ─→ Filter/Exclude
-                 ─→ 标准 Node 与问题记录
+Subscription URL ─→ 输入请求器 ─→ 格式识别 ─→ 条目解析
+                 ─→ 统一校验 ─→ 订阅内重复名称检查
+                 ─→ Filter/Exclude ─→ 标准 Node 与问题记录
 
-Subscription Refresh ─→ HTTPS 获取 ─→ 响应头解析 ─→ 元信息结果
+Subscription Refresh URL ─→ 输入请求器 ─→ 响应头解析 ─→ 元信息结果
 ```
 
-Sync 解析 Node 正文，Refresh 解析流量和到期时间响应头。两条流程复用相同的 HTTPS 请求约束，但各自只更新职责范围内的数据。
+Node 内容输入解析响应正文，Refresh 元信息输入解析流量和到期时间响应头。两条输入路径复用相同的 HTTPS 请求约束，并分别输出标准 Node 或元信息结果。
 
 ### 1.3 关键设计结论
 
@@ -48,9 +48,9 @@ Sync 解析 Node 正文，Refresh 解析流量和到期时间响应头。两条�
 | 单条 URI | 只解析并回填表单，不直接写数据库；名称可以稍后由用户补充 |
 | Subscription 格式 | 支持 Clash YAML、URI 列表及二者外层的 Base64 包装；依据正文识别，不依赖 `Content-Type` |
 | 条目容错 | 单个无效或不支持的条目被跳过并记录问题，不阻断其他条目 |
-| 重复名称 | 在所有合法 Node 中、Filter/Exclude 之前检查；存在重复即使本次 Sync 失败 |
+| 重复名称 | 在所有合法 Node 中、Filter/Exclude 之前检查；存在重复即使本次输入处理失败 |
 | 筛选顺序 | 先 Filter，再 Exclude；Exclude 命中时排除 |
-| 数据边界 | Parser 输出与数据库字段一致的标准 Node 或元信息；持久化、差异计算和事务不属于本设计 |
+| 数据边界 | 输入处理输出与数据库字段一致的标准 Node 或元信息；持久化、现有数据比较、差异计算和事务由业务操作负责 |
 | 敏感数据 | URL、分享 URI、响应正文和连接凭据不进入日志及问题消息 |
 
 ## 2. 单条分享 URI
@@ -77,13 +77,13 @@ URI query 中的 `remarks`、`remark`、`name` 和 `udp` 只影响展示或客�
 
 名称从 VMess `ps` 或其他 URI 的 Fragment 取得。解析器不生成 `Unnamed` 等替代名称。名称缺失不阻止回填，但保存前必须由用户提供非空名称。
 
-页面可以在输入框中短暂持有原始 URI 用于解析，请求完成后不持久化。API 响应只返回解析字段和安全错误，不回显原始 URI；服务端日志只记录协议和结果类别。
+调用方可以在内存中短暂持有原始 URI 用于解析，处理完成后不持久化。解析结果只包含标准字段和安全错误，不回显原始 URI；服务端日志只记录协议和结果类别。
 
 ## 3. Subscription 获取与格式识别
 
 ### 3.1 HTTPS 请求
 
-保存 Subscription 时先校验 URL 是包含主机的绝对 HTTPS URL。Sync 和 Refresh 使用当前保存的完整 URL 发起 GET 请求，并遵循以下规则：
+Subscription URL 输入必须是包含主机的绝对 HTTPS URL。Node 内容输入和 Refresh 元信息输入使用调用方提供的完整 URL 发起 GET 请求，并遵循以下规则：
 
 | 项目 | 设计值 |
 |---|---|
@@ -94,11 +94,11 @@ URI query 中的 `remarks`、`remark`、`name` 和 `udp` 只影响展示或客�
 | 超时 | connect 30 秒、read 30 秒 |
 | 重定向 | 最多 3 次；每个目标仍必须是 HTTPS，并正常验证证书 |
 | 成功状态 | HTTP 2xx |
-| Sync 响应体上限 | HTTP 传输及内容解码后、Base64 外层解码前最多 8 MiB |
+| Node 内容响应体上限 | HTTP 传输及内容解码后、Base64 外层解码前最多 8 MiB |
 
 请求头不携带 Cookie 或来自管理页面的认证信息。`Content-Type` 只用于诊断，不参与格式拒绝或选择；实际样本中合法 Clash YAML 可能以 `text/html` 返回。完整 URL 及其 query/token 不写日志，错误中只显示 Subscription 名称或数据库 ID。
 
-Sync 严格按 UTF-8 解码响应体，可接受开头的 UTF-8 BOM。无效 UTF-8、超过大小限制、非 2xx、TLS 失败、超时或超过重定向次数均视为请求/响应失败。
+Node 内容输入严格按 UTF-8 解码响应体，可接受开头的 UTF-8 BOM。无效 UTF-8、超过大小限制、非 2xx、TLS 失败、超时或超过重定向次数均视为请求/响应失败。
 
 ### 3.2 响应格式
 
@@ -110,9 +110,9 @@ Sync 严格按 UTF-8 解码响应体，可接受开头的 UTF-8 BOM。无效 UTF
 
 格式识别顺序为：尝试受约束的 Base64 外层、检查 Clash YAML 顶层结构、检查 URI 列表。Base64 解码结果无法识别时回到原始正文判断，避免把普通文本误判为 Base64。URI 列表允许只包含不受支持的代理 scheme，以便给出逐条 `unsupported` 结果；HTML 登录页、纯数字正文、没有顶层 `proxies` 的普通 YAML 和其他任意文本均为未知格式。
 
-YAML 使用 safe loader，禁止 alias，最大嵌套深度为 64，最多组合 20,000 个 YAML 节点。单次响应最多处理 5,000 个 `proxies` 条目或 URI 行；超过限制时整个 Sync 失败。YAML 语法错误或顶层 `proxies` 不是数组属于格式失败，不尝试从破损 YAML 中截取局部内容。
+YAML 使用 safe loader，禁止 alias，最大嵌套深度为 64，最多组合 20,000 个 YAML 节点。单次响应最多处理 5,000 个 `proxies` 条目或 URI 行；超过限制时本次输入处理失败。YAML 语法错误或顶层 `proxies` 不是数组属于格式失败，不尝试从破损 YAML 中截取局部内容。
 
-## 4. Subscription Sync
+## 4. Subscription 内容解析与筛选
 
 ### 4.1 处理顺序
 
@@ -138,7 +138,7 @@ Parser 逐条处理并保持原订阅顺序。合法条目进入重复检查和�
 - `Node-A` 与 `node-a` 不同；
 - `Node-A` 与 `Node-A ` 不同；
 - 不做 Unicode 大小写折叠或归一化；
-- 相同名称出现两次即使字段完全一致，本次 Sync 也失败；
+- 相同名称出现两次即使字段完全一致，本次输入处理也失败；
 - 筛选条件不能隐藏重复名称错误。
 
 无效或不受支持条目不参与重复检查，因为它们不能形成候选 Node。失败结果只列出重复名称和所在条目序号，不显示两个条目的敏感字段。
@@ -154,17 +154,17 @@ Filter 和 Exclude 的关键词分别按逗号或换行拆分，去除每个关�
 | Exclude 命中任一关键词 | 排除该 Node |
 | 同时命中 Filter 和 Exclude | Exclude 优先，排除该 Node |
 
-被 Filter/Exclude 排除的条目单独计数，不属于 `invalid` 或 `unsupported`。筛选后为零个 Node 时 Sync 失败。
+被 Filter/Exclude 排除的条目单独计数，不属于 `invalid` 或 `unsupported`。筛选后为零个 Node 时本次输入处理失败。
 
 ### 4.4 解析结果
 
 成功结果包含响应格式、是否使用 Base64 外层、标准 Node、问题记录和各项数量。Node 已完成输入规范化，可以作为后续数据库操作的输入；解析器不读取现有 Subscription Node，也不计算新增、修改或删除差异。
 
-请求、格式、资源限制、无合法 Node、重复名称或筛选结果为空均使解析失败。失败结果不包含可供保存的 Node。成功结果保留 `invalid`、`unsupported` 和 `warning`，供调用方展示或记录；稳定失败码见附录 E。
+请求、格式、资源限制、无合法 Node、重复名称或筛选结果为空均使输入处理失败。失败结果不包含可供保存的 Node。成功结果保留 `invalid`、`unsupported` 和 `warning`，供业务操作生成预览；稳定失败码见附录 E。
 
-## 5. Subscription Refresh 元信息
+## 5. Subscription Refresh 元信息解析
 
-Refresh 使用与 Sync 相同的 URL、请求头、HTTPS、证书、超时和重定向规则，但只读取响应状态及响应头，不识别或解析响应正文，也不产生 Node 候选结果。
+Refresh 元信息输入使用与 Node 内容输入相同的 URL、请求头、HTTPS、证书、超时和重定向规则，但只读取响应状态及响应头，不识别或解析响应正文，也不产生 Node 结果。
 
 `Subscription-Userinfo` 按分号分隔 `key=value`，键名大小写不敏感：
 
@@ -175,9 +175,9 @@ Refresh 使用与 Sync 相同的 URL、请求头、HTTPS、证书、超时和重
 | `total` | `total_bytes` | 非负十进制整数，单位为 byte |
 | `expire` | `expires_at` | 正整数 UTC Unix 秒；明确返回 `0` 时保存 `NULL` |
 
-未知键忽略。Header 超过 4 KiB 时整体视为无可用元信息。缺少或无效的已知键不进入解析结果；服务端明确给出合法值时只输出对应字段。HTTPS 请求成功时，Service 在响应完成后把当前 UTC Unix 秒作为 `refreshed_at` 一并输出，即使响应没有可用的流量字段。请求失败时不输出元信息更新结果。
+未知键忽略。Header 超过 4 KiB 时整体视为无可用元信息。缺少或无效的已知键不进入解析结果；服务端明确给出合法值时只输出对应字段。HTTPS 请求成功时，输入请求器在响应完成后把当前 UTC Unix 秒作为 `refreshed_at` 一并输出，即使响应没有可用的流量字段。请求失败时不输出元信息结果。
 
-Sync 只解析 Node 内容，不输出上述元信息或 `refreshed_at`。Refresh 只输出元信息结果，不解析或输出 Node。
+Node 内容输入不输出上述元信息或 `refreshed_at`。Refresh 元信息输入不解析或输出 Node。业务操作决定何时调用两条输入路径以及如何持久化返回结果。
 
 ## 6. 安全、资源限制与日志
 
@@ -216,9 +216,9 @@ HTTP fixture 保留真实响应中观察到的请求头、响应头顺序、正�
 5. HTML、破损 YAML、alias、超深 YAML、超大正文和超过 5,000 条；
 6. HTTPS 证书失败、HTTP URL、重定向到 HTTP、超时、非 2xx 及 URL 脱敏；
 7. `Subscription-Userinfo` 的部分字段、未知字段、负数、非整数、`expire=0`、缺失 Header；
-8. Sync 不输出元信息，Refresh 不解析或输出 Node，请求失败时不产生数据库输入结果。
+8. Node 内容输入不输出元信息，Refresh 元信息输入不解析或输出 Node，请求失败时不产生数据库输入结果。
 
-单元测试验证 Parser 和统一 Node 校验；HTTP 测试使用本地受控响应或 mock transport 验证请求头、TLS/重定向和资源上限；Service 测试验证输出结果可以转换为数据库字段。fixture 中的非 live Node 只验证解析和字段映射，不以连接成功作为预期。
+单元测试验证 Parser 和统一 Node 校验；输入组件测试使用本地受控响应或 mock transport 验证请求头、TLS/重定向、资源上限及数据库字段转换。fixture 中的非 live Node 只验证解析和字段映射，不以连接成功作为预期。
 
 ## 附录 A：Parser 数据契约与算法
 
@@ -238,7 +238,7 @@ HTTP fixture 保留真实响应中观察到的请求头、响应头顺序、正�
 
 ### A.2 输入输出契约
 
-单条 URI 解析返回一个 `NodeDraft`。完整 Subscription 输入链返回一个 `SubscriptionInputResult`：Parser 产生正文解析字段，Service 在同一结构上补充请求失败。这里规定数据含义，不要求实现使用特定 Python 类。
+单条 URI 解析返回一个 `NodeDraft`。完整 Subscription 输入链返回一个 `SubscriptionInputResult`：Parser 产生正文解析字段，输入请求器在同一结构上补充请求失败。这里规定数据含义，不要求实现使用特定 Python 类。
 
 | 结果 | 字段 | 含义 |
 |---|---|---|
@@ -256,7 +256,7 @@ HTTP fixture 保留真实响应中观察到的请求头、响应头顺序、正�
 
 `counts.source_entries` 是参与解析的条目数，`valid_before_filter` 是统一校验后的合法 Node 数，`invalid` 和 `unsupported` 按终止性 issue 计数，`warnings` 按 warning 记录计数，`filtered` 是被 Filter 或 Exclude 排除的 Node 数，`candidates` 是最终候选 Node 数。
 
-Parser 不返回数据库 ID，也不把 `config` 序列化为 JSON 字符串。Service 在进入数据比较前，以 UTF-8、键名排序、紧凑分隔符序列化 `config_json`，使相同配置得到相同文本。
+Parser 不返回数据库 ID，也不把 `config` 序列化为 JSON 字符串。转换为数据库字段时，以 UTF-8、键名排序、紧凑分隔符序列化 `config_json`，使相同配置得到相同文本。
 
 ### A.3 格式识别伪代码
 
