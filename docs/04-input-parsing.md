@@ -1,8 +1,8 @@
 # ProxyHub V1.0 Node 与 Subscription 输入解析设计
 
-> 文档版本：v0.5
+> 文档版本：v0.6
 > 文档状态：待确认
-> 更新日期：2026-09-20
+> 更新日期：2026-09-21
 > 需求基线：[ProxyHub V1.0 需求规范](01-requirements.md)
 > 数据基线：[ProxyHub V1.0 数据模型设计](03-data-model.md)
 
@@ -71,7 +71,7 @@ Node 内容输入解析响应正文，Refresh 元信息输入解析流量和到�
 
 URI scheme 大小写不敏感，查询参数按协议已知别名读取；同一个参数重复出现时使用最后一个值并给出 `warning`。Fragment 经过一次 percent-decoding 后作为名称，不将 `+` 当作空格。
 
-URI query 中的 `remarks`、`remark`、`name` 和 `udp` 只影响展示或客户端能力，忽略并记录 warning；其他未映射 query 参数可能改变连接语义，整条 Node 记为 `unsupported`。VMess Base64 JSON 中的未知标量字段按 warning 处理，未知对象或 `*-opts` 按 unsupported 处理。
+URI query 中的 `remarks`、`remark`、`name` 和 `udp` 只影响展示或客户端能力，忽略并记录 warning；其他未映射 query 参数可能改变连接语义，整条 Node 记为 `unsupported`。VMess Base64 JSON 先识别已知连接与安全字段：无法映射的 `pcs`（证书指纹）、`vcn`（证书验证域名）等非空字段记为 `unsupported`，不得按普通标量忽略；其余未知标量字段按 warning 处理，未知对象或 `*-opts` 按 unsupported 处理。
 
 ### 2.2 名称与敏感信息
 
@@ -212,11 +212,12 @@ HTTP fixture 保留真实响应中观察到的请求头、响应头顺序、正�
 1. 五种协议在小型 Clash `proxies` 中的逐字段映射；
 2. VLESS 普通 TLS、标准 Base64 包装、UTF-8 BOM 和 CRLF；
 3. 名称大小写、前后空白、Unicode 以及更多 Filter/Exclude 组合；
-4. 无效 UUID、端口、布尔值、TLS/Reality、Transport、Shadowsocks method/plugin 和 Hysteria2 obfs；
+4. 无效 UUID、端口、布尔值、TLS/Reality、Transport、Shadowsocks method/plugin 和 Hysteria2 obfs；特别覆盖 Reality 缺少 uTLS 或公钥格式错误、SS2022 密钥长度与编码错误、QUIC 插件缺少 TLS、Gecko 单边参数与默认值冲突；
 5. HTML、破损 YAML、alias、超深 YAML、超大正文和超过 5,000 条；
 6. HTTPS 证书失败、HTTP URL、重定向到 HTTP、超时、非 2xx 及 URL 脱敏；
 7. `Subscription-Userinfo` 的部分字段、未知字段、负数、非整数、`expire=0`、缺失 Header；
-8. Node 内容输入不输出元信息，Refresh 元信息输入不解析或输出 Node，请求失败时不产生数据库输入结果。
+8. Node 内容输入不输出元信息，Refresh 元信息输入不解析或输出 Node，请求失败时不产生数据库输入结果；
+9. VMess URI JSON 的 `tls="tls"`、空字符串与布尔兼容值，`insecure/allowInsecure` 别名，以及非空 `pcs/vcn` 被拒绝而不丢弃验证约束。
 
 单元测试验证 Parser 和统一 Node 校验；输入组件测试使用本地受控响应或 mock transport 验证请求头、TLS/重定向、资源上限及数据库字段转换。fixture 中的非 live Node 只验证解析和字段映射，不以连接成功作为预期。
 
@@ -332,7 +333,9 @@ VMess、VLESS、Trojan 和 Hysteria2 使用相同的 TLS 对象：
 | `utls` | 对象，可选 | 包含固定的 `enabled=true` 和非空 `fingerprint` |
 | `reality` | 对象，可选 | 只用于 VLESS，包含固定的 `enabled=true`、`public_key` 和可选 `short_id` |
 
-TLS 未启用时整个 `tls` 键省略。TLS 对象存在时始终保存 `enabled=true` 和 `insecure`；`server_name`、`alpn`、`utls`、`reality` 仅在有值时保存。布尔字段只接受布尔值、`0/1` 以及大小写不敏感的 `true/false`，其他文本不作真假推断。
+TLS 未启用时整个 `tls` 键省略。TLS 对象存在时始终保存 `enabled=true` 和 `insecure`；`server_name`、`alpn`、`utls`、`reality` 仅在有值时保存。通用布尔字段只接受布尔值、`0/1` 以及大小写不敏感的 `true/false`，其他文本不作真假推断；VMess URI JSON 的 TLS 模式字符串先按附录 C.1 转换，再进入统一校验。
+
+Reality 启用时必须同时启用 TLS 和 uTLS，并提供受支持的 fingerprint；缺失时记为 `invalid`，不隐式补选 fingerprint。`public_key` 必须是无 padding 的 Base64URL 文本，解码后恰为 32 字节；`short_id` 按附录 C.2 校验。上述组合约束在页面保存及订阅导入前执行，不推迟到 sing-box 启动检查。
 
 uTLS fingerprint 统一转为小写，只接受 `chrome`、`firefox`、`edge`、`safari`、`360`、`qq`、`ios`、`android`、`random`、`randomized`。ALPN 的 Clash 数组保持顺序；URI 中以逗号分隔，去除每项外围空白并拒绝空项。
 
@@ -368,6 +371,7 @@ Clash `ws-opts.path/headers.Host`、`h2-opts.path/host`、`grpc-opts.grpc-servic
 - URI 的 percent-encoding 和 Base64 必须能完整解码为 UTF-8；解码失败时拒绝该条目。
 - 未知字段不会自动进入 `config_json`。未知的非关键字段产生 `warning`；会改变连接方式的未知取值产生 `unsupported`。
 - 页面逐项填写、单条 URI 回填和 Subscription 导入最终都经过标准 Node 校验，避免三个入口接受不同的数据。
+- 协议密钥编码、长度及 TLS/插件/obfs 组合约束属于保存前校验。校验器不调用 sing-box；`stopped` 状态保存只更新数据库，启动时的配置检查作为再次校验，不替代 REQ-NODE-005 要求的输入校验。
 
 ### B.5 规范化与省略规则
 
@@ -399,9 +403,11 @@ Clash `ws-opts.path/headers.Host`、`h2-opts.path/host`、`grpc-opts.grpc-servic
 | `network` | 可选，`tcp`、`udp` 或省略表示两者 |
 | `tls`、`transport` | 按附录 B 的通用规则保存 |
 
-分享 URI 支持 `vmess://` 后接 Base64 JSON。字段映射为：`ps` → 名称、`add` → 地址、`port` → 端口、`id` → UUID、`scy/security` → `security`、`aid` → `alter_id`、`net` → Transport 类型。`host`、`path`、`sni/serverName`、`alpn`、`fp`、`allowInsecure` 映射到相应 Transport 或 TLS 字段。
+分享 URI 支持 `vmess://` 后接 Base64 JSON。字段映射为：`ps` → 名称、`add` → 地址、`port` → 端口、`id` → UUID、`scy/security` → `security`、`aid` → `alter_id`、`net` → Transport 类型。`host`、`path`、`sni/serverName`、`alpn`、`fp`、`insecure/allowInsecure` 映射到相应 Transport 或 TLS 字段。
 
 VMess JSON 必须是对象。`type` 是旧格式的传输附加参数，不作为 VMess 加密方法；`type` 非空且不是 `none` 时，如果无法无损映射则跳过该 Node。
+
+VMess URI JSON 的 `tls` 是外部模式值：缺失或空字符串表示关闭，大小写不敏感的 `tls` 表示开启；同时兼容附录 B.2 的布尔表示。其他值记为 `unsupported`，不按非空字符串推断为开启。Clash 的 `tls` 仍使用通用布尔规则。`pcs`、`vcn` 非空时记为 `unsupported`；为空时可忽略并记录 warning，绝不回显字段值。
 
 | 内部字段 | VMess URI JSON | Clash YAML | 缺省值 |
 |---|---|---|---|
@@ -412,7 +418,7 @@ VMess JSON 必须是对象。`type` 是旧格式的传输附加参数，不作�
 | Transport | `net`，以及 `host/path` | `network`，以及对应 `*-opts` | 普通 TCP |
 | TLS 开关 | `tls` | `tls` | `false` |
 | TLS Server Name | `sni`、`serverName` | `servername`、`sni` | 省略 |
-| TLS insecure | `allowInsecure` | `skip-cert-verify` | `false` |
+| TLS insecure | `insecure`、`allowInsecure` | `skip-cert-verify` | `false` |
 | uTLS | `fp`、`fingerprint` | `client-fingerprint` | 省略 |
 
 ### C.2 VLESS
@@ -479,6 +485,8 @@ V1.0 固定接受以下 Shadowsocks 2022、AEAD 和 legacy 方法：
 - `none`、`aes-128-gcm`、`aes-192-gcm`、`aes-256-gcm`、`chacha20-ietf-poly1305`、`xchacha20-ietf-poly1305`；
 - `aes-128-ctr`、`aes-192-ctr`、`aes-256-ctr`、`aes-128-cfb`、`aes-192-cfb`、`aes-256-cfb`、`rc4-md5`、`chacha20-ietf`、`xchacha20`。
 
+SS2022 的 `password` 还必须通过密钥校验：每段使用带必要 padding 的标准 Base64，解码后 AES-128 方法恰为 16 字节，AES-256 和 ChaCha20 方法恰为 32 字节。AES 方法允许以 `:` 分隔的密钥链，每段均须满足相同方法的长度要求且不得为空；ChaCha20 方法只允许单段密钥。编码、长度或组合错误记为 `invalid`，不自动修剪、补 padding 或修改密钥。此规则与分享 URI 外层 Base64 的宽容解码规则相互独立。
+
 分享 URI 支持 SIP002：`ss://userinfo@host:port?...#name`。`userinfo` 可以是 Base64URL 编码的 `method:password`，也可以按 SIP002 直接使用 percent-encoded 的 `method:password`。同时兼容旧格式 `ss://Base64(method:password@host:port)#name`。Base64 接受标准和 URL-safe 字母表，可缺少尾部 padding。
 
 URI 的 `plugin` 参数按 SIP002 解码为插件名和选项。Clash `plugin: obfs` 映射为 `obfs-local`。不在 V1.0 输入范围内的插件使整个 Node 记为 `unsupported`，避免保存缺少连接参数的配置。
@@ -495,7 +503,7 @@ URI 的 `plugin` 参数按 SIP002 解码为插件名和选项。Clash `plugin: o
 
 - SIP002 中的插件名和选项文本先按转义规则拆分，再与 Clash 插件字段转换为同一对象。
 - `obfs-local`（Clash 别名 `obfs`）保存 `type=obfs-local`、`mode=http|tls` 和可选 `host`。
-- `v2ray-plugin` 保存 `type=v2ray-plugin`、`mode=websocket|quic`、可选 `host`、可选 `tls`；`path` 只用于 WebSocket。省略 mode 时保存 `websocket`。
+- `v2ray-plugin` 保存 `type=v2ray-plugin`、`mode=websocket|quic`、可选 `host`、可选 `tls`；`path` 只用于 WebSocket。省略 mode 时保存 `websocket`。`mode=quic` 时必须显式提供 `tls=true`，缺失或为 false 记为 `invalid`；SIP002 的独立 `tls` 选项转换为 true，不为 QUIC 隐式开启 TLS。
 - 未知插件或出现无法由上述对象表达的选项时，该 Node 记为 `unsupported`。
 - 插件启用后 `network` 固定为 `tcp`；输入同时要求 UDP 时产生 warning，因为 SIP003 插件只承载 TCP。
 
@@ -527,7 +535,7 @@ URI 的 `plugin` 参数按 SIP002 解码为插件名和选项。Clash `plugin: o
 | TLS insecure | `insecure`、`allowInsecure` | `skip-cert-verify` | `false` |
 | TLS ALPN | `alpn` | `alpn` | 省略 |
 
-带宽文本接受正整数或带 `Mbps` 后缀的正整数，统一保存整数 Mbps；其他单位、零和负数无效。gecko 的 packet size 必须为正整数，两个值同时存在时最小值不得大于最大值。Clash 同时提供 `password` 和 `auth` 时，两者相同则取 `password`，不同则记为 `invalid`。
+带宽文本接受正整数或带 `Mbps` 后缀的正整数，统一保存整数 Mbps；其他单位、零和负数无效。gecko 的 packet size 必须为正整数；校验时对未提供的最小值取 512、最大值取 1200，要求有效最小值不大于有效最大值，且有效最大值不超过 2048。默认值只参与校验，未提供的字段仍省略保存。仅提供 `min_packet_size=1300` 或 `max_packet_size=500` 均记为 `invalid`，不能因为另一字段缺省而绕过范围校验。Clash 同时提供 `password` 和 `auth` 时，两者相同则取 `password`，不同则记为 `invalid`。
 
 ## 附录 D：Clash Proxy 映射补充
 
@@ -584,3 +592,7 @@ warning 和 unsupported 消息只列字段名。解析器维护显式的已知�
 
 - [Shadowsocks SIP002 URI Scheme](https://github.com/shadowsocks/shadowsocks-org/wiki/SIP002-URI-Scheme)
 - [Hysteria2 URI Scheme](https://v2.hysteria.network/docs/developers/URI-Scheme/)
+- [v2rayN VMess 分享链接说明](https://github.com/2dust/v2rayN/wiki/Description-of-VMess-share-link)
+- [sing-box 1.14.1 Reality 客户端校验](https://github.com/SagerNet/sing-box/blob/v1.14.1/common/tls/reality_client.go)
+- [sing-shadowsocks2 v0.2.1 SS2022 密钥校验](https://github.com/SagerNet/sing-shadowsocks2/blob/v0.2.1/shadowaead_2022/method.go)
+- [sing-quic v0.7.0 Gecko 实现](https://github.com/SagerNet/sing-quic/blob/v0.7.0/hysteria2/gecko.go)

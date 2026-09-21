@@ -1,8 +1,8 @@
 # ProxyHub V1.0 sing-box 集成设计
 
-> 文档版本：v0.2
+> 文档版本：v0.3
 > 文档状态：待确认
-> 更新日期：2026-09-20
+> 更新日期：2026-09-21
 > 需求基线：[ProxyHub V1.0 需求规范](01-requirements.md)
 > 架构基线：[ProxyHub V1.0 软件架构设计](02-architecture.md)
 > 数据基线：[ProxyHub V1.0 数据模型设计](03-data-model.md)
@@ -34,7 +34,7 @@
 ### 1.2 主要处理路径
 
 ```text
-一致数据库快照 + 内部检测凭据
+一致数据库快照 + Web 监听端点 + 内部检测凭据
   → 配置生成器
   → 同目录候选配置
   → sing-box check
@@ -63,6 +63,8 @@ Runtime 明确操作
 | 路由兜底 | 每条业务 Route 精确匹配一个 Inbound，末尾增加无条件 reject 规则 |
 | Node 检测 | 内部 Mixed Inbound 按认证用户名把并发 HTTP 请求分别路由到目标 Node，并保留真实状态码 |
 | 控制接口 | Clash API 仅监听 `127.0.0.1:9090`，用于 selector 查询与切换 |
+| 切换结果 | 已确认成功、明确未切换和结果不确定分别处理；不能把响应丢失等同于未切换 |
+| 监听冲突 | Web、业务 Inbound 与两个内部保留端点统一校验；保存或启动前拒绝冲突 |
 | 配置生效 | `check` 成功才替换正式配置；进程就绪后才更新最近成功配置 |
 | 进程识别 | PID 文件仅作线索，必须同时核对可执行文件和配置文件路径 |
 | 版本基线 | V1.0 支持 sing-box `>=1.14.0,<2.0.0`；安装升级只取官方最新稳定版 |
@@ -82,9 +84,9 @@ Runtime 明确操作
 - `outbound_nodes`：全部 Node Pool 成员；
 - `routes`：全部 Route。
 
-配置生成器接收快照和调用方提供的内部检测密码。密码取应用认证密钥对 UTF-8 文本 `proxyhub/singbox-health-proxy/v1` 的 HMAC-SHA-256 十六进制结果，不增加用户设置；生成器不直接读取密钥。相同快照与相同密码必须生成语义和文本顺序稳定的配置。生成器不查询数据库、不读取既有 `config.json`、不调用网络，也不修改传入对象。
+配置生成器接收快照、启动时已生效的 Web 监听地址与端口，以及调用方提供的内部检测密码。Web 端点仅用于冲突校验，不写入 sing-box 配置。密码取应用认证密钥对 UTF-8 文本 `proxyhub/singbox-health-proxy/v1` 的 HMAC-SHA-256 十六进制结果，不增加用户设置；生成器不直接读取密钥。相同输入必须生成语义和文本顺序稳定的配置。生成器不查询数据库、不读取既有 `config.json`、不调用网络，也不修改传入对象。
 
-生成器再次检查协议字段、JSON 结构和引用完整性。发现未知协议、损坏 JSON、悬空引用、Default Node 不在 Pool、Pool 少于两个 Node、重复 tag 或监听控制端口冲突时，整个生成失败。不得跳过错误记录后生成部分配置。
+生成器复用 04 的统一 Node 校验规则，再次检查协议字段及组合、JSON 结构和引用完整性。发现无效协议参数、损坏 JSON、悬空引用、Default Node 不在 Pool、Pool 少于两个 Node、重复 tag 或监听端点冲突时，整个生成失败。不得跳过错误记录后生成部分配置；生成阶段的检查不替代 Node 保存或导入前的校验。
 
 ### 2.2 生成范围
 
@@ -176,7 +178,15 @@ Route 指向 DIRECT 时，`outbound` 为 `direct`。数据库保证一个 Inboun
 
 每个 Routed Inbound 使用 `inbound-{id}`、`listen_address`、`listen_port` 和 `inbounds.config_json` 生成。HTTP、SOCKS、Mixed、Shadowsocks、VMess 的具体输入契约和输出见附录 B。
 
-两个内部端点固定占用 `127.0.0.1:9090` 和 `127.0.0.1:19090`。如果业务 Inbound 的监听范围覆盖任一端点，例如相同回环地址、相同端口的 IPv4 通配地址或双栈通配地址，配置生成失败并明确报告冲突对象。
+两个内部保留端点为 `127.0.0.1:9090` 和 `127.0.0.1:19090`。即使当前没有 Node、不生成检测 Inbound，也保留第二个端点，避免新增 Node 后才出现冲突。冲突按监听地址覆盖范围和端口共同判断，不只比较地址字符串；相同回环地址、IPv4 通配地址以及覆盖 IPv4 的双栈通配地址均需纳入判断。
+
+Web 监听、全部已保存业务 Inbound 和内部保留端点使用同一套冲突判断规则：
+
+- Settings 启动校验检查 Web 端点与内部保留端点；例如 Web 监听 `127.0.0.1:9090` 或 `0.0.0.0:19090` 均为非法设置，按 REQ-SETTINGS-006 报告原因并终止启动。错误发生在创建 Web 或 sing-box 监听之前。
+- 业务 Inbound 保存前检查其与 Web、其他业务 Inbound 和内部保留端点的冲突，冲突时禁止保存，不依赖是否已有 Route。
+- 配置生成时复核上述冲突，包括用户直接修改 Web Settings 后与已保存 Inbound 形成的冲突；失败时不替换正式配置、不启动 sing-box，Settings 本身有效时 Web 仍按正常失败路径运行。
+
+这些检查只判断 ProxyHub 管理的监听配置之间的冲突。外部进程占用端口仍由实际绑定失败报告，不建立额外的端口预占机制。
 
 ### 2.8 Node 检测 Inbound
 
@@ -217,10 +227,10 @@ Inbound 与认证用户名共同限定路由，其他业务 Inbound 不受这些
 ### 2.10 生成伪代码
 
 ```text
-build(snapshot):
+build(snapshot, web_endpoint, health_password):
     解析所有 config_json 并校验快照引用和跨对象不变量
     计算 Routed Inbound、Routed MANUAL/AUTO 和是否需要 DIRECT
-    检查业务监听端点与两个内部端点
+    检查 Web、业务监听端点与两个内部保留端点
 
     inbounds = 按 ID 映射 Routed Inbound；有 Node 时追加 health-check
     node_outbounds = 按 ID 映射全部 Node
@@ -294,7 +304,7 @@ Clash API `/delay` 只返回延迟，不返回目标 HTTP 状态，因此不用�
 |---|---|---|
 | 就绪检查 | `GET /proxies` | HTTP 200，响应含对象类型的 `proxies` |
 | 查询 Current Node | `GET /proxies/{selector-tag}` | HTTP 200，`now` 是该 Pool 中的 Node tag |
-| 切换 Current Node | `PUT /proxies/{selector-tag}`，JSON `{ "name": node-tag }` | HTTP 200/204，随后查询值等于目标 Node tag |
+| 切换 Current Node | `PUT /proxies/{selector-tag}`，JSON `{ "name": node-tag }` | HTTP 204 确认选择已完成；未取得确定响应时按第 4.3 节复核 |
 
 路径段使用标准 URL 编码，控制请求最长 5 秒。
 
@@ -302,9 +312,21 @@ Clash API `/delay` 只返回延迟，不返回目标 HTTP 状态，因此不用�
 
 查询 selector 后，客户端核对 `now` 是否属于该 selector 对应的 Pool；缺失、DIRECT、其他 selector 或未知 Node 均视为状态异常。
 
-切换前，调用方给出 selector ID 和目标 Node ID；客户端核对 tag 形状，发送 PUT，再以 GET 复核。selector 配置中的 `interrupt_exist_connections=true` 负责中断使用旧 Node 的已有连接，无需调用全局连接删除接口。
+切换操作在运行控制锁内执行。调用方给出 selector ID、当前 Node ID 和目标 Node ID，客户端核对 Pool 成员关系和 tag，再发送 PUT。目标版本在完成 selector 选择后返回 HTTP 204，该响应作为成功依据，不再用随后一次 GET 的成败推翻已确认的切换。selector 配置中的 `interrupt_exist_connections=true` 负责中断使用旧 Node 的已有连接，无需调用全局连接删除接口。
 
-控制客户端不更新数据库或 Runtime State。调用方只在“PUT 成功且 GET 复核一致”后提交相应业务状态；任一步失败时返回失败结果。
+单次切换结果用 `outcome` 区分，不增加管理状态或持久化任务：
+
+| outcome | 判定 | 调用方处理 |
+|---|---|---|
+| `switched` | 收到 HTTP 204；或未取得确定响应后，GET 复核 `now` 等于目标 Node | 按需求提交 Runtime State；MANUAL 同时更新数据库 Default Node |
+| `unchanged` | 发送前校验失败、明确未发送请求，或收到目标 API 明确拒绝且未修改 selector 的响应 | 返回普通切换失败，Current Node 和 Default Node 不变；AUTO 按既有切换失败规则处理 |
+| `indeterminate` | 请求可能已执行，但未获得确定响应，且一次 GET 复核不能确认目标已生效 | 按下述控制故障处理，不能当作 `unchanged` |
+
+请求发出后的超时、连接中断、非预期响应均不能证明未切换；客户端最多追加一次 GET，每个请求仍受 5 秒上限约束。此时即使 GET 暂时返回旧 Node，也可能存在尚未完成的 PUT，因此结果仍为 `indeterminate`；不盲目重复 PUT，也不无限重试。
+
+`indeterminate` 表示无法确定实际出口的控制故障。集成层返回事实，不自行改数据库；Runtime 必须在同一次持锁期间停止本次 sing-box 进程，结束本控制周期或用户操作，并使本次 Runtime State 不再作为有效实际状态展示。数据库 Default Node 不变，管理意图保持 `running`，后续控制周期按进程守护流程从最新数据库重新生成、检查和启动，成功后初始化新的运行周期。停止失败时保留实际进程观测并报告控制故障，后续控制周期先继续停止该进程，不执行 AUTO 决策，也不创建第二个进程。此处不新增持久化恢复机制。
+
+控制客户端不提交业务状态。MANUAL 在已确认切换成功后若数据库提交失败，调用方也不能只回滚数据库而保留已切换的进程；应回滚未提交事务并按上述控制故障路径结束本次进程，避免引擎、Current Node 与 Default Node 分歧。以上处置不将结果不确定或持久化失败报告成普通的“切换失败、仍使用旧 Node”。
 
 ## 5. 子进程适配
 
@@ -416,12 +438,14 @@ Release JSON 最大 2 MiB、压缩包最大 256 MiB；先校验合法 `Content-L
 |---|---|
 | 配置生成/检查 | `success`、`stage`、`message`、可选诊断尾部 |
 | Node URL test | `success`、`message`、可选 `status_code/delay_ms` |
-| 控制接口 | `success`、`operation`、`message`、可选 `current_node_id` |
+| 控制接口 | `success`、`operation`、`message`、可选 `current_node_id`；切换另含 `outcome=switched/unchanged/indeterminate` |
 | 进程操作 | `success`、`message`、`pid`、`running` |
 | 版本检查 | `success`、`installed_version`、`latest_version`、`update_available` |
 | 下载升级 | `success`、`stage`、`message`、可选 `installed_version` |
 
 `message` 不包含 Node 密码、UUID、Subscription URL、完整配置、HTTP 响应正文或 GitHub 下载 query。页面使用简短消息，详细诊断写日志；无需建立大型异常层级。
+
+切换结果只有 `switched` 的 `success=true`；调用方必须先区分 `outcome`，不能把其他结果统一套用普通切换失败规则。`indeterminate` 不返回假定的 Current Node ID。
 
 ## 附录 A：Node Outbound 映射
 
@@ -453,7 +477,7 @@ Release JSON 最大 2 MiB、压缩包最大 256 MiB；先校验合法 `Content-L
 | `reality.public_key` | `reality.public_key` |
 | `reality.short_id` | `reality.short_id` |
 
-Reality 只允许用于 VLESS。Trojan 和 Hysteria2 必须具有 `enabled=true` 的 TLS；违反时整个配置生成失败。
+Reality 只允许用于 VLESS，必须同时启用 TLS、uTLS 并通过公钥和 short id 校验。Trojan 和 Hysteria2 必须具有 `enabled=true` 的 TLS；违反时整个配置生成失败，不静默补全或丢弃参数。
 
 ### A.3 V2Ray Transport
 
@@ -484,9 +508,9 @@ Shadowsocks 的结构化 `plugin` 映射为 `plugin` 与规范 `plugin_opts`：
 - `obfs-local`：`obfs=<mode>`，可选追加 `;obfs-host=<host>`；
 - `v2ray-plugin`：`mode=<mode>`，依次追加适用的 `;host=<host>`、`;path=<path>`、`;tls`。
 
-生成器只处理 04 输入契约接受的插件和值；无法无损序列化的选项使配置生成失败。
+生成器只处理 04 输入契约接受的插件和值；`v2ray-plugin` 的 QUIC 模式必须带 `tls=true`，输出必须包含 `;tls`。无法无损序列化的选项使配置生成失败。
 
-Hysteria2 的 `obfs` 对象原结构映射为 Outbound `obfs`，包括 `type`、`password`，以及 gecko 可选的 `min_packet_size`、`max_packet_size`。
+Hysteria2 的 `obfs` 对象原结构映射为 Outbound `obfs`，包括 `type`、`password`，以及 gecko 可选的 `min_packet_size`、`max_packet_size`；省略字段仍省略输出，但范围校验须按 04 规定代入默认值。
 
 ## 附录 B：Inbound 输入契约与映射
 
@@ -641,7 +665,8 @@ Route #5: inbound_id=3, outbound_id=7
 - 内部 Mixed Inbound 的用户与每个 Node 一一对应，`auth_user` 规则在业务 Route 之前；
 - 未 Routed 对象不生成、全部 Node 始终生成、priority 改变不影响输出；
 - Default Node 决定 selector `default`，成员顺序按 Node ID；
-- 悬空引用、坏 JSON、Pool 少于两个 Node、重复 Route 和两个内部端口冲突整体失败；
+- 悬空引用、坏 JSON、Pool 少于两个 Node、重复 Route，以及 Web/业务 Inbound/内部端点冲突整体失败；包含无 Node 时保留 19090、通配监听和直接修改 Web Settings 的场景；
+- Reality 缺少 uTLS、SS2022 密钥非法、QUIC 插件未启用 TLS、Gecko 单边参数与默认值冲突在统一校验时拒绝，不能进入可保存的 Node；生成器对损坏快照再次拒绝；
 - 每种成功配置均通过目标版本 `sing-box check`。
 
 ### D.2 文件与进程集成样例
@@ -651,6 +676,8 @@ Route #5: inbound_id=3, outbound_id=7
 - 进程立即退出、控制接口未就绪、停止超时和过期 PID 文件；
 - ProxyHub 重启后只识别并停止可执行路径与配置路径都匹配的遗留进程，再生成配置开始新运行周期；
 - MANUAL/AUTO 查询和切换，切换后 `now` 与目标一致；
+- PUT 已完成但响应丢失时 GET 确认目标并提交成功；204 后的独立查询失败不推翻成功；明确拒绝时保持原选择；PUT 结果不确定且复核未确认目标时停止本次进程，由后续守护开始新周期；
+- 控制故障停止失败时不显示假定 Current Node、不继续 AUTO 或启动第二进程；MANUAL 数据库提交失败时不会留下引擎与 Default Node 不一致的正常运行状态；
 - URL test 的 2xx 成功、3xx/4xx/5xx、TLS、代理认证和超时失败；非法控制响应。
 
 ### D.3 二进制管理样例
@@ -668,6 +695,8 @@ Route #5: inbound_id=3, outbound_id=7
 - 2026-09-20 查询官方 latest release 得到 `v1.14.1`；其 `linux-amd64.tar.gz` 资产提供 `sha256:` digest，没有独立 checksum 资产，因此实现以 Release API 的资产 digest 为完整性依据；
 - 旧分支中的下载、受限读取、安全解压、进程身份核对和原子替换方式可复用；旧的 DIRECT 哨兵行、生成全部 selector、selector 追加 DIRECT、legacy block Outbound 和旧 Route 字段不可沿用。
 
+2026-09-21 补充评审验证：使用官方 `1.14.1 linux/amd64` 二进制，在临时目录完成 Release 资产 SHA-256 校验，12 项配置检查均符合预期，未替换工作区二进制或正式配置。附录 C 样例通过 `check`；Reality 缺少 uTLS、SS2022 非法 Base64 密钥、QUIC 插件缺少 TLS 均检查失败，修正后均通过；Gecko 默认值及有效范围通过，单边参数冲突和最大值超过 2048 被拒绝。上述结果用于确定保存前校验边界，不代表实际代理连通、切换中断连接或故障恢复已完成集成验证。
+
 ## 附录 E：设计依据
 
 - [sing-box 配置结构](https://sing-box.sagernet.org/configuration/)
@@ -676,6 +705,7 @@ Route #5: inbound_id=3, outbound_id=7
 - [Selector Outbound](https://sing-box.sagernet.org/configuration/outbound/selector/)
 - [Direct Outbound](https://sing-box.sagernet.org/configuration/outbound/direct/)
 - [Clash API](https://sing-box.sagernet.org/configuration/experimental/clash-api/)
+- [sing-box 1.14.1 selector 切换接口实现](https://github.com/SagerNet/sing-box/blob/v1.14.1/experimental/clashapi/proxies.go)
 - [sing-box 1.14.1 URL test 实现](https://github.com/SagerNet/sing-box/blob/v1.14.1/common/urltest/urltest.go)
 - [HTTP Inbound](https://sing-box.sagernet.org/configuration/inbound/http/)
 - [SOCKS Inbound](https://sing-box.sagernet.org/configuration/inbound/socks/)
